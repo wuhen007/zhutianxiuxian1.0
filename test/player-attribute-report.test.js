@@ -163,9 +163,68 @@ test('属性报告将万象归一词条从普通百分比池单列', () => {
   const report = buildPlayerAttributeReport(fixture).join('\n');
   const view = buildPlayerAttributeView(fixture);
 
-  assert.match(report, /万象归一独立池：攻\+50%｜防\+25%｜血\+100%/);
+  assert.match(report, /万象归一词条合计：攻\+50%｜防\+25%｜血\+100%/);
   assert.match(view.equipment.fusion, /攻 \+50% · 防 \+25% · 血 \+100%/);
   assert.doesNotMatch(view.equipment.total, /\+50%/);
+});
+
+test('属性报告按单件500倍展示，普通与归一累计无总上限', () => {
+  const fixture = createViewFixture();
+  const percent = {
+    name: '百分比装备', atk: 499, def: 499, HP: 499,
+    归一属性: { 百分比: { atk: 100, def: 100, HP: 100 } },
+  };
+  fixture.equipment.武器 = percent;
+  fixture.equipment.护具 = percent;
+
+  let report = buildPlayerAttributeReport(fixture).join('\n');
+  let view = buildPlayerAttributeView(fixture);
+  assert.match(report, /普通装备词条合计：攻\+99800%/);
+  assert.match(report, /武器【百分比装备】攻\+49900%｜防\+49900%｜血\+49900%/);
+  assert.match(report, /单件每项最高\+49900%（含基础500倍）.*多件加算无总上限/);
+  assert.match(view.equipment.total, /攻 \+99800%/);
+  assert.equal(view.equipment.slots[0].primary, '攻击 +49900%');
+
+  const fused = {
+    name: '归一装备', atk: 1000, def: 2000, HP: 3000, 归一来源: '百分比装备',
+    归一属性: { 百分比: { atk: 600, def: 600, HP: 600 } },
+  };
+  fixture.equipment.武器 = fused;
+  fixture.equipment.护具 = fused;
+  report = buildPlayerAttributeReport(fixture).join('\n');
+  view = buildPlayerAttributeView(fixture);
+  assert.match(report, /万象归一词条合计：攻\+99800%｜防\+99800%｜血\+99800%/);
+  assert.match(report, /武器【归一装备】攻归一\+49900%\+1,000/);
+  assert.match(view.equipment.fusion, /攻 \+99800%.*多件加算无总上限/);
+  assert.equal(view.equipment.slots[0].primary, '攻击 归一 +49900% / +1,000');
+  assert.doesNotMatch(report + view.equipment.fusion, /50000%|单项上限/);
+});
+
+test('属性报告按万道神炉状态展示普通与归一装备的同件溢出补偿', () => {
+  const fixture = createViewFixture();
+  fixture.equipment.武器 = {
+    name: '溢出百分比剑', atk: 499, def: 10, HP: 20,
+    归一属性: { 百分比: { atk: 50 } },
+  };
+  fixture.equipment.护具 = {
+    name: '溢出归一甲', atk: 1000, def: 2000, HP: 3000, 归一来源: '百分比甲',
+    归一属性: { 百分比: { atk: 599, def: 5, HP: 6 } },
+  };
+  const original = buildPlayerAttributeView(fixture);
+  assert.equal(original.equipment.slots[0].secondary, '防御 +1000%');
+  assert.equal(original.equipment.slots[1].secondary, '防御 归一 +500% / +2,000');
+
+  fixture.player.当前先天至宝 = '万道神炉';
+  const view = buildPlayerAttributeView(fixture);
+  const report = buildPlayerAttributeReport(fixture).join('\n');
+  assert.equal(view.equipment.slots[0].secondary, '防御 +6000%');
+  assert.equal(view.equipment.slots[1].secondary, '防御 归一 +10500% / +2,000');
+  assert.match(view.equipment.total, /防 \+6000%/);
+  assert.match(view.equipment.fusion, /防 \+10500%/);
+  assert.match(report, /武器【溢出百分比剑】攻\+49900%｜防\+6000%｜血\+2000%/);
+  assert.match(report, /护具【溢出归一甲】攻归一\+49900%\+1,000｜防归一\+10500%\+2,000/);
+  assert.equal(fixture.equipment.武器.def, 10);
+  assert.equal(fixture.equipment.护具.归一属性.百分比.def, 5);
 });
 
 test('低境界自铸特殊帝兵按现有结算同时取得本命与十分之一加成', () => {

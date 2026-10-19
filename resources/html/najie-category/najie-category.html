@@ -477,15 +477,15 @@
               {{if item.atk>499 || item.def>499 || item.HP>499}}
               <div class="item-property">
                 <span class="property-name">攻击</span>
-                <span class="property-value">{{(item.atk || 0).toFixed(0)}}{{if item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.atk}}（+{{(item.归一属性.百分比.atk*100).toFixed(0)}}%）{{/if}}</span>
+                <span class="property-value">{{(item.atk || 0).toFixed(0)}}{{if item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.atk}}（+{{set equipmentPercent = item.归一属性.百分比.atk}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%）{{/if}}</span>
               </div>
               <div class="item-property">
                 <span class="property-name">防御</span>
-                <span class="property-value">{{(item.def || 0).toFixed(0)}}{{if item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.def}}（+{{(item.归一属性.百分比.def*100).toFixed(0)}}%）{{/if}}</span>
+                <span class="property-value">{{(item.def || 0).toFixed(0)}}{{if item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.def}}（+{{set equipmentPercent = item.归一属性.百分比.def}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%）{{/if}}</span>
               </div>
               <div class="item-property">
                 <span class="property-name">血量</span>
-                <span class="property-value">{{(item.HP || 0).toFixed(0)}}{{if item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.HP}}（+{{(item.归一属性.百分比.HP*100).toFixed(0)}}%）{{/if}}</span>
+                <span class="property-value">{{(item.HP || 0).toFixed(0)}}{{if item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.HP}}（+{{set equipmentPercent = item.归一属性.百分比.HP}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%）{{/if}}</span>
               </div>
               {{else}}
               <div class="item-property">
@@ -494,15 +494,15 @@
               </div>
               <div class="item-property">
                 <span class="property-name">攻击</span>
-                <span class="property-value">{{(((item.atk || 0) + ((item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.atk) || 0))*100).toFixed(0)}}%</span>
+                <span class="property-value">{{set equipmentPercent = ((item.atk || 0) + ((item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.atk) || 0))}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%</span>
               </div>
               <div class="item-property">
                 <span class="property-name">防御</span>
-                <span class="property-value">{{(((item.def || 0) + ((item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.def) || 0))*100).toFixed(0)}}%</span>
+                <span class="property-value">{{set equipmentPercent = ((item.def || 0) + ((item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.def) || 0))}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%</span>
               </div>
               <div class="item-property">
                 <span class="property-name">血量</span>
-                <span class="property-value">{{(((item.HP || 0) + ((item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.HP) || 0))*100).toFixed(0)}}%</span>
+                <span class="property-value">{{set equipmentPercent = ((item.HP || 0) + ((item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.HP) || 0))}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%</span>
               </div>
               {{/if}}
               <div class="item-property">

@@ -46,20 +46,20 @@
               {{if $value.name.class=="装备"}} {{if $value.name.atk>499 ||
               $value.name.def>499 || $value.name.HP>499}}
               <div class="info">属性:无</div>
-              <div class="info">攻击：{{($value.name.atk || 0).toFixed(0)}}{{if $value.name.归一属性 && $value.name.归一属性.百分比 && $value.name.归一属性.百分比.atk}}（+{{($value.name.归一属性.百分比.atk*100).toFixed(0)}}%）{{/if}}</div>
-              <div class="info">防御：{{($value.name.def || 0).toFixed(0)}}{{if $value.name.归一属性 && $value.name.归一属性.百分比 && $value.name.归一属性.百分比.def}}（+{{($value.name.归一属性.百分比.def*100).toFixed(0)}}%）{{/if}}</div>
-              <div class="info">血量：{{($value.name.HP || 0).toFixed(0)}}{{if $value.name.归一属性 && $value.name.归一属性.百分比 && $value.name.归一属性.百分比.HP}}（+{{($value.name.归一属性.百分比.HP*100).toFixed(0)}}%）{{/if}}</div>
+              <div class="info">攻击：{{($value.name.atk || 0).toFixed(0)}}{{if $value.name.归一属性 && $value.name.归一属性.百分比 && $value.name.归一属性.百分比.atk}}（+{{set equipmentPercent = $value.name.归一属性.百分比.atk}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%）{{/if}}</div>
+              <div class="info">防御：{{($value.name.def || 0).toFixed(0)}}{{if $value.name.归一属性 && $value.name.归一属性.百分比 && $value.name.归一属性.百分比.def}}（+{{set equipmentPercent = $value.name.归一属性.百分比.def}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%）{{/if}}</div>
+              <div class="info">血量：{{($value.name.HP || 0).toFixed(0)}}{{if $value.name.归一属性 && $value.name.归一属性.百分比 && $value.name.归一属性.百分比.HP}}（+{{set equipmentPercent = $value.name.归一属性.百分比.HP}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%）{{/if}}</div>
               {{else}}
               <div class="info">
                 属性:{{['金','木','土','水','火'][$value.name.id-1]}}
               </div>
               <div class="info">
-                攻击：{{((($value.name.atk || 0) + (($value.name.归一属性 && $value.name.归一属性.百分比 && $value.name.归一属性.百分比.atk) || 0))*100).toFixed(0)}}%
+                攻击：{{set equipmentPercent = (($value.name.atk || 0) + (($value.name.归一属性 && $value.name.归一属性.百分比 && $value.name.归一属性.百分比.atk) || 0))}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%
               </div>
               <div class="info">
-                防御：{{((($value.name.def || 0) + (($value.name.归一属性 && $value.name.归一属性.百分比 && $value.name.归一属性.百分比.def) || 0))*100).toFixed(0)}}%
+                防御：{{set equipmentPercent = (($value.name.def || 0) + (($value.name.归一属性 && $value.name.归一属性.百分比 && $value.name.归一属性.百分比.def) || 0))}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%
               </div>
-              <div class="info">血量：{{((($value.name.HP || 0) + (($value.name.归一属性 && $value.name.归一属性.百分比 && $value.name.归一属性.百分比.HP) || 0))*100).toFixed(0)}}%</div>
+              <div class="info">血量：{{set equipmentPercent = (($value.name.HP || 0) + (($value.name.归一属性 && $value.name.归一属性.百分比 && $value.name.归一属性.百分比.HP) || 0))}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%</div>
               {{/if}}
               <div class="info">暴：{{($value.name.bao*100).toFixed(0)}}%</div>
               {{/if}} {{if $value.name.class=="仙宠"}}

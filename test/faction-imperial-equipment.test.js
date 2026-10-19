@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { swapEquipmentState, selectEquipmentByCode } from '../model/equipmentSwap.js';
-import { calculateEquippedStats, calculateEquipmentSetBonuses, isCanonicalDaluoSwordEmbryo } from '../model/equipmentStats.js';
+import { calculateEquippedStats, calculateEquipmentSetBonuses, isCanonicalDaluoSwordEmbryo, isFixedStatEquipment, MAX_PERCENT_EQUIPMENT_STAT } from '../model/equipmentStats.js';
 import { createSuiyunRoot, getSuiyunLotusBonus } from '../model/suiyun.js';
 import { withPlayerMutationLock } from '../utils/playerMutationLock.js';
 import { findItemSources } from '../model/itemSourceFinder.js';
@@ -41,6 +41,7 @@ function fixture(palace = false) {
     data, path, withPlayerMutationLock, swapEquipmentState, selectEquipmentByCode,
     migrateLegacyInnateTreasureSlot, normalizeRelicState,
     calculateEquippedStats, calculateEquipmentSetBonuses, getSuiyunLotusBonus, isCanonicalDaluoSwordEmbryo,
+    isFixedStatEquipment, MAX_PERCENT_EQUIPMENT_STAT,
     DAO_TREASURE_ALL_ATTRIBUTE_BONUS: 300,
     plugin: class { constructor(options) { Object.assign(this, options); } },
     verc: () => true, channel: async id => id, existplayer: async () => true,
@@ -95,8 +96,28 @@ function fixture(palace = false) {
   state.event = msg => ({ user_id: 'buyer', msg, reply: async text => { state.replies.push(text); return text; } });
   state.rebuild = () => dependencies.Write_equipment('buyer', state.equipment);
   state.find = dependencies.foundthing;
+  state.grantItem = (item, quality, multiplier = 1) => {
+    data.equipment_list = [item];
+    return dependencies.Add_najie_thing('buyer', item.name, '装备', 1, quality, multiplier);
+  };
   return state;
 }
+
+test('字符串发装备的品质和额外倍率保持单件500倍边界，固定装备仍按原倍率发放', async () => {
+  for (const multiplier of [1, 2]) {
+    const f = fixture();
+    const percent = { name: '百分比测试器', class: '装备', type: '武器', atk: 400, def: 200, HP: 499 };
+    await f.grantItem(percent, 5, multiplier);
+    const owned = f.bag.装备[0];
+    assert.deepEqual([owned.atk, owned.def, owned.HP], [499, multiplier === 1 ? 300 : 499, 499]);
+    assert.equal(isFixedStatEquipment(owned), false);
+    assert.equal(percent.atk, 400, '发放不能改写目录中的模板');
+    const fixed = { name: '固定测试器', class: '装备', type: '武器', atk: 1000, def: 200, HP: 300 };
+    await f.grantItem(fixed, 5, multiplier);
+    const fixedOwned = f.bag.装备[1];
+    assert.deepEqual([fixedOwned.atk, fixedOwned.def, fixedOwned.HP], [1500 * multiplier, 300 * multiplier, 450 * multiplier]);
+  }
+});
 
 test('摇光黑金鼎真品和剑宫月华帝剑从兑换到装备均使用正式帝兵定义，实际增加战斗三维', async () => {
   for (const [palace, name, command, method, source] of [

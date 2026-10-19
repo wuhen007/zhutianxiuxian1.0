@@ -16,6 +16,7 @@ import {
   getInnateTreasureProjectionName,
   getDungeonTimedActionMultiplier,
   getTimedActionMultiplier,
+  hasEquippedInnateTreasure,
   isInnateTreasureName,
 } from './innateTreasure.js';
 import { applyQuestionFortuneCost, hasRedDustFortune } from './redDustFortune.js';
@@ -24,8 +25,8 @@ import { calculateExtraAttributeLimit } from './attributeCaps.js';
 import { getRealmAuthorityLevel, getRealmAuthorityPath } from './realmAuthority.js';
 import { ensureDaoHeart } from './daoHeart.js';
 import {
-  isFixedStatEquipment,
-  MAX_EQUIPMENT_PERCENT_BONUS,
+  collectEquipmentStatPools,
+  MAX_PERCENT_EQUIPMENT_STAT,
 } from './equipmentStats.js';
 
 export { calculateExtraAttributeLimit } from './attributeCaps.js';
@@ -82,17 +83,12 @@ export function calculateExtraAttributeState(player) {
   return { limit, attributes: result };
 }
 
-function getSlotStat(slot, field) {
-  const merged = number(slot?.归一属性?.百分比?.[field]);
-  const raw = number(slot?.[field]);
-  const fixedMode = isFixedStatEquipment(slot);
-  const fusionMode = fixedMode && Boolean(slot?.归一来源);
-  return fixedMode
-    ? { rate: fusionMode ? 0 : merged, fusion: fusionMode ? merged : 0, fixed: raw }
-    : { rate: merged + raw, fusion: 0, fixed: 0 };
+function getSlotStat(slot, field, options) {
+  const pools = collectEquipmentStatPools([slot], options);
+  return { rate: pools.percentage[field], fusion: pools.fusion[field], fixed: pools.fixed[field] };
 }
 
-function sumSlotStats(equipment, slotNames) {
+function sumSlotStats(equipment, slotNames, options) {
   const total = {
     atkRate: 0, atkFusion: 0, atkFixed: 0,
     defRate: 0, defFusion: 0, defFixed: 0,
@@ -101,9 +97,9 @@ function sumSlotStats(equipment, slotNames) {
   };
   for (const slotName of slotNames) {
     const slot = equipment?.[slotName] || {};
-    const attack = getSlotStat(slot, 'atk');
-    const defense = getSlotStat(slot, 'def');
-    const health = getSlotStat(slot, 'HP');
+    const attack = getSlotStat(slot, 'atk', options);
+    const defense = getSlotStat(slot, 'def', options);
+    const health = getSlotStat(slot, 'HP', options);
     total.atkRate += attack.rate;
     total.atkFusion += attack.fusion;
     total.atkFixed += attack.fixed;
@@ -118,11 +114,11 @@ function sumSlotStats(equipment, slotNames) {
   return total;
 }
 
-function formatSlot(slotName, slot) {
+function formatSlot(slotName, slot, options) {
   if (!slot?.name) return `${slotName}：无`;
-  const attack = getSlotStat(slot, 'atk');
-  const defense = getSlotStat(slot, 'def');
-  const health = getSlotStat(slot, 'HP');
+  const attack = getSlotStat(slot, 'atk', options);
+  const defense = getSlotStat(slot, 'def', options);
+  const health = getSlotStat(slot, 'HP', options);
   const stat = (value, label) => {
     const parts = [];
     if (value.rate) parts.push(percent(value.rate, true));
@@ -317,23 +313,25 @@ function buildExtraSection(player) {
 }
 
 function buildEquipmentSection(player, equipment, levels) {
-  const ordinary = sumSlotStats(equipment, NORMAL_SLOT_NAMES);
+  const options = { rebalanceOverflow: hasEquippedInnateTreasure(player, '万道神炉', '被动:1') };
+  const ordinary = sumSlotStats(equipment, NORMAL_SLOT_NAMES, options);
   const late = calculateAllAttributeSlotBonuses(player, equipment, levels);
   const imperial = late.imperial;
   const treasure = late.treasure;
   return [
     '【装备加成】',
-    ...NORMAL_SLOT_NAMES.map(slot => formatSlot(slot, equipment?.[slot])),
+    ...NORMAL_SLOT_NAMES.map(slot => formatSlot(slot, equipment?.[slot], options)),
     `普通装备词条合计：攻${percent(ordinary.atkRate, true)}${signedInteger(ordinary.atkFixed)}｜防${percent(ordinary.defRate, true)}${signedInteger(ordinary.defFixed)}｜血${percent(ordinary.hpRate, true)}${signedInteger(ordinary.hpFixed)}｜暴击${percent(ordinary.critical, true)}`,
-    `万象归一独立池：攻${percent(ordinary.atkFusion, true)}｜防${percent(ordinary.defFusion, true)}｜血${percent(ordinary.hpFusion, true)}（单项上限+${MAX_EQUIPMENT_PERCENT_BONUS * 100}%）`,
+    `万象归一词条合计：攻${percent(ordinary.atkFusion, true)}｜防${percent(ordinary.defFusion, true)}｜血${percent(ordinary.hpFusion, true)}`,
+    `百分比规则：单件每项最高+${MAX_PERCENT_EQUIPMENT_STAT * 100}%（含基础${MAX_PERCENT_EQUIPMENT_STAT + 1}倍），普通装备与归一词条多件加算无总上限。`,
     `灵根倍率：攻${percent(player?.灵根?.攻击, true)}｜防${percent(player?.灵根?.防御, true)}｜血${percent(player?.灵根?.生命, true)}`,
     '',
     '【帝兵加成】',
-    formatSlot('帝兵', equipment?.帝兵),
+    formatSlot('帝兵', equipment?.帝兵, options),
     `全属性：${integer(imperial.allAttribute)} × 额外体系基础 × ${imperial.scale}｜实际攻${integer(imperial.attack)} 防${integer(imperial.defense)} 血${integer(imperial.health)}`,
     '',
     '【至宝加成】',
-    formatSlot('至宝', equipment?.至宝),
+    formatSlot('至宝', equipment?.至宝, options),
     `当前先天至宝：${player?.当前先天至宝 || equipment?.至宝?.name || '无'}｜全属性倍率实际攻${integer(treasure.attack)} 防${integer(treasure.defense)} 血${integer(treasure.health)}`,
   ].join('\n');
 }
@@ -450,10 +448,10 @@ function formatSlotValue(stat) {
   return parts.join(' / ') || '0';
 }
 
-function equipmentSlotView(slotName, slot) {
-  const attack = getSlotStat(slot, 'atk');
-  const defense = getSlotStat(slot, 'def');
-  const health = getSlotStat(slot, 'HP');
+function equipmentSlotView(slotName, slot, options) {
+  const attack = getSlotStat(slot, 'atk', options);
+  const defense = getSlotStat(slot, 'def', options);
+  const health = getSlotStat(slot, 'HP', options);
   return {
     slot: slotName,
     name: slot?.自定义名称 || slot?.name || '未装备',
@@ -492,7 +490,8 @@ export function buildPlayerAttributeView({ player, equipment, data, eraIndex = 2
   const context = attributeContext({ player, data, eraIndex, now });
   const { levels, minggeEffects, technique, wudao } = context;
   const extra = calculateExtraAttributeState(player);
-  const ordinary = sumSlotStats(equipment, NORMAL_SLOT_NAMES);
+  const options = { rebalanceOverflow: hasEquippedInnateTreasure(player, '万道神炉', '被动:1') };
+  const ordinary = sumSlotStats(equipment, NORMAL_SLOT_NAMES, options);
   const allAttribute = calculateAllAttributeSlotBonuses(player, equipment, levels);
   const universalReduction = number(player?.全类型减免);
   const universalDamage = number(player?.全伤害类型加成);
@@ -614,9 +613,9 @@ export function buildPlayerAttributeView({ player, equipment, data, eraIndex = 2
       exemption: `光阴豁免：攻 ${signedInteger(player?.光阴加成?.攻)} · 防 ${signedInteger(player?.光阴加成?.防)} · 血 ${signedInteger(player?.光阴加成?.生)}，不进入阈值`,
     },
     equipment: {
-      slots: NORMAL_SLOT_NAMES.map(slotName => equipmentSlotView(slotName, equipment?.[slotName])),
+      slots: NORMAL_SLOT_NAMES.map(slotName => equipmentSlotView(slotName, equipment?.[slotName], options)),
       total: `攻 ${percent(ordinary.atkRate, true)} / ${signedInteger(ordinary.atkFixed)} · 防 ${percent(ordinary.defRate, true)} / ${signedInteger(ordinary.defFixed)} · 血 ${percent(ordinary.hpRate, true)} / ${signedInteger(ordinary.hpFixed)} · 暴击 ${percent(ordinary.critical, true)}`,
-      fusion: `攻 ${percent(ordinary.atkFusion, true)} · 防 ${percent(ordinary.defFusion, true)} · 血 ${percent(ordinary.hpFusion, true)} · 单项上限 +${MAX_EQUIPMENT_PERCENT_BONUS * 100}%`,
+      fusion: `攻 ${percent(ordinary.atkFusion, true)} · 防 ${percent(ordinary.defFusion, true)} · 血 ${percent(ordinary.hpFusion, true)} · 单件每项最高 +${MAX_PERCENT_EQUIPMENT_STAT * 100}%（含基础${MAX_PERCENT_EQUIPMENT_STAT + 1}倍） · 多件加算无总上限`,
       imperial: {
         ...artifactView('帝兵', equipment?.帝兵, allAttribute.imperial, `归属倍率 ${allAttribute.imperial.scale.toFixed(2)}×`),
         note: `${integer(allAttribute.imperial.allAttribute)} × 额外体系基础 × ${allAttribute.imperial.scale.toFixed(2)}，按当前归属与境界结算。`,

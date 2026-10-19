@@ -129,7 +129,7 @@ test('万象归一后的固定值、百分比与原套装效果共同进入面�
   }, { 攻击: 2875, 防御: 1400, 血量上限: 2300 });
 });
 
-test('万象归一在普通百分比封顶后仍从独立池增加三维', () => {
+test('万象归一与超过旧上限的普通百分比装备完整加算', () => {
   const equipment = {
     武器: {
       id: 100054,
@@ -162,7 +162,7 @@ test('万象归一在普通百分比封顶后仍从独立池增加三维', () =>
     { 攻击: 1000, 防御: 1000, 血量上限: 1000 },
     Object.values(merged.equipment),
   );
-  const message = formatFusionResult(merged, equipment).join('\n');
+  const message = formatFusionResult(merged).join('\n');
 
   assert.equal(after.攻击 - before.攻击, 303_960);
   assert.equal(after.防御 - before.防御, 92_510);
@@ -186,10 +186,59 @@ test('万象归一在普通百分比封顶后仍从独立池增加三维', () =>
   );
   assert.equal(merged.target.bao, 1.03);
   assert.match(message, /攻击\+30396% \/ 防御\+9251% \/ 血量\+30396% \/ 暴击\+83%/);
-  assert.match(message, /归一词条与普通百分比装备分别计算\+50000%上限/);
-  assert.match(message, /攻击、防御、血量已达普通百分比\+50000%上限/);
-  assert.match(message, /本次归一词条仍照常生效/);
-  assert.doesNotMatch(message, /三维面板增量为0/);
+  assert.equal(before.攻击, 4_500_559_570);
+  assert.equal(before.防御, 4_500_575_360);
+  assert.equal(before.血量上限, 4_500_725_140);
+  assert.match(message, /单件每项百分比加成最高\+49900%（含基础500倍）/);
+  assert.match(message, /普通装备与归一词条多件加算，无总上限/);
+  assert.doesNotMatch(message, /50000%|截顶|已达普通百分比/);
+});
+
+test('万象归一保留原始词条，结算与展示按单件上限且保留固定数值', () => {
+  const equipment = {
+    武器: { name: '灭仙剑', type: '武器', atk: 1000, def: 2000, HP: 3000 },
+    护具: {}, 法宝: {},
+  };
+  const source = {
+    name: '溢出百分比剑', type: '武器', atk: 498, def: 100, HP: 450, 数量: 1,
+    归一属性: { 百分比: { atk: 4, def: 500, HP: 70 } },
+  };
+  const merged = mergeSetEquipment(equipment, {
+    装备: [source], 道具: [{ name: FUSION_ITEM, 数量: 1 }],
+  }, '武器', source.name);
+
+  assert.deepEqual(merged.target.归一属性.百分比, { atk: 502, def: 600, HP: 520 });
+  assert.deepEqual(calculateEquippedStats(
+    { 攻击: 1000, 防御: 1000, 血量上限: 1000 },
+    [merged.target],
+  ), { 攻击: 501_000, 防御: 502_000, 血量上限: 503_000 });
+  assert.match(formatFusionResult(merged).join('\n'), /归一生效词条：攻击\+49900% \/ 防御\+49900% \/ 血量\+49900%/);
+  assert.equal(equipment.武器.归一属性, undefined);
+  assert.equal(source.数量, 1);
+});
+
+test('万象归一保留源溢出，万道神炉在熔铸前后都补偿同件属性', () => {
+  const source = {
+    name: '溢出百分比剑', type: '武器', atk: 400, def: 100, HP: 200, 数量: 1,
+    归一属性: { 百分比: { atk: 200 } },
+  };
+  const merged = mergeSetEquipment({
+    武器: { name: '灭仙剑', type: '武器', atk: 1000, def: 2000, HP: 3000 },
+  }, {
+    装备: [source], 道具: [{ name: FUSION_ITEM, 数量: 1 }],
+  }, '武器', source.name);
+  const base = { 攻击: 1000, 防御: 1000, 血量上限: 1000 };
+  const options = { rebalanceOverflow: true };
+
+  assert.deepEqual(merged.target.归一属性.百分比, { atk: 600, def: 100, HP: 200 });
+  assert.deepEqual(calculateEquippedStats(base, [source], options), {
+    攻击: 500_000, 防御: 202_000, 血量上限: 201_000,
+  });
+  assert.deepEqual(calculateEquippedStats(base, [merged.target], options), {
+    攻击: 501_000, 防御: 204_000, 血量上限: 204_000,
+  });
+  assert.match(formatFusionResult(merged, options).join('\n'), /攻击\+49900% \/ 防御\+20100% \/ 血量\+20000%/);
+  assert.match(formatFusionResult(merged).join('\n'), /攻击\+49900% \/ 防御\+10000% \/ 血量\+20000%/);
 });
 
 test('准仙帝可用两万道痕兑换一点纪元积累', () => {

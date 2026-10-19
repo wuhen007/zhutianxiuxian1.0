@@ -126,7 +126,7 @@ import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 import { isCultivatingExtraPath } from '../../model/extraCultivation.js';
 import { isHighRealmConsumableRestricted } from '../../model/realmAuthority.js';
 import { selectEquipmentByCode } from '../../model/equipmentSwap.js';
-import { isCanonicalDaluoSwordEmbryo } from '../../model/equipmentStats.js';
+import { isCanonicalDaluoSwordEmbryo, isFixedStatEquipment, MAX_PERCENT_EQUIPMENT_STAT } from '../../model/equipmentStats.js';
 import {
   calculateLifeSourceRepairBaseCost,
   getLifeSourceRepairMaximum,
@@ -6172,13 +6172,18 @@ if (thing_name == '重铸石') {
             atk: equipment[type[j]].atk,
             def: equipment[type[j]].def,
             HP: equipment[type[j]].HP,
-            isValue: isValueEquipment(equipment[type[j]]) // 记录原始类型
+            isValue: isFixedStatEquipment(equipment[type[j]]) // 记录原始类型
         };
         
         // 重铸计算
         equipment[type[j]].atk = (equipment[type[j]].atk / z[equipment[type[j]].pinji]) * z[random];
         equipment[type[j]].def = (equipment[type[j]].def / z[equipment[type[j]].pinji]) * z[random];
         equipment[type[j]].HP = (equipment[type[j]].HP / z[equipment[type[j]].pinji]) * z[random];
+        if (!original.isValue) {
+            for (const field of ['atk', 'def', 'HP']) {
+                equipment[type[j]][field] = Math.min(equipment[type[j]][field], MAX_PERCENT_EQUIPMENT_STAT);
+            }
+        }
         equipment[type[j]].pinji = random;
 
         // 构建结果消息
@@ -7848,12 +7853,6 @@ function formatTime(ms) {
         return `${seconds}秒`;
     }
 }
-// 判断是否为数值装备
-function isValueEquipment(item) {
-    return item.atk > 499 || item.def > 499 || item.HP > 499;
-}
-
-
 /**
  * 检查并移除圣体秘术加成和光阴加成
  * @param {Object} player 玩家对象

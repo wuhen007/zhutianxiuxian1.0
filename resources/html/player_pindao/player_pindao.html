@@ -173,26 +173,26 @@
             equipment.武器.HP>499}}
             <div class="item_int2">属性:无</div>
             <div class="item_int2">
-              攻击：{{(equipment.武器.atk || 0).toFixed(0)}}{{if equipment.武器.归一属性 && equipment.武器.归一属性.百分比 && equipment.武器.归一属性.百分比.atk}}（+{{(equipment.武器.归一属性.百分比.atk*100).toFixed(0)}}%）{{/if}}
+              攻击：{{(equipment.武器.atk || 0).toFixed(0)}}{{if equipment.武器.归一属性 && equipment.武器.归一属性.百分比 && equipment.武器.归一属性.百分比.atk}}（+{{set equipmentPercent = equipment.武器.归一属性.百分比.atk}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%）{{/if}}
             </div>
             <div class="item_int2">
-              防御：{{(equipment.武器.def || 0).toFixed(0)}}{{if equipment.武器.归一属性 && equipment.武器.归一属性.百分比 && equipment.武器.归一属性.百分比.def}}（+{{(equipment.武器.归一属性.百分比.def*100).toFixed(0)}}%）{{/if}}
+              防御：{{(equipment.武器.def || 0).toFixed(0)}}{{if equipment.武器.归一属性 && equipment.武器.归一属性.百分比 && equipment.武器.归一属性.百分比.def}}（+{{set equipmentPercent = equipment.武器.归一属性.百分比.def}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%）{{/if}}
             </div>
             <div class="item_int2">
-              血量：{{(equipment.武器.HP || 0).toFixed(0)}}{{if equipment.武器.归一属性 && equipment.武器.归一属性.百分比 && equipment.武器.归一属性.百分比.HP}}（+{{(equipment.武器.归一属性.百分比.HP*100).toFixed(0)}}%）{{/if}}
+              血量：{{(equipment.武器.HP || 0).toFixed(0)}}{{if equipment.武器.归一属性 && equipment.武器.归一属性.百分比 && equipment.武器.归一属性.百分比.HP}}（+{{set equipmentPercent = equipment.武器.归一属性.百分比.HP}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%）{{/if}}
             </div>
             {{else}}
             <div class="item_int2">
               属性:{{['金','木','土','水','火'][equipment.武器.id-1]}}
             </div>
             <div class="item_int2">
-              攻击:{{(((equipment.武器.atk || 0) + ((equipment.武器.归一属性 && equipment.武器.归一属性.百分比 && equipment.武器.归一属性.百分比.atk) || 0))*100).toFixed(0)}}%
+              攻击:{{set equipmentPercent = ((equipment.武器.atk || 0) + ((equipment.武器.归一属性 && equipment.武器.归一属性.百分比 && equipment.武器.归一属性.百分比.atk) || 0))}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%
             </div>
             <div class="item_int2">
-              防御:{{(((equipment.武器.def || 0) + ((equipment.武器.归一属性 && equipment.武器.归一属性.百分比 && equipment.武器.归一属性.百分比.def) || 0))*100).toFixed(0)}}%
+              防御:{{set equipmentPercent = ((equipment.武器.def || 0) + ((equipment.武器.归一属性 && equipment.武器.归一属性.百分比 && equipment.武器.归一属性.百分比.def) || 0))}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%
             </div>
             <div class="item_int2">
-              血量:{{(((equipment.武器.HP || 0) + ((equipment.武器.归一属性 && equipment.武器.归一属性.百分比 && equipment.武器.归一属性.百分比.HP) || 0))*100).toFixed(0)}}%
+              血量:{{set equipmentPercent = ((equipment.武器.HP || 0) + ((equipment.武器.归一属性 && equipment.武器.归一属性.百分比 && equipment.武器.归一属性.百分比.HP) || 0))}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%
             </div>
             {{/if}}
             <div class="item_int2">暴击：{{equipment.武器.bao}}</div>
@@ -227,26 +227,26 @@
             equipment.护具.HP>499}}
             <div class="item_int2">属性:无</div>
             <div class="item_int2">
-              攻击：{{(equipment.护具.atk || 0).toFixed(0)}}{{if equipment.护具.归一属性 && equipment.护具.归一属性.百分比 && equipment.护具.归一属性.百分比.atk}}（+{{(equipment.护具.归一属性.百分比.atk*100).toFixed(0)}}%）{{/if}}
+              攻击：{{(equipment.护具.atk || 0).toFixed(0)}}{{if equipment.护具.归一属性 && equipment.护具.归一属性.百分比 && equipment.护具.归一属性.百分比.atk}}（+{{set equipmentPercent = equipment.护具.归一属性.百分比.atk}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%）{{/if}}
             </div>
             <div class="item_int2">
-              防御：{{(equipment.护具.def || 0).toFixed(0)}}{{if equipment.护具.归一属性 && equipment.护具.归一属性.百分比 && equipment.护具.归一属性.百分比.def}}（+{{(equipment.护具.归一属性.百分比.def*100).toFixed(0)}}%）{{/if}}
+              防御：{{(equipment.护具.def || 0).toFixed(0)}}{{if equipment.护具.归一属性 && equipment.护具.归一属性.百分比 && equipment.护具.归一属性.百分比.def}}（+{{set equipmentPercent = equipment.护具.归一属性.百分比.def}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%）{{/if}}
             </div>
             <div class="item_int2">
-              血量：{{(equipment.护具.HP || 0).toFixed(0)}}{{if equipment.护具.归一属性 && equipment.护具.归一属性.百分比 && equipment.护具.归一属性.百分比.HP}}（+{{(equipment.护具.归一属性.百分比.HP*100).toFixed(0)}}%）{{/if}}
+              血量：{{(equipment.护具.HP || 0).toFixed(0)}}{{if equipment.护具.归一属性 && equipment.护具.归一属性.百分比 && equipment.护具.归一属性.百分比.HP}}（+{{set equipmentPercent = equipment.护具.归一属性.百分比.HP}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%）{{/if}}
             </div>
             {{else}}
             <div class="item_int2">
               属性:{{['金','木','土','水','火'][equipment.护具.id-1]}}
             </div>
             <div class="item_int2">
-              攻击:{{(((equipment.护具.atk || 0) + ((equipment.护具.归一属性 && equipment.护具.归一属性.百分比 && equipment.护具.归一属性.百分比.atk) || 0))*100).toFixed(0)}}%
+              攻击:{{set equipmentPercent = ((equipment.护具.atk || 0) + ((equipment.护具.归一属性 && equipment.护具.归一属性.百分比 && equipment.护具.归一属性.百分比.atk) || 0))}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%
             </div>
             <div class="item_int2">
-              防御:{{(((equipment.护具.def || 0) + ((equipment.护具.归一属性 && equipment.护具.归一属性.百分比 && equipment.护具.归一属性.百分比.def) || 0))*100).toFixed(0)}}%
+              防御:{{set equipmentPercent = ((equipment.护具.def || 0) + ((equipment.护具.归一属性 && equipment.护具.归一属性.百分比 && equipment.护具.归一属性.百分比.def) || 0))}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%
             </div>
             <div class="item_int2">
-              血量:{{(((equipment.护具.HP || 0) + ((equipment.护具.归一属性 && equipment.护具.归一属性.百分比 && equipment.护具.归一属性.百分比.HP) || 0))*100).toFixed(0)}}%
+              血量:{{set equipmentPercent = ((equipment.护具.HP || 0) + ((equipment.护具.归一属性 && equipment.护具.归一属性.百分比 && equipment.护具.归一属性.百分比.HP) || 0))}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%
             </div>
             {{/if}}
             <div class="item_int2">暴击：{{equipment.护具.bao}}</div>
@@ -281,26 +281,26 @@
             equipment.法宝.HP>499}}
             <div class="item_int2">属性:无</div>
             <div class="item_int2">
-              攻击：{{(equipment.法宝.atk || 0).toFixed(0)}}{{if equipment.法宝.归一属性 && equipment.法宝.归一属性.百分比 && equipment.法宝.归一属性.百分比.atk}}（+{{(equipment.法宝.归一属性.百分比.atk*100).toFixed(0)}}%）{{/if}}
+              攻击：{{(equipment.法宝.atk || 0).toFixed(0)}}{{if equipment.法宝.归一属性 && equipment.法宝.归一属性.百分比 && equipment.法宝.归一属性.百分比.atk}}（+{{set equipmentPercent = equipment.法宝.归一属性.百分比.atk}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%）{{/if}}
             </div>
             <div class="item_int2">
-              防御：{{(equipment.法宝.def || 0).toFixed(0)}}{{if equipment.法宝.归一属性 && equipment.法宝.归一属性.百分比 && equipment.法宝.归一属性.百分比.def}}（+{{(equipment.法宝.归一属性.百分比.def*100).toFixed(0)}}%）{{/if}}
+              防御：{{(equipment.法宝.def || 0).toFixed(0)}}{{if equipment.法宝.归一属性 && equipment.法宝.归一属性.百分比 && equipment.法宝.归一属性.百分比.def}}（+{{set equipmentPercent = equipment.法宝.归一属性.百分比.def}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%）{{/if}}
             </div>
             <div class="item_int2">
-              血量：{{(equipment.法宝.HP || 0).toFixed(0)}}{{if equipment.法宝.归一属性 && equipment.法宝.归一属性.百分比 && equipment.法宝.归一属性.百分比.HP}}（+{{(equipment.法宝.归一属性.百分比.HP*100).toFixed(0)}}%）{{/if}}
+              血量：{{(equipment.法宝.HP || 0).toFixed(0)}}{{if equipment.法宝.归一属性 && equipment.法宝.归一属性.百分比 && equipment.法宝.归一属性.百分比.HP}}（+{{set equipmentPercent = equipment.法宝.归一属性.百分比.HP}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%）{{/if}}
             </div>
             {{else}}
             <div class="item_int2">
               属性:{{['金','木','土','水','火'][equipment.法宝.id-1]}}
             </div>
             <div class="item_int2">
-              攻击:{{(((equipment.法宝.atk || 0) + ((equipment.法宝.归一属性 && equipment.法宝.归一属性.百分比 && equipment.法宝.归一属性.百分比.atk) || 0))*100).toFixed(0)}}%
+              攻击:{{set equipmentPercent = ((equipment.法宝.atk || 0) + ((equipment.法宝.归一属性 && equipment.法宝.归一属性.百分比 && equipment.法宝.归一属性.百分比.atk) || 0))}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%
             </div>
             <div class="item_int2">
-              防御:{{(((equipment.法宝.def || 0) + ((equipment.法宝.归一属性 && equipment.法宝.归一属性.百分比 && equipment.法宝.归一属性.百分比.def) || 0))*100).toFixed(0)}}%
+              防御:{{set equipmentPercent = ((equipment.法宝.def || 0) + ((equipment.法宝.归一属性 && equipment.法宝.归一属性.百分比 && equipment.法宝.归一属性.百分比.def) || 0))}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%
             </div>
             <div class="item_int2">
-              血量:{{(((equipment.法宝.HP || 0) + ((equipment.法宝.归一属性 && equipment.法宝.归一属性.百分比 && equipment.法宝.归一属性.百分比.HP) || 0))*100).toFixed(0)}}%
+              血量:{{set equipmentPercent = ((equipment.法宝.HP || 0) + ((equipment.法宝.归一属性 && equipment.法宝.归一属性.百分比 && equipment.法宝.归一属性.百分比.HP) || 0))}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%
             </div>
             {{/if}}
             <div class="item_int2">暴击：{{equipment.法宝.bao}}</div>

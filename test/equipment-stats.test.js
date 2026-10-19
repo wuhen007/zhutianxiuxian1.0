@@ -4,6 +4,7 @@ import test from 'node:test';
 
 import {
   calculateEquippedStats,
+  collectEquipmentStatPools,
   calculateEquipmentSetBonuses,
   getEquipmentAllAttributeMultiplier,
   isCanonicalDaluoSwordEmbryo,
@@ -57,7 +58,7 @@ test('装备百分比统一加算后只乘一次基础属性', () => {
   );
   assert.equal(calculateEquippedStats(base, [{ atk: 1.6 }]).攻击, 2600);
   // 三件各 +9900% 的百分比装备：先加算（29700%）后乘一次基础属性，
-  // 未达 50000% 上限，最终倍率为 298 倍
+  // 多件加算，最终倍率为 298 倍
   assert.deepEqual(
     calculateEquippedStats(base, [
       { atk: 99, def: 99, HP: 99 },
@@ -81,31 +82,30 @@ test('装备百分比统一加算后只乘一次基础属性', () => {
   );
 });
 
-test('百分比装备单属性加成上限为 50000%', () => {
+test('单件百分比加成最高499，含基础500倍；多件叠加无总上限', () => {
   const base = { 攻击: 1000, 防御: 1000, 血量上限: 1000 };
-  // 60000% 应被钳制到 50000%（501 倍）
+  for (const count of [1, 2, 3, 5]) {
+    const slots = Array.from({ length: count }, () => ({ atk: 499, def: 499, HP: 499 }));
+    const expected = 1000 * (1 + 499 * count);
+    assert.deepEqual(calculateEquippedStats(base, slots), {
+      攻击: expected, 防御: expected, 血量上限: expected,
+    });
+  }
+  // 追加词条与本件基础词条共用单件上限。
+  assert.equal(calculateEquippedStats(base, [{ atk: 400, 归一属性: { 百分比: { atk: 200 } } }]).攻击, 500000);
   assert.equal(
     calculateEquippedStats(base, [{ 归一属性: { 百分比: { atk: 600 } } }]).攻击,
-    501000
+    500000
   );
-  // 6000% 未达上限，正常生效（61 倍）
+  // 固定数值装备仍按原规则加算，不把500点固定攻击改成百分比。
+  assert.equal(calculateEquippedStats(base, [{ atk: 500 }]).攻击, 1500);
   assert.equal(
     calculateEquippedStats(base, [{ 归一属性: { 百分比: { atk: 60 } } }]).攻击,
     61000
   );
-  // 恰好 5000% 正常生效（51 倍）
-  assert.equal(
-    calculateEquippedStats(base, [{ 归一属性: { 百分比: { atk: 50 } } }]).攻击,
-    51000
-  );
-  // 4900% 正常生效（50 倍）
-  assert.equal(
-    calculateEquippedStats(base, [{ 归一属性: { 百分比: { atk: 49 } } }]).攻击,
-    50000
-  );
 });
 
-test('万象归一与普通百分比装备分池封顶后继续加算', () => {
+test('万象归一与普通百分比装备分别汇总后无上限加算', () => {
   const base = { 攻击: 1000, 防御: 1000, 血量上限: 1000 };
   const fixedFusion = {
     name: '大罗剑胎',
@@ -122,10 +122,10 @@ test('万象归一与普通百分比装备分池封顶后继续加算', () => {
 
   assert.deepEqual(
     calculateEquippedStats(base, [fixedFusion, ...ordinaryOverflow]),
-    { 攻击: 802000, 防御: 603000, 血量上限: 704000 },
+    { 攻击: 902000, 防御: 703000, 血量上限: 804000 },
   );
 
-  // 两池均未封顶时仍沿用原来的加算曲线，不引入额外交叉倍率。
+  // 沿用加算曲线，不引入额外交叉倍率。
   assert.deepEqual(
     calculateEquippedStats(base, [
       { atk: 0.5, def: 0.5, HP: 0.5 },
@@ -154,22 +154,37 @@ test('只有万象归一标记进入独立池，天骄洗礼等旧词条仍留�
         归一属性: { 百分比: { atk: 100, def: 100, HP: 100 } },
       },
     ]),
-    { 攻击: 502000, 防御: 503000, 血量上限: 504000 },
+    { 攻击: 702000, 防御: 703000, 血量上限: 704000 },
   );
 });
 
-test('万象归一独立池单属性上限同为 50000%', () => {
+test('万象归一单件限499，多件词条合计不封顶且固定值完整保留', () => {
   const base = { 攻击: 1000, 防御: 1000, 血量上限: 1000 };
+  const item = {
+    atk: 1000, def: 2000, HP: 3000,
+    归一来源: '百分比装备',
+    归一属性: { 百分比: { atk: 600, def: 600, HP: 600 } },
+  };
   assert.deepEqual(
-    calculateEquippedStats(base, [{
-      atk: 1000,
-      def: 2000,
-      HP: 3000,
-      归一来源: '百分比装备',
-      归一属性: { 百分比: { atk: 600, def: 600, HP: 600 } },
-    }]),
-    { 攻击: 502000, 防御: 503000, 血量上限: 504000 },
+    calculateEquippedStats(base, [item]),
+    { 攻击: 501000, 防御: 502000, 血量上限: 503000 },
   );
+  assert.deepEqual(calculateEquippedStats(base, [item, item]), {
+    攻击: 1001000, 防御: 1003000, 血量上限: 1005000,
+  });
+  assert.deepEqual(collectEquipmentStatPools([item, item]).fusion, { atk: 998, def: 998, HP: 998 });
+  assert.equal(item.归一属性.百分比.atk, 600, '结算不改写历史装备数据');
+});
+
+test('截图中的换防具案例：血量加成超过旧500限额后仍继续增加', () => {
+  const base = { 攻击: 1000, 防御: 1000, 血量上限: 1000 };
+  const weapon = { atk: 276, def: 84, HP: 276 };
+  const treasure = { atk: 199.52, def: 299.28, HP: 297.25 };
+  const before = calculateEquippedStats(base, [weapon, { atk: 3.74, def: 3.74, HP: 3.74 }, treasure]);
+  const after = calculateEquippedStats(base, [weapon, treasure, treasure]);
+  assert.deepEqual(before, { 攻击: 480260, 防御: 388020, 血量上限: 577990 });
+  assert.deepEqual(after, { 攻击: 676040, 防御: 683560, 血量上限: 871500 });
+  assert.ok(after.血量上限 > before.血量上限);
 });
 
 test('可赋名百分比装备以499为单属性上限', () => {
@@ -185,24 +200,25 @@ test('带攻击字段的普通道具不会被当成百分比装备', () => {
   assert.equal(isNameablePercentageEquipment({ class: '道具', type: '道具', atk: 2 }), false);
 });
 
-test('万道神炉：百分比装备溢出自动补偿至理论极限（不溢出不丢失）', () => {
-  // 攻超出（600）：100 点溢出按序补偿给第一个未达极限的属性（防）
-  assert.deepEqual(rebalancePercentBonuses(600, 100, 200), { atk: 500, def: 200, HP: 200, overflow: 0 });
-  // 防超出（600）：溢出补攻
-  assert.deepEqual(rebalancePercentBonuses(300, 600, 300), { atk: 400, def: 500, HP: 300, overflow: 0 });
-  // 全部未超：原样保留
+test('万道神炉：单件内补偿到499，多件合计不截顶也不跨件转移', () => {
+  assert.deepEqual(rebalancePercentBonuses(600, 100, 200), { atk: 499, def: 201, HP: 200, overflow: 0 });
+  assert.deepEqual(rebalancePercentBonuses(300, 600, 300), { atk: 401, def: 499, HP: 300, overflow: 0 });
   assert.deepEqual(rebalancePercentBonuses(100, 200, 300), { atk: 100, def: 200, HP: 300, overflow: 0 });
-  // 全部超出：全部钳制到极限（无可补偿目标，剩余溢出丢弃）
-  assert.deepEqual(rebalancePercentBonuses(600, 600, 600), { atk: 500, def: 500, HP: 500, overflow: 300 });
+  assert.deepEqual(rebalancePercentBonuses(600, 600, 600), { atk: 499, def: 499, HP: 499, overflow: 303 });
 
   const base = { 攻击: 1000, 防御: 1000, 血量上限: 1000 };
-  // 攻 60000%、防 10000%、血 20000%：默认模式攻被截断丢弃；补偿模式下溢出补防、血，最终全部达 50000% 极限
-  const slots = [{ 归一属性: { 百分比: { atk: 600, def: 100, HP: 200 } } }];
-  assert.equal(calculateEquippedStats(base, slots).攻击, 501000);
-  assert.equal(calculateEquippedStats(base, slots).防御, 101000);
-  assert.equal(calculateEquippedStats(base, slots).血量上限, 201000);
-  const compensated = calculateEquippedStats(base, slots, { rebalanceOverflow: true });
-  assert.deepEqual(compensated, { 攻击: 501000, 防御: 201000, 血量上限: 201000 });
+  const slots = [
+    { 归一属性: { 百分比: { atk: 600, def: 100, HP: 200 } } },
+    { atk: 100, def: 100, HP: 100 },
+  ];
+  assert.deepEqual(calculateEquippedStats(base, slots), { 攻击: 600000, 防御: 201000, 血量上限: 301000 });
+  assert.deepEqual(calculateEquippedStats(base, slots, { rebalanceOverflow: true }), {
+    攻击: 600000, 防御: 302000, 血量上限: 301000,
+  });
+  assert.deepEqual(calculateEquippedStats(base, [
+    { 归一属性: { 百分比: { atk: 600, def: 600, HP: 600 } } },
+    { atk: 1, def: 1, HP: 1 },
+  ], { rebalanceOverflow: true }), { 攻击: 501000, 防御: 501000, 血量上限: 501000 });
 });
 
 test('大罗剑胎对至尊体系列提供十五倍，其他灵根提供七点五倍', () => {

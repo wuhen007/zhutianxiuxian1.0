@@ -253,7 +253,7 @@ import {
   hasEngravedCoordinate,
   isInstantAllHeavensTravel,
 } from './weimianTravel.js';
-import { calculateEquippedStats, calculateEquipmentSetBonuses } from './equipmentStats.js';
+import { calculateEquippedStats, calculateEquipmentSetBonuses, isFixedStatEquipment, MAX_PERCENT_EQUIPMENT_STAT } from './equipmentStats.js';
 import {
   applyRelicBattleOpening,
   applyRelicEffectsToPlayer,
@@ -1635,7 +1635,7 @@ export async function Write_equipment(usr_qq, equipment, previewPlayer = null) {
   player.血量上限 = player.血量上限 * (1 + 灵根生命);
   let type = ['武器', '护具', '法宝', '帝兵', '至宝'];
   const equippedStats = calculateEquippedStats(player, type.map(i => equipment[i]), {
-    // 万道神炉被动：百分比装备属性溢出自动补偿至理论极限
+    // 万道神炉被动：百分比装备溢出补偿给同件未满属性。
     rebalanceOverflow: hasEquippedInnateTreasure(player, '万道神炉', '被动:1'),
   });
   player.攻击 = equippedStats.攻击;
@@ -5831,6 +5831,11 @@ export async function Add_najie_thing(
             equ.atk *= z[pinji] * safeEquipmentMultiplier;
             equ.def *= z[pinji] * safeEquipmentMultiplier;
             equ.HP *= z[pinji] * safeEquipmentMultiplier;
+            if (!isFixedStatEquipment(thing)) {
+              for (const field of ['atk', 'def', 'HP']) {
+                equ[field] = Math.min(equ[field], MAX_PERCENT_EQUIPMENT_STAT);
+              }
+            }
             equ.数量 = x;
             equ.islockd = thing.不可交易 || thing.全服唯一 ? 1 : 0;
             najie[thing_class].push(equ);

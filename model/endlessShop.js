@@ -7,7 +7,7 @@ import {
   collectEquipmentStatPools,
   isCanonicalDaluoSwordEmbryo,
   isFixedStatEquipment,
-  MAX_EQUIPMENT_PERCENT_BONUS,
+  MAX_PERCENT_EQUIPMENT_STAT,
 } from './equipmentStats.js';
 import {
   formatRealmEventLocation,
@@ -68,58 +68,20 @@ function percentageStats(item) {
   };
 }
 
-const EQUIPMENT_STAT_LABELS = { atk: '攻击', def: '防御', HP: '血量' };
-const EQUIPMENT_SLOTS = ['武器', '护具', '法宝', '帝兵', '至宝'];
-
 function formatRate(rate) {
   return `${Number(((Number(rate) || 0) * 100).toFixed(2))}%`;
 }
 
-function equipmentStatPools(equipment) {
-  return collectEquipmentStatPools(
-    EQUIPMENT_SLOTS.map(slotName => equipment?.[slotName]),
-  );
-}
-
-export function formatFusionResult(merged, previousEquipment) {
-  const pct = merged.target.归一属性.百分比;
+export function formatFusionResult(merged, options) {
+  const pct = collectEquipmentStatPools([merged.target], options).fusion;
   const sourceCritical = Number(merged.source?.bao) || 0;
-  const lines = [
+  return [
     '【万象归一·熔铸成功】',
     `${merged.target.name}吞纳了${merged.source.name}的道则`,
-    `归一词条：攻击+${formatRate(pct.atk)} / 防御+${formatRate(pct.def)} / 血量+${formatRate(pct.HP)} / 暴击+${formatRate(sourceCritical)}`,
+    `归一生效词条：攻击+${formatRate(pct.atk)} / 防御+${formatRate(pct.def)} / 血量+${formatRate(pct.HP)} / 暴击+${formatRate(sourceCritical)}`,
     '原数值属性与套装效果完整保留。',
-    `结算方式：归一词条与普通百分比装备分别计算+${MAX_EQUIPMENT_PERCENT_BONUS * 100}%上限，套装效果在其后独立生效。`,
+    `结算方式：单件每项百分比加成最高+${MAX_PERCENT_EQUIPMENT_STAT * 100}%（含基础${MAX_PERCENT_EQUIPMENT_STAT + 1}倍）；普通装备与归一词条多件加算，无总上限；套装效果随后独立生效。`,
   ];
-  const before = equipmentStatPools(previousEquipment);
-  const after = equipmentStatPools(merged.equipment);
-  const ordinaryCapped = Object.keys(before.percentage).filter(
-    field => before.percentage[field] >= MAX_EQUIPMENT_PERCENT_BONUS,
-  );
-  const fusionAlreadyCapped = Object.keys(before.fusion).filter(
-    field => before.fusion[field] >= MAX_EQUIPMENT_PERCENT_BONUS,
-  );
-  const fusionNewlyCapped = Object.keys(after.fusion).filter(
-    field => before.fusion[field] < MAX_EQUIPMENT_PERCENT_BONUS
-      && after.fusion[field] > MAX_EQUIPMENT_PERCENT_BONUS,
-  );
-
-  if (ordinaryCapped.length) {
-    lines.push(
-      `普通装备提示：${ordinaryCapped.map(field => EQUIPMENT_STAT_LABELS[field]).join('、')}已达普通百分比+${MAX_EQUIPMENT_PERCENT_BONUS * 100}%上限，本次归一词条仍照常生效。`,
-    );
-  }
-  if (fusionAlreadyCapped.length) {
-    lines.push(
-      `归一上限提示：归一前${fusionAlreadyCapped.map(field => EQUIPMENT_STAT_LABELS[field]).join('、')}已达归一词条+${MAX_EQUIPMENT_PERCENT_BONUS * 100}%上限，对应新增部分本次截顶。`,
-    );
-  }
-  if (fusionNewlyCapped.length) {
-    lines.push(
-      `归一上限提示：${fusionNewlyCapped.map(field => EQUIPMENT_STAT_LABELS[field]).join('、')}本次在独立+${MAX_EQUIPMENT_PERCENT_BONUS * 100}%上限处截顶，超出部分保留在归一词条中。`,
-    );
-  }
-  return lines;
 }
 
 export function findEndlessProduct(selector) {

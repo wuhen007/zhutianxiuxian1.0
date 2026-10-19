@@ -107,6 +107,34 @@ test('归一追加词条在所有装备模板中可编译并正确合并显示',
           出售价: 1,
           归一属性: { 百分比: { atk: 0.12 } },
         },
+        {
+          id: 3,
+          name: '百分比溢出剑',
+          type: '武器',
+          pinji: 0,
+          islockd: 0,
+          atk: 300,
+          def: 0,
+          HP: 0,
+          bao: 0,
+          数量: 1,
+          出售价: 1,
+          归一属性: { 百分比: { atk: 300 } },
+        },
+        {
+          id: 4,
+          name: '固定归一溢出剑',
+          type: '武器',
+          pinji: 0,
+          islockd: 0,
+          atk: 1000,
+          def: 0,
+          HP: 0,
+          bao: 0,
+          数量: 1,
+          出售价: 1,
+          归一属性: { 百分比: { atk: 600 } },
+        },
       ],
       丹药: [],
       道具: [],
@@ -123,6 +151,30 @@ test('归一追加词条在所有装备模板中可编译并正确合并显示',
 
   assert.match(output, /攻击：1000（\+50%）/);
   assert.match(output, /攻击：62%/);
+  assert.match(output, /攻击：49900%/);
+  assert.match(output, /攻击：1000（\+49900%）/);
+  assert.doesNotMatch(output, /60000%/);
+});
+
+test('所有装备模板的单件百分比都按499上限渲染，保留正常小数词条', () => {
+  for (const file of EQUIPMENT_HTML_FILES) {
+    const expressions = read(file).match(/\{\{set equipmentPercent = [^\r\n]+?\}\}\{\{[^\r\n]+?\}\}/g) || [];
+    assert.ok(expressions.length >= 6, `${file} 缺少装备百分比展示`);
+    for (const rate of [600, 499, 1.6]) {
+      const item = {
+        atk: 0, def: 0, HP: 0,
+        归一属性: { 百分比: { atk: rate, def: rate, HP: rate } },
+      };
+      const data = {
+        item, arms: item, armor: item, treasure: item,
+        equipment: { 武器: item, 护具: item, 法宝: item, 帝兵: item },
+        $value: { name: item },
+      };
+      for (const expression of expressions) {
+        assert.equal(template.render(expression, data), (Math.min(499, rate) * 100).toFixed(0), file);
+      }
+    }
+  }
 });
 
 test('装备列表内置百分比装备与战斗规则自洽', () => {

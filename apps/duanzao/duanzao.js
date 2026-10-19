@@ -53,7 +53,11 @@ import {
   isEquipmentNameTooLong,
   parseEquipmentNamingCommand,
 } from '../../model/equipmentNaming.js';
-import { isNameablePercentageEquipment } from '../../model/equipmentStats.js';
+import {
+  isNameablePercentageEquipment,
+  MAX_PERCENT_EQUIPMENT_STAT,
+  rebalancePercentBonuses,
+} from '../../model/equipmentStats.js';
 import {
   buildRelativeTianjiaoCombatant,
   selectHostileTianjiao,
@@ -770,6 +774,13 @@ export class duanzao extends plugin {
           出售价: Math.floor(1000000 * sum),
           稀有度: Math.max(1, Math.min(10, Number(newwupin[new1].稀有度) || 1)),
         };
+        // 先处理本件溢出，再封顶，避免炼制数值越界后被识别成固定属性装备。
+        const forgedStats = hasEquippedInnateTreasure(player, '万道神炉', '被动:1')
+          ? rebalancePercentBonuses(zhuangbei.atk, zhuangbei.def, zhuangbei.HP)
+          : zhuangbei;
+        for (const field of ['atk', 'def', 'HP']) {
+          zhuangbei[field] = Math.min(MAX_PERCENT_EQUIPMENT_STAT, forgedStats[field]);
+        }
 
         if (moonlightCost) {
           if (!getSuiyunStage(player) || !spendMoonlight(player, 1000)) return e.reply('月华值不足，本次完美开炉需要1000点月华值。');
