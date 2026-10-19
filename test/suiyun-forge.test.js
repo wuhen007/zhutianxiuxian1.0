@@ -4,6 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import * as core from '../model/suiyun.js';
 import * as occupations from '../model/occupationCollection.js';
+import * as equipmentStats from '../model/equipmentStats.js';
 import { withPlayerMutationLock } from '../utils/playerMutationLock.js';
 
 const read = file => fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
@@ -23,7 +24,7 @@ function fixture(stage = 1) {
     values: new Map(), grants: 0, writes: 0, replies: [],
   };
   const deps = {
-    ...core, ...occupations, path, withPlayerMutationLock,
+    ...core, ...occupations, ...equipmentStats, path, withPlayerMutationLock,
     getActiveZhutianAvatarName: player => player.诸天镜系统?.当前化身 || '',
     plugin: class { constructor(options) { Object.assign(this, options); } },
     verc: () => true, channel: async id => id, existplayer: async () => true, Go: async () => true,
@@ -40,7 +41,7 @@ function fixture(stage = 1) {
       : name === '炼器炉' ? furnaces : [{ name: '测试器胚', atk: 1, def: 0, HP: 1 }],
     readthat: async (name, category) => category === '炼器炉' ? furnaces.find(item => item.name === name)
       : category === '炼器火' ? fires.find(item => item.name === name)
-      : category === '锻造材料' ? { 攻: 1, 防: 0, 血: 1, 暴: 0, 金: 0, 木: 0, 土: 0, 水: 0, 火: 0 } : null,
+      : category === '锻造材料' ? { 攻: 1, 防: 0, 血: 1, 暴: 0, 金: 0, 木: 0, 土: 0, 水: 0, 火: 0, ...state.material } : null,
     exist_najie_thing: async (_id, name) => state.tokens[name] || 0,
     Add_najie_thing: async (_id, item, category, amount) => {
       if (state.failGrant) throw new Error('fixture-grant-failed');
@@ -58,6 +59,7 @@ function fixture(stage = 1) {
     },
     getMinggeEffects: () => ({}), getMinggeBonusMultiplier: () => 1,
     getAuthorityState: player => player.先天权柄 ||= {},
+    hasEquippedInnateTreasure: (player, name) => player.当前先天至宝 === name,
     getPetAbilityBonus: () => 0, selectHostileTianjiao: async () => null,
     getRealmEventWorldYear: () => 0,
     getxuanze: async () => ['金', 1],
@@ -169,6 +171,35 @@ test('岁云五阶段恰好1000月华可完美开炉，扣至0且不消耗道具
     assert.equal(f.grants, 1);
     assert.equal(f.tokens.时光令, 1);
     assert.equal(f.tokens.造化本源, 1);
+  }
+});
+
+test('三种开炉模式均将成品三维限制为单件500倍，超限材料仍产出百分比装备', async () => {
+  for (const mode of ['normal', 'oneclick', 'perfect']) {
+    const f = fixture();
+    f.material = { 攻: 1000, 防: 1000, 血: 1000, 暴: 1 };
+    await f.app.doForge(f.event(), 'owner', mode);
+    assert.equal(f.grants, 1, mode);
+    const item = f.inventory[0];
+    assert.deepEqual([item.atk, item.def, item.HP], [499, 499, 499], mode);
+    assert.equal(item.bao, 1, mode);
+    assert.equal(equipmentStats.isFixedStatEquipment(item), false, mode);
+    assert.deepEqual(equipmentStats.calculateEquippedStats(
+      { 攻击: 1, 防御: 1, 血量上限: 1 }, [item],
+    ), { 攻击: 500, 防御: 500, 血量上限: 500 }, mode);
+  }
+});
+
+test('万道神炉先将炼制溢出补给本件未满属性，再封顶落库', async () => {
+  for (const equipped of [false, true]) {
+    const f = fixture();
+    f.material = { 攻: 400, 防: 0, 血: 0 };
+    if (equipped) f.player.当前先天至宝 = '万道神炉';
+    await f.app.doForge(f.event(), 'owner', 'oneclick');
+    const item = f.inventory[0];
+    // 凡铁炉1倍 + 无五行0.35倍，攻击540的41点溢出只在神炉生效时补防。
+    assert.deepEqual([item.atk, item.def, item.HP], [499, equipped ? 41 : 0, 0]);
+    assert.equal(equipmentStats.isFixedStatEquipment(item), false);
   }
 });
 
