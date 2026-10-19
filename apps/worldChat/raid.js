@@ -36,6 +36,7 @@ export function createCrossRaidAvatar(player) {
     xiangu_shenhuo: cleanObject(player?.xiangu_shenhuo, 1500),
     无尽道碑: cleanObject(player?.无尽道碑, 2000),
     无尽劫境进阶: cleanObject(player?.无尽劫境进阶, 2000),
+    岁云无尽至宝已卸下: player?.岁云无尽至宝已卸下 === true,
     无尽至宝列表: (Array.isArray(player?.无尽至宝列表) ? player.无尽至宝列表 : [])
       .map((item) => typeof item === 'string'
         ? item.slice(0, 60)

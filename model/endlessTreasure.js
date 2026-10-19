@@ -1046,7 +1046,7 @@ export const ENDLESS_TREASURES = Object.freeze([
     boundRoot: 'suiyun',
     intrinsic: true,
     source: '岁云系列灵根·本命至宝（每次入境按灵根投影重验资格）',
-    desc: '一剑照霜月，诸因尽归云。岁云系列五阶段灵根专属，随灵根自动拥有、开局觉醒，独立专属位。霜月领域无效化敌方施于本人的封法、沉默、禁疗、破盾、破甲、处决与反射反噬，不受黯星封宝；剑伤完全无视防御，按实际扣除敌方生命100%吸血，护盾与溢出伤害不计。每斩对每个存活目标造成攻击力24倍伤害，65%未来视闪避或化解来袭；每次出手55%进入3回合超限，剑伤提升至2.5倍，化解来袭并以2倍威力反弹。85%进入至少两斩的连续斩击，此后每斩90%续斩，至多15斩；超限第8至15斩各有35%预取杀生因果，无视血线与Boss身份，直接斩断生机并封绝复生。自愿献祭与技能自身代价照常结算。',
+    desc: '一剑照霜月，诸因尽归云。岁云系列五阶段灵根专属，随灵根自动拥有，可自由装备或卸下，使用独立专属位；装备后开局觉醒，装配选择于下次入境生效。霜月领域无效化敌方施于本人的封法、沉默、禁疗、破盾、破甲、处决与反射反噬，不受黯星封宝；剑伤完全无视防御，按实际扣除敌方生命100%吸血，护盾与溢出伤害不计。每斩对每个存活目标造成攻击力24倍伤害，65%未来视闪避或化解来袭；每次出手55%进入3回合超限，剑伤提升至2.5倍，化解来袭并以2倍威力反弹。85%进入至少两斩的连续斩击，此后每斩90%续斩，至多15斩；超限第8至15斩各有35%预取杀生因果，无视血线与Boss身份，直接斩断生机并封绝复生。自愿献祭与技能自身代价照常结算。',
     baseAbility: 'treasure_suiyun_sword',
     baseLevel: 1,
     baseEffect: { attackPct: 6, hpPct: 4, defensePct: 4 },
@@ -1174,7 +1174,10 @@ export function normalizeEndlessTreasureLoadout(player) {
 export function getEquippedEndlessTreasures(player) {
   const { owned, equipped } = normalizeEndlessTreasureLoadout(player);
   const equippedSet = new Set(equipped);
-  return owned.filter(item => TREASURE_MAP.get(item.id).intrinsic || equippedSet.has(item.id));
+  // 旧档默认装备专属位；主动卸下后，后续读档与入境均保留选择。
+  return owned.filter(item => TREASURE_MAP.get(item.id).intrinsic
+    ? player.岁云无尽至宝已卸下 !== true
+    : equippedSet.has(item.id));
 }
 
 function findOwnedTreasure(player, input) {
@@ -1188,9 +1191,12 @@ function findOwnedTreasure(player, input) {
 export function equipEndlessTreasure(player, input) {
   const target = findOwnedTreasure(player, input);
   if (!target) throw new Error('未找到这件无尽至宝');
-  if (TREASURE_MAP.get(target.id).intrinsic)
-    throw new Error(`【${target.name}】随岁云灵根自动生效，使用独立专属位`);
   const loadout = normalizeEndlessTreasureLoadout(player);
+  if (TREASURE_MAP.get(target.id).intrinsic) {
+    if (player.岁云无尽至宝已卸下 !== true) throw new Error(`【${target.name}】已经装配`);
+    player.岁云无尽至宝已卸下 = false;
+    return { treasure: target, equipped: [...loadout.equipped], slots: loadout.slots, intrinsic: true };
+  }
   if (!loadout.slots) throw new Error('通关第25层后才能装配无尽至宝');
   if (loadout.equipped.includes(target.id)) throw new Error(`【${target.name}】已经装配`);
   if (loadout.equipped.length >= loadout.slots)
@@ -1203,9 +1209,12 @@ export function equipEndlessTreasure(player, input) {
 export function unequipEndlessTreasure(player, input) {
   const target = findOwnedTreasure(player, input);
   if (!target) throw new Error('未找到这件无尽至宝');
-  if (TREASURE_MAP.get(target.id).intrinsic)
-    throw new Error(`【${target.name}】与岁云灵根绑定，专属位始终生效`);
   const loadout = normalizeEndlessTreasureLoadout(player);
+  if (TREASURE_MAP.get(target.id).intrinsic) {
+    if (player.岁云无尽至宝已卸下 === true) throw new Error(`【${target.name}】尚未装配`);
+    player.岁云无尽至宝已卸下 = true;
+    return { treasure: target, equipped: [...loadout.equipped], slots: loadout.slots, intrinsic: true };
+  }
   const index = loadout.equipped.indexOf(target.id);
   if (index < 0) throw new Error(`【${target.name}】尚未装配`);
   loadout.equipped.splice(index, 1);
@@ -1511,7 +1520,7 @@ export function getPlayerTreasureViews(player) {
       level: item.level,
       effectRate: ENDLESS_TREASURE_EFFECT_RATE + ENDLESS_TREASURE_EFFECT_PER_LEVEL * (item.level - 1),
       nextCost: getEndlessTreasureUpgradeCost(item.level),
-      equipped: Boolean(treasure.intrinsic || equipped.has(item.id)),
+      equipped: treasure.intrinsic ? player.岁云无尽至宝已卸下 !== true : equipped.has(item.id),
       boundRoot: treasure.boundRoot || null,
       intrinsic: Boolean(treasure.intrinsic),
       desc: treasure.desc,
@@ -1523,7 +1532,7 @@ export function getPlayerTreasureViews(player) {
       })),
       awakenName: treasure.awaken?.name || null,
       awakenCondition: treasure.boundRoot === 'suiyun'
-        ? '持有岁云系列任一阶段灵根，开局自动觉醒'
+        ? '持有岁云系列任一阶段灵根并装备此至宝，开局自动觉醒'
         : formatAwakenCondition(treasure.awaken),
     };
   });

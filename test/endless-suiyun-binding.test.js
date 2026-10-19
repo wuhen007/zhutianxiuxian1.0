@@ -28,7 +28,7 @@ const root = () => ({ 灵根: { name: '月华之体' } });
 const record = level => ({ id: ID, name: '岁云剑尊', level });
 const projection = player => ({ ...player, treasureIds: getEquippedEndlessTreasures(player), abilities: {} });
 
-test('岁云五阶段灵根均自动拥有、自动觉醒，专属位不消耗普通槽', () => {
+test('岁云五阶段旧档默认装备并觉醒，零普通槽也可自由卸下与重新装备', () => {
   for (const { name } of SUIYUN_STAGES) {
     const player = { 灵根: { name } };
     assert.deepEqual(normalizePlayerTreasures(player), [record(1)]);
@@ -45,6 +45,23 @@ test('岁云五阶段灵根均自动拥有、自动觉醒，专属位不消耗�
     assert.equal(view.intrinsic, true);
     assert.equal(view.equipped, true);
     assert.match(view.awakenCondition, /开局自动觉醒/);
+    assert.throws(() => equipEndlessTreasure(player, ID), /已经装配/);
+    const removed = unequipEndlessTreasure(player, '岁云剑尊');
+    assert.equal(removed.intrinsic, true);
+    assert.deepEqual(removed.equipped, []);
+    assert.equal(removed.slots, 0);
+    assert.equal(player.岁云无尽至宝已卸下, true);
+    assert.deepEqual(getEquippedEndlessTreasures(player), []);
+    assert.equal(getPlayerTreasureViews(player)[0].equipped, false);
+    assert.deepEqual(normalizePlayerTreasures(player), [record(1)]);
+    assert.throws(() => unequipEndlessTreasure(player, ID), /尚未装配/);
+    const equipped = equipEndlessTreasure(player, '1');
+    assert.equal(equipped.intrinsic, true);
+    assert.deepEqual(equipped.equipped, []);
+    assert.equal(equipped.slots, 0);
+    assert.notEqual(player.岁云无尽至宝已卸下, true);
+    assert.deepEqual(getEquippedEndlessTreasures(player), [record(1)]);
+    assert.equal(getPlayerTreasureViews(player)[0].equipped, true);
   }
 });
 
@@ -72,14 +89,22 @@ test('非岁云、技能受赐、旧档伪造记录均无拥有、装配与战�
   }
 });
 
-test('普通槽首次装配跳过专属记录，满槽时仍保留剑尊生效', () => {
+test('普通槽首次装配跳过专属记录，满槽时剑尊仍能独立卸下与装备', () => {
   const player = { ...root(), 无尽至宝列表: [record(1), { id: 'treasure_decade', level: 1 }] };
   const loadout = normalizeEndlessTreasureLoadout(player);
   assert.equal(loadout.slots, 1);
   assert.deepEqual(loadout.equipped, ['treasure_decade']);
   assert.deepEqual(getEquippedEndlessTreasures(player).map(item => item.id), [ID, 'treasure_decade']);
-  assert.throws(() => equipEndlessTreasure(player, ID), /自动生效/);
-  assert.throws(() => unequipEndlessTreasure(player, ID), /始终生效/);
+  const removed = unequipEndlessTreasure(player, ID);
+  assert.equal(removed.intrinsic, true);
+  assert.equal(removed.slots, 1);
+  assert.deepEqual(removed.equipped, ['treasure_decade']);
+  assert.deepEqual(getEquippedEndlessTreasures(player).map(item => item.id), ['treasure_decade']);
+  const equipped = equipEndlessTreasure(player, ID);
+  assert.equal(equipped.intrinsic, true);
+  assert.equal(equipped.slots, 1);
+  assert.deepEqual(equipped.equipped, ['treasure_decade']);
+  assert.deepEqual(getEquippedEndlessTreasures(player).map(item => item.id), [ID, 'treasure_decade']);
   unequipEndlessTreasure(player, 'treasure_decade');
   assert.deepEqual(getEquippedEndlessTreasures(player), [record(1)]);
 });
@@ -113,6 +138,60 @@ test('失去灵根停用但保留等级，其他至宝升级及普通与特殊�
   player.灵根 = { name: '岁云化身' };
   assert.equal(normalizePlayerTreasures(player).find(item => item.id === ID).level, 8);
   assert.equal(getEquippedEndlessTreasures(player).find(item => item.id === ID).level, 8);
+});
+
+test('主动卸下经升级、存档重读、失去与重新获得灵根后仍保留选择和等级', () => {
+  let player = { ...root(), 劫境道痕: 100_000, 无尽至宝列表: [record(4)] };
+  unequipEndlessTreasure(player, ID);
+  assert.equal(upgradeEndlessTreasure(player, ID).level, 5);
+  assert.deepEqual(normalizePlayerTreasures(player), [record(5)]);
+  assert.deepEqual(getEquippedEndlessTreasures(player), []);
+  player = JSON.parse(JSON.stringify(player));
+  assert.equal(getPlayerTreasureViews(player)[0].equipped, false);
+  player.灵根 = { name: '凡体' };
+  assert.deepEqual(normalizePlayerTreasures(player), []);
+  assert.deepEqual(getEquippedEndlessTreasures(player), []);
+  assert.throws(() => equipEndlessTreasure(player, ID), /未找到/);
+  player = JSON.parse(JSON.stringify(player));
+  player.灵根 = { name: '岁云化身' };
+  assert.deepEqual(normalizePlayerTreasures(player), [record(5)]);
+  assert.deepEqual(getEquippedEndlessTreasures(player), []);
+  assert.equal(getPlayerTreasureViews(player)[0].equipped, false);
+  equipEndlessTreasure(player, ID);
+  player = JSON.parse(JSON.stringify(player));
+  assert.deepEqual(getEquippedEndlessTreasures(player), [record(5)]);
+  assert.equal(getPlayerTreasureViews(player)[0].equipped, true);
+});
+
+test('真实入场仅携带已装配剑尊的能力、加成和战技，局外切换不改变当前局快照', () => {
+  const player = root();
+  const enter = () => createEndlessRun({
+    teamId: 'suiyun-loadout', groupId: 'loadout-fixture', seed: 20261019,
+    players: [{ id: 'holder', player }],
+  });
+  const equippedRun = enter();
+  const equippedMember = equippedRun.members.holder;
+  assert.equal(equippedMember.abilities.treasure_suiyun_sword, 1);
+  assert.equal(getTreasureEffects(equippedMember, equippedRun).attackPct, 9);
+  assert.deepEqual(getTreasureBattleEntries(equippedMember, equippedRun), [SUIYUN_ENDLESS_COMBAT]);
+  unequipEndlessTreasure(player, ID);
+  assert.equal(getSuiyunTreasureCombat(equippedMember, equippedRun), SUIYUN_ENDLESS_COMBAT);
+  const removedRun = enter();
+  const removedMember = removedRun.members.holder;
+  assert.deepEqual(removedMember.treasureIds, []);
+  assert.equal(removedMember.abilities.treasure_suiyun_sword, undefined);
+  assert.deepEqual(getTreasureEffects(removedMember, removedRun), {});
+  assert.deepEqual(getTreasureBattleEntries(removedMember, removedRun), []);
+  assert.equal(getSuiyunTreasureCombat(removedMember, removedRun), null);
+  equipEndlessTreasure(player, ID);
+  assert.deepEqual(removedMember.treasureIds, []);
+  assert.equal(getSuiyunTreasureCombat(removedMember, removedRun), null);
+  const restoredRun = enter();
+  const restoredMember = restoredRun.members.holder;
+  assert.deepEqual(restoredMember.treasureIds, [{ id: ID, level: 1 }]);
+  assert.equal(restoredMember.abilities.treasure_suiyun_sword, 1);
+  assert.deepEqual(getTreasureEffects(restoredMember, restoredRun), getTreasureEffects(equippedMember, equippedRun));
+  assert.equal(getSuiyunTreasureCombat(restoredMember, restoredRun), SUIYUN_ENDLESS_COMBAT);
 });
 
 test('剑尊不进入普通掉落与集齐后的升级抽签，也不进入特殊秘藏', () => {
@@ -225,4 +304,35 @@ test('真实跨服化身序列化与还原后，五阶段灵根及专属等级�
     assert.equal(getSuiyunTreasureCombat(ordinary, run), null);
     assert.deepEqual(getTreasureEffects(ordinary, run), {});
   }
+});
+
+test('跨服化身序列化与还原保留主动卸下状态，重新装备后再传输恢复生效', () => {
+  const player = { ...root(), 无尽至宝列表: [record(7)] };
+  const restoreAvatar = () => hydrateCrossRaidAvatar(
+    JSON.parse(JSON.stringify(createCrossRaidAvatar(player))),
+    { serverId: 'suiyun-remote', memberTag: 'loadout-holder' }
+  );
+  const enter = owner => createEndlessRun({
+    teamId: 'suiyun-cross-loadout', groupId: 'cross-fixture', seed: 20261019,
+    players: [{ id: owner.id, player: owner }],
+  });
+  unequipEndlessTreasure(player, ID);
+  assert.equal(createCrossRaidAvatar(player).岁云无尽至宝已卸下, true);
+  const removed = restoreAvatar();
+  assert.equal(removed.岁云无尽至宝已卸下, true);
+  assert.deepEqual(normalizePlayerTreasures(removed), [record(7)]);
+  assert.deepEqual(getEquippedEndlessTreasures(removed), []);
+  assert.equal(getPlayerTreasureViews(removed)[0].equipped, false);
+  const removedRun = enter(removed);
+  const removedMember = removedRun.members[removed.id];
+  assert.deepEqual(removedMember.treasureIds, []);
+  assert.equal(removedMember.abilities.treasure_suiyun_sword, undefined);
+  assert.deepEqual(getTreasureEffects(removedMember, removedRun), {});
+  assert.equal(getSuiyunTreasureCombat(removedMember, removedRun), null);
+  equipEndlessTreasure(player, ID);
+  const equipped = restoreAvatar();
+  assert.notEqual(equipped.岁云无尽至宝已卸下, true);
+  assert.deepEqual(getEquippedEndlessTreasures(equipped), [record(7)]);
+  const equippedRun = enter(equipped);
+  assert.equal(getSuiyunTreasureCombat(equippedRun.members[equipped.id], equippedRun), SUIYUN_ENDLESS_COMBAT);
 });

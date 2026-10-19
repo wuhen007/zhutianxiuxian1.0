@@ -83,6 +83,7 @@ import { AppName } from '../app.config.js';
 import { FileRollbackTransaction } from './SecretPlace/rebirthTransaction.js';
 import { withPlayerMutationLock } from '../utils/playerMutationLock.js';
 import { replyOfficialMessage } from '../model/officialMessage.js';
+import { hasEquippedInnateTreasure } from '../model/innateTreasure.js';
 import {
   consumeSpiritHeart,
   getSpiritHeartMax,
@@ -834,7 +835,7 @@ export class EndlessRealm extends plugin {
         { tone: 'jade', title: '构筑法则', text: '每层独立选择能力；衍算天机可增加选项，一念双悟可在每个十层循环额外参悟一次。' },
         { tone: 'danger', title: '劫境警示', text: '主动撤离可带回全部战利品；团灭仅保留已封存奖励和30%未封存奖励。' },
         { tone: 'gold', title: '无尽至宝', text: `第25层开放首个普通装配槽；至宝可消耗道痕升至Lv.${ENDLESS_TREASURE_LEVEL_CAP}，每级显著提高属性效能。` },
-        { tone: 'gold', title: '岁云剑尊', text: '岁云系列五阶段本人按入境灵根投影自动带入本命至宝，独立专属位、无需通关25层；换根后的新一局重验资格，升级等级保留。' },
+        { tone: 'gold', title: '岁云剑尊', text: '岁云系列五阶段自动拥有本命至宝，可自由装备或卸下，使用独立专属位、无需通关25层；装配选择于下次入境生效，换根后重验资格，升级等级保留。' },
         { tone: 'danger', title: '因果岔路', text: '星图加入随机分叉、定轨赌约、投票博弈、界海商队、异界强援与不可名状灾厄；选择后本轮无法反悔。' },
         { tone: 'jade', title: '无尽劫境天尊', text: '打穿第三十关且全服排名第一的队伍成员，将获得专属称号：无尽劫境内全属性+25%、道痕收益+25%，可自由佩戴与更换。' },
       ],
@@ -883,7 +884,8 @@ export class EndlessRealm extends plugin {
             { command: '#无尽购买 商品名*数量', description: '按商品名或编号购买诸天遗珍' },
             { command: '#无尽至宝', description: '查看永久至宝、灵根专属位与觉醒条件' },
             { command: '#升级无尽至宝 名称', description: '消耗劫境道痕提升至宝等级与属性效能' },
-            { command: '#装备无尽至宝 名称', description: '将持有至宝装入普通槽；灵根专属自动生效' },
+            { command: '#装备无尽至宝 名称', description: '将持有至宝装入普通槽或灵根专属位，下次入境生效' },
+            { command: '#卸下无尽至宝 名称', description: '卸下普通或灵根专属至宝，下次入境生效' },
             { command: '#拓展无尽至宝槽', description: '达到对应层数后消耗道痕开启下一槽' },
             { command: '#重置万劫道碑 / #确认重置万劫道碑', description: '二次确认后返还道痕并重置传承' },
             { command: '#万象归一 武器/护具/法宝*装备名', description: '消耗归一神符融合百分比装备' },
@@ -1244,7 +1246,7 @@ export class EndlessRealm extends plugin {
         `1～${MAX_TEAM_SIZE}人组队，普通成员入场消耗【${ENDLESS_ENTRY_ITEM}】×1、心神${ENDLESS_SPIRIT_HEART_COST}点；岁云五阶段本人免秘钥心神`,
         '每层击退怪潮后独立三选一；每5层精英，每10层位面Boss并开启劫后问道。',
         '他化自在法仅在Boss后的诸天垂青中以极低概率显化。',
-        '岁云系列五阶段本人按入境灵根投影自动带入【岁云剑尊】，独立专属位、无需通关25层；换根后的新一局重验资格，升级等级保留。',
+        '岁云系列五阶段自动拥有【岁云剑尊】，可自由装备或卸下，使用独立专属位、无需通关25层；装配选择于下次入境生效，换根后重验资格，升级等级保留。',
         '',
         '#创建无尽队伍',
         '#加入无尽队伍 123456',
@@ -1528,6 +1530,7 @@ export class EndlessRealm extends plugin {
     const slot = match[1];
     const sourceName = match[2].trim();
     return this.withLock(e, `fusion:${userId}`, () => withPlayerMutationLock(userId, async () => {
+      const player = await Read_player(userId);
       const originalEquipment = await Read_equipment(userId);
       const najie = await Read_najie(userId);
       let merged;
@@ -1555,7 +1558,9 @@ export class EndlessRealm extends plugin {
         logger.error(`[万象归一] 熔铸失败 player=${userId}`, error);
         return e.reply('万象归一失败，装备与材料状态已回滚，请稍后再试');
       }
-      return e.reply(formatFusionResult(merged, originalEquipment).join('\n'));
+      return e.reply(formatFusionResult(merged, {
+        rebalanceOverflow: hasEquippedInnateTreasure(player, '万道神炉', '被动:1'),
+      }).join('\n'));
     }));
   }
 
@@ -3895,12 +3900,13 @@ export class EndlessRealm extends plugin {
     const loadout = normalizeEndlessTreasureLoadout(player);
     const views = getPlayerTreasureViews(player);
     const intrinsicCount = views.filter(treasure => treasure.intrinsic).length;
+    const intrinsicEquippedCount = views.filter(treasure => treasure.intrinsic && treasure.equipped).length;
     const celestial = getDailyEndlessCelestial();
     const nextSlot = loadout.slots + 1;
     const lines = [
       '【无尽至宝】',
       `持有${views.length}件｜普通已装配${loadout.equipped.length}/${loadout.slots}件`,
-      `灵根专属：${intrinsicCount}件（自动生效，不占普通槽）`,
+      `灵根专属：已装配${intrinsicEquippedCount}/${intrinsicCount}件（可自由装备或卸下，不占普通槽）`,
       `劫境道痕：${Math.max(0, Math.floor(Number(player.劫境道痕) || 0))}`,
       ...(celestial.disabledTreasureNames?.length
         ? [`今日天象禁用：${celestial.disabledTreasureNames.join('、')}`]
@@ -3917,7 +3923,7 @@ export class EndlessRealm extends plugin {
     }
     for (const treasure of views) {
       lines.push(
-        `${treasure.icon} 【${treasure.name}】Lv.${treasure.level} · ${treasure.rarity}${treasure.intrinsic ? ' [灵根专属·自动生效]' : treasure.equipped ? ' [已装配]' : ''}`,
+        `${treasure.icon} 【${treasure.name}】Lv.${treasure.level} · ${treasure.rarity}${treasure.intrinsic ? ` [灵根专属·${treasure.equipped ? '已装配' : '未装配'}]` : treasure.equipped ? ' [已装配]' : ''}`,
         `　当前属性效能：${Math.round(treasure.effectRate * 100)}%${treasure.nextCost === null ? '｜已满级' : `｜下级消耗：${treasure.nextCost}道痕`}`,
         `　${treasure.desc}`,
         treasure.source ? `　来源：${treasure.source}` : null,
@@ -3933,7 +3939,8 @@ export class EndlessRealm extends plugin {
     lines.push(
       '#升级无尽至宝 名称',
       '#装备无尽至宝 名称｜#卸下无尽至宝 名称',
-      '#拓展无尽至宝槽'
+      '#拓展无尽至宝槽',
+      '装配选择于下次进入无尽劫境生效。'
     );
     return e.reply(lines.filter(Boolean).join('\n'));
   }
@@ -3967,7 +3974,8 @@ export class EndlessRealm extends plugin {
       try {
         const result = equipEndlessTreasure(player, input);
         await Write_player(userId, player);
-        return e.reply(`已装备【${result.treasure.name}】（${result.equipped.length}/${result.slots}）`);
+        const slotText = result.intrinsic ? '灵根专属位，不占普通槽' : `${result.equipped.length}/${result.slots}`;
+        return e.reply(`已装备【${result.treasure.name}】（${slotText}）\n下次进入无尽劫境生效。`);
       } catch (error) {
         return e.reply(error.message);
       }
@@ -3983,7 +3991,8 @@ export class EndlessRealm extends plugin {
       try {
         const result = unequipEndlessTreasure(player, input);
         await Write_player(userId, player);
-        return e.reply(`已卸下【${result.treasure.name}】（${result.equipped.length}/${result.slots}）`);
+        const slotText = result.intrinsic ? '灵根专属位，不占普通槽' : `${result.equipped.length}/${result.slots}`;
+        return e.reply(`已卸下【${result.treasure.name}】（${slotText}）\n下次进入无尽劫境生效。`);
       } catch (error) {
         return e.reply(error.message);
       }
