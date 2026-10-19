@@ -10,7 +10,9 @@ import {
   Read_player,
   existplayer,
   Write_player,
-  Write_linggen,
+  Read_equipment,
+  Write_equipment,
+  player_efficiency,
   isNotNull,
   add_qinmidu,
   fstadd_qinmidu,
@@ -25,6 +27,8 @@ import {
 import { Add_灵石, Add_修为 } from '../../model/xiuxian.js';
 import { recordWenXianTaskProgress } from '../../model/wenxianling.js';
 import { getActiveZhutianAvatarName } from '../../model/zhutianMirror.js';
+import { getMinggeEffects } from '../../model/mingge.js';
+import { getLifeSourceRepairMaximum } from '../../model/lifeSourceRepair.js';
 import { getSuiyunStage, SUIYUN_REVIVAL_SKILL, SUIYUN_REVIVAL_TEACH_CHANCE } from '../../model/suiyun.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import {
@@ -1465,37 +1469,48 @@ async Couple(e) {
 
     let fusionHit = false;   // 是否已触发融合
 
+    async function applyFusion(rootName) {
+        const root = data.talent_list.find(item => item.name === rootName);
+        if (!root) throw new Error(`双修融合灵根配置缺失：${rootName}`);
+
+        const participants = [[A, playerA], [B, playerB]];
+        for (const [qq, player] of participants) {
+            player.灵根 = structuredClone(root);
+            player.法球倍率 = player.灵根.法球倍率;
+            const effects = getMinggeEffects(player, data.minggeList);
+            player.生命本源 = getLifeSourceRepairMaximum(player, effects.生命本源额外);
+            // 按新灵根重算完整属性，避免读取旧存档或重复叠乘旧灵根加成。
+            await Write_equipment(qq, await Read_equipment(qq), player);
+        }
+        for (const [qq, player] of participants) {
+            await Write_player(qq, player);
+        }
+        for (const [qq] of participants) {
+            await player_efficiency(qq);
+            await setFailCnt(qq, 0);
+        }
+        fusionHit = true;
+    }
+
     // ==========  随机融合  ==========
     if ((isShengti && isDaotai) || (isShengtiB && isDaotaiA)) {
         if (Math.random() < 0.05) {                       // 5%
-            const lg = {"id": 7010014, "name": "先天圣体道胎", "type": "圣体道胎", "归类": "遮天位面", "eff": 300, "法球倍率": 2.1, "攻击": 10, "防御": 10, "生命": 10, "生命本源": 500};
-            playerA.灵根 = playerB.灵根 = lg; fusionHit = true;
-            await Write_linggen(A, playerA); await Write_linggen(B, playerB);
-            await Write_player(A, playerA); await Write_player(B, playerB);
+            await applyFusion('先天圣体道胎');
             e.reply([`【圣体道胎交融】`, `荒古圣体与先天道胎相遇，引动万古异象！`, `「先天圣体道胎」诞生！`, `圣体不灭，道胎永恒，万古无双！`].join("\n"));
         }
     } else if ((isShenDao && isJiDao) || (isShenDaoB && isJiDaoA)) {
         if (Math.random() < 0.01) {                       // 1%
-            const lg = {"id": 7010015, "name": "终焉神魔体", "type": "神魔体", "归类": "神魔", "eff": 300, "法球倍率": 3, "攻击": 7, "防御": 6, "生命": 5, "生命本源": 100};
-            playerA.灵根 = playerB.灵根 = lg; fusionHit = true;
-            await Write_linggen(A, playerA); await Write_linggen(B, playerB);
-            await Write_player(A, playerA); await Write_player(B, playerB);
+            await applyFusion('终焉神魔体');
             e.reply([`【命运与天魔交融】`, `时空长河倒卷，混沌重开！`, `「终焉神魔体」诞生！`, `神魔同体，再造混沌！`].join("\n"));
         }
     } else if ((istaiyang && istaiyin) || (istaiyinA && istaiyangB)) {
         if (Math.random() < 0.01) {
-            const lg = {"id": 70051, "name": "混沌体", "type": "混沌体", "归类": "遮天位面", "eff": 72, "法球倍率": 1.45, "攻击": 5, "防御": 5, "生命": 5, "生命本源": 200};
-            playerA.灵根 = playerB.灵根 = lg; fusionHit = true;
-            await Write_linggen(A, playerA); await Write_linggen(B, playerB);
-            await Write_player(A, playerA); await Write_player(B, playerB);
+            await applyFusion('混沌体');
             e.reply([`【太阴太阳交融】`, `阴阳二气交织，混沌初开！`, `「混沌体」诞生！`, `阴阳合一，混沌初成！`].join("\n"));
         }
     } else if ((isHundunA && isxiantianShengtiB) || (isHundunB && isxiantianShengtiA)) {
         if (Math.random() < 0.01) {
-            const lg = {"id": 70051, "name": "先天混沌圣体道胎", "type": "混沌圣体道胎", "归类": "遮天位面", "eff": 572, "法球倍率": 4, "攻击": 15, "防御": 15, "生命": 15, "生命本源": 800};
-            playerA.灵根 = playerB.灵根 = lg; fusionHit = true;
-            await Write_linggen(A, playerA); await Write_linggen(B, playerB);
-            await Write_player(A, playerA); await Write_player(B, playerB);
+            await applyFusion('先天混沌圣体道胎');
             e.reply([`【混沌与圣体道胎交融】`, `天地初开，混沌重演！`, `「先天混沌圣体道胎」诞生！`, `混沌圣体，道胎天成！`].join("\n"));
         }
     }
@@ -1505,26 +1520,23 @@ async Couple(e) {
 
     // ==========  保底融合  ==========
     if (!fusionHit && maxFail >= FUSION_GUARANTEE) {
-        let guaLg = null, guaMsg = null;
+        let guaRootName = null, guaMsg = null;
         if ((isShengti && isDaotai) || (isShengtiB && isDaotaiA)) {
-            guaLg = {"id": 7010014, "name": "先天圣体道胎", "type": "圣体道胎", "归类": "遮天位面", "eff": 300, "法球倍率": 2.1, "攻击": 10, "防御": 10, "生命": 10, "生命本源": 500};
+            guaRootName = '先天圣体道胎';
             guaMsg = [`【圣体道胎·保底融合】`, `荒古圣体与先天道胎历经千锤百炼，终得天地认可！`, `「先天圣体道胎」保底诞生！`, `圣体不灭，道胎永恒，万古无双！`];
         } else if ((isShenDao && isJiDao) || (isShenDaoB && isJiDaoA)) {
-            guaLg = {"id": 7010015, "name": "终焉神魔体", "type": "神魔体", "归类": "神魔", "eff": 300, "法球倍率": 3, "攻击": 7, "防御": 6, "生命": 5, "生命本源": 100};
+            guaRootName = '终焉神魔体';
             guaMsg = [`【终焉神魔体·保底融合】`, `命运与天魔在无数次擦肩后终将交汇！`, `「终焉神魔体」保底诞生！`, `神魔同体，再造混沌！`];
         } else if ((istaiyang && istaiyin) || (istaiyinA && istaiyangB)) {
-            guaLg = {"id": 70051, "name": "混沌体", "type": "混沌体", "归类": "遮天位面", "eff": 72, "法球倍率": 1.45, "攻击": 5, "防御": 5, "生命": 5, "生命本源": 200};
+            guaRootName = '混沌体';
             guaMsg = [`【混沌体·保底融合】`, `太阴太阳在二十次轮回后终得阴阳合一！`, `「混沌体」保底诞生！`, `阴阳合一，混沌初成！`];
         } else if ((isHundunA && isxiantianShengtiB) || (isHundunB && isxiantianShengtiA)) {
-            guaLg = {"id": 70051, "name": "先天混沌圣体道胎", "type": "混沌圣体道胎", "归类": "遮天位面", "eff": 572, "法球倍率": 4, "攻击": 15, "防御": 15, "生命": 15, "生命本源": 800};
+            guaRootName = '先天混沌圣体道胎';
             guaMsg = [`【先天混沌圣体道胎·保底融合】`, `混沌与圣体道胎历经二十次磨合，终得宇宙认可！`, `「先天混沌圣体道胎」保底诞生！`, `混沌圣体，道胎天成！`];
         }
-        if (guaLg) {
-            playerA.灵根 = playerB.灵根 = guaLg; fusionHit = true;
-            await Write_linggen(A, playerA); await Write_linggen(B, playerB);
-            await Write_player(A, playerA); await Write_player(B, playerB);
+        if (guaRootName) {
+            await applyFusion(guaRootName);
             e.reply(guaMsg.join("\n"));
-            await setFailCnt(A, 0); await setFailCnt(B, 0);
         }else {e.reply(`双方历经二十次磨合，仍无缘蜕变，大道难成……\n【${'▱'.repeat(width)}】20/20（无契合路线）`);
   }
     }
