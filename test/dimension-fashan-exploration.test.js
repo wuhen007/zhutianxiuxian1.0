@@ -1,3 +1,4 @@
+import { hasSuiyunAuthority } from '../model/suiyunAuthority.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -86,7 +87,7 @@ function fixture(t, overrides = {}) {
     getDungeonGongfaReduction: () => ({ rate: 0 }),
     isDaofaActive: () => false,
     getMinggeEffects: () => ({}),
-    getMinggeSecretPlaceReductionMs: () => 0,
+    getMinggeSecretPlaceReductionMs: () => 0, hasSuiyunAuthority,
     ensureTimeRiverSkills: () => {},
   };
   const e = {

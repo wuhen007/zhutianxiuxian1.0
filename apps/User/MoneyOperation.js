@@ -37,6 +37,7 @@ import {
 } from '../../model/innateTreasure.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { getDimensionTradeCompatibility } from '../../model/weimianTravel.js';
+import { getSuiyunStage } from '../../model/suiyun.js';
 export class MoneyOperation extends plugin {
   constructor() {
     super({
@@ -45,6 +46,7 @@ export class MoneyOperation extends plugin {
       event: 'message',
       priority: 600,
       rule: [
+        { reg: '^#诸天一念.*$', fnc: 'suiyunGive' },
         {
           reg: '^#赠送.*$',
           fnc: 'Give',
@@ -365,6 +367,17 @@ export class MoneyOperation extends plugin {
     return false;
   }
 
+async suiyunGive(e) {
+  const qq = String(await channel(String(e.user_id).replace('qg_', '')));
+  if (!await existplayer(qq)) return false;
+  if (!getSuiyunStage(await Read_player(qq))) return e.reply('诸天一念由岁云系列灵根本人施展。');
+  const text = e.message?.filter(item => item.type === 'text').map(item => item.text || '').join(' ') || e.msg;
+  const forwarded = Object.assign(Object.create(e), {
+    msg: text.replace(/^#诸天一念\s*/, '#赠送').trim(),
+  });
+  return this.Give(forwarded);
+}
+
 async Give(e) {
   if (!verc({ e })) return false;
   
@@ -397,7 +410,7 @@ async Give(e) {
   const B_player = await Read_player(B_qq);
 
   const dimensionTrade = getDimensionTradeCompatibility(A_player, B_player);
-  if (!dimensionTrade.ok) {
+  if (!dimensionTrade.ok && !getSuiyunStage(A_player)) {
     return e.reply([
       '【维度壁垒·赠送失效】',
       `你位于第${dimensionTrade.fromLayer}层，对方位于第${dimensionTrade.toLayer}层。`,

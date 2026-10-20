@@ -1,3 +1,4 @@
+import { beginSuiyunTribulation, protectSuiyunTribulationLoss } from '../../model/suiyunAuthority.js';
 // apps/SecretPlace/xianguTribulation.js
 // 仙古今世法渡劫系统
 // 原著境界线：
@@ -411,6 +412,8 @@ export class XianguTribulation {
   }
 
   async _withTransientTribulationEffects(player, action) {
+    const suiyunBefore = structuredClone(player);
+    beginSuiyunTribulation(player);
     this.memoryTribulationStates ??= new WeakMap();
     this.memoryTribulationStates.set(player, createMemoryTribulationState());
     const snapshot = new Map();
@@ -421,6 +424,8 @@ export class XianguTribulation {
     try {
       return await action();
     } finally {
+      protectSuiyunTribulationLoss(player, suiyunBefore);
+      delete player._基拉祈渡劫;
       this._resetTransientTribulationEffects(player);
       for (const [key, value] of snapshot) player[key] = value;
     }

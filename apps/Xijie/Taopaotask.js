@@ -1,3 +1,4 @@
+import { hasSuiyunAuthority } from '../../model/suiyunAuthority.js';
 import { plugin, common,  config, data } from '../../api/api.js';
 import fs from 'fs';
 import {
@@ -176,6 +177,10 @@ export class Taopaotask extends plugin {
               arr.A_player = A_player;
               arr.cishu--;
               arr.A_player = A_player;
+            } else if (hasSuiyunAuthority(A_player, '理想')) {
+              arr.cishu = 0;
+              arr.end_time = Date.now();
+              last_msg += '\n【理想】捷克罗姆击碎天牢锁链，你已脱身。';
             } else {
               const failedPlayer = await Read_player(player_id);
               adjustDaoHeart(failedPlayer, -20, '洗劫逃亡失败');

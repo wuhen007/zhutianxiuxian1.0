@@ -6,6 +6,7 @@ import { addCappedEraAccumulation } from './selfDaoDeduction.js';
 import { PLACE_LOCATION_MAP } from './weimianTravel.js';
 import { hasSuiyunFreeDungeonEntry } from './suiyun.js';
 import { getMemoryDungeonCost } from './memoryPath.js';
+import { getSuiyunExplorationDuration } from './suiyunAuthority.js';
 
 const SHANGCANG_REWARD_PLACES = createRequire(import.meta.url)(
   '../resources/data/item/副本/上苍之上列表.json',
@@ -75,10 +76,10 @@ export function calculateShangcangDuration(player, minggeList = []) {
     flatMinutes += minggeMs / 60_000;
     messages.push(`命格缩短${Math.round(minggeMs / 1000)}秒`);
   }
-  const durationMs = Math.max(
+  const durationMs = getSuiyunExplorationDuration(player, Math.max(
     60_000,
     Math.floor(Math.max(1, 60 - flatMinutes) * 60_000 * getDungeonTimedActionMultiplier(player)),
-  );
+  ));
   return { durationMs, minutes: Math.ceil(durationMs / 60_000), messages };
 }
 

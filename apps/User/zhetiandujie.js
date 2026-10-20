@@ -1,3 +1,4 @@
+import { beginSuiyunTribulation, protectSuiyunTribulationLoss } from '../../model/suiyunAuthority.js';
 import { getSuiyunEffects } from '../../model/suiyun.js';
 import { getMemoryEffects } from '../../model/memoryPath.js';
 import { createMemoryTribulationState, tickMemoryTribulationRound, tryMemoryTimeRevival } from '../../model/memoryCombat.js';
@@ -4828,6 +4829,7 @@ async command_kuluoqiyuan(e) {
  * @returns {Object} 原始属性快照（供 restoreAfterTribulation 使用）
  */
 enterTribulationState(player, equipment) {
+  beginSuiyunTribulation(player);
   resetTribulationGongfaCooldowns(player);
   this.memoryTribulationStates ??= new WeakMap();
   this.memoryTribulationStates.set(player, createMemoryTribulationState());
@@ -4851,6 +4853,7 @@ enterTribulationState(player, equipment) {
   player.暴击率 = tAttr.暴击率;
   player.暴击伤害 = tAttr.暴击伤害;
   player.当前血量 = tAttr.血量上限; // 满血进入渡劫
+  snapshot.天阙损失基准 = structuredClone(player);
 
   return snapshot;
 }
@@ -4878,12 +4881,14 @@ async exitTribulationState(player, snapshot, usr_qq, equipment, options = {}) {
     || player.xiangulevel_id > snapshot.xiangulevel_id
     || player.huafenlevel_id > snapshot.huafenlevel_id;
 
+  if (protectSuiyunTribulationLoss(player, snapshot.天阙损失基准)) await Write_player(usr_qq, player);
   // Write_equipment 内部会 Read_player（含新 mijinglevel_id）→ 重算全装属性 → Write_player
   await Write_equipment(usr_qq, equipment);
 
   // 清除本次玄黄护道；成功渡劫时按重算后的血量上限补满。
   const refreshed = await Read_player(usr_qq);
   delete refreshed._玄黄护道渡劫;
+  delete refreshed._基拉祈渡劫;
   let ambush = { triggered: false, defeated: false };
   if (success) {
     ambush = await this.resolveTianjiaoTribulationAmbush(refreshed, snapshot, usr_qq);
@@ -6136,6 +6141,10 @@ if (equipment.帝兵 && equipment.帝兵.author_name === player.id) {
       effectMessages.push('【玄黄护道】天地玄黄气护住道基，本次渡劫所受伤害降低30%。');
     }
     if (player._玄黄护道渡劫) finalDamage *= 0.7;
+    if (player._基拉祈渡劫) {
+      finalDamage *= .5;
+      effectMessages.push('【七夜的许愿星】基拉祈守护真灵，本场每道雷劫伤害减少50%。');
+    }
     if (hasEquippedInnateTreasure(player, '万劫天碑', '被动:1')) {
       finalDamage *= 0.85;
       effectMessages.push('【万劫天碑】天碑承接劫力，本次渡劫所受伤害降低15%。');

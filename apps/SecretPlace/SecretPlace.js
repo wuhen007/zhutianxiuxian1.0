@@ -1597,7 +1597,7 @@ async Gojiehaiplace(e) {
     const action_time = 60000 * time; // 持续时间，单位毫秒
     const arr = {
         action: `探索界海`,
-        end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),
+        end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player, action_time)),
         time: action_time,
         shutup: '1',
         working: '1',
@@ -1868,7 +1868,7 @@ async Gosecretplace(e) {
                 actor: 'fashan',
                 actorPlane: targetPlane,
                 法身位置: targetPlane,
-                end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),
+                end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player, action_time)),
                 time: action_time,
                 shutup: '1',
                 working: '1',
@@ -1927,7 +1927,7 @@ async Gosecretplace(e) {
     const action_time = 60000 * time; // 持续时间，单位毫秒
     const arr = {
         action: '秘境历练',
-        end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),
+        end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player, action_time)),
         time: action_time,
         shutup: '1',
         working: '1',
@@ -2053,7 +2053,7 @@ async Goxiajie(e) {
     const action_time = 60000 * time; // 持续时间，单位毫秒
     const arr = {
         action: '下界八域历练',
-        end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),
+        end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player, action_time)),
         time: action_time,
         shutup: '1',
         working: '1',
@@ -2174,7 +2174,7 @@ async Gojiutianshidi(e) {
     const action_time = 60000 * time; // 持续时间，单位毫秒
     const arr = {
         action: '九天十地历练',
-        end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),
+        end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player, action_time)),
         time: action_time,
         shutup: '1',
         working: '1',
@@ -2310,7 +2310,7 @@ async Gozhetian(e) {
                     actor: 'fashan',
                     actorPlane: targetPlane,
                     法身位置: targetPlane,
-                    end_time: nowTime + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),
+                    end_time: nowTime + Math.floor(action_time * getDungeonTimedActionMultiplier(player, action_time)),
                     time: action_time,
                     shutup: '1',
                     working: '1',
@@ -2520,7 +2520,7 @@ async Gozhetian(e) {
     const action_time = 60000 * time;
     const arr = {
         action: '遮天位面历练',
-        end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),
+        end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player, action_time)),
         time: action_time,
         shutup: '1',
         working: '1',
@@ -2646,7 +2646,7 @@ async Goforbiddenarea(e) {
                 actor: 'fashan',
                 actorPlane: targetPlane,
                 法身位置: targetPlane,
-                end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),
+                end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player, action_time)),
                 time: action_time,
                 shutup: '1',
                 working: '1',
@@ -2748,7 +2748,7 @@ async Goforbiddenarea(e) {
     const action_time = 60000 * time; // 持续时间，单位毫秒
     const arr = {
         action: '禁地历练',
-        end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),
+        end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player, action_time)),
         time: action_time,
         shutup: '1',
         working: '1',
@@ -2929,7 +2929,7 @@ async GoTimeplace(e) {
                 actor: 'fashan',
                 actorPlane: targetPlane,
                 法身位置: targetPlane,
-                end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),
+                end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player, action_time)),
                 time: action_time,
                 shutup: '1',
                 working: '1',
@@ -3037,7 +3037,7 @@ async GoTimeplace(e) {
     const action_time = 60000 * time; // 持续时间，单位毫秒
     const arr = {
         action: '探索仙府', // 动作
-        end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),
+        end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player, action_time)),
         time: action_time,
         shutup: '1',
         working: '1',
@@ -3337,7 +3337,7 @@ if (didian === "往世星海") {
                     actor: 'fashan',
                     actorPlane: targetPlane,
                     法身位置: targetPlane,
-                    end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),
+                    end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player, action_time)),
                     time: action_time,
                     shutup: '1',
                     working: '1',
@@ -3380,7 +3380,7 @@ if (didian === "往世星海") {
     const action_time = 60000 * time; // 持续时间，单位毫秒
     const arr = {
         action: '镇守仙境',
-        end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),
+        end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player, action_time)),
         time: action_time,
         shutup: '1',
         working: '1',

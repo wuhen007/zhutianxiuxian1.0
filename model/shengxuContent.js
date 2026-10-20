@@ -1,3 +1,4 @@
+import { hasSuiyunAuthority } from './suiyunAuthority.js';
 import { getMemoryDungeonCost } from './memoryPath.js';
 
 function withRewardTiers(dungeon) {
@@ -78,7 +79,7 @@ export function getShengxuExploreDuration(player, dungeon) {
   const reduction = Object.entries(BREATHING_TIME_REDUCTION)
     .filter(([name]) => learned.includes(name))
     .reduce((max, [, value]) => Math.max(max, value), 0);
-  return Math.max(SHENGXU_EXPLORE_MIN_DURATION_MIN, base - reduction);
+  return Math.max(1 / 60, Math.max(SHENGXU_EXPLORE_MIN_DURATION_MIN, base - reduction) - (hasSuiyunAuthority(player, '天空') ? 1 : 0));
 }
 
 export const SHENGXU_FACTIONS = Object.freeze({

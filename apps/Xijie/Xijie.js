@@ -1,3 +1,4 @@
+import { hasSuiyunAuthority } from '../../model/suiyunAuthority.js';
 import { plugin, puppeteer, verc, data, config,Show } from '../../api/api.js';
 import { __PATH } from '../../model/xiuxian.js';
 import { getTimedActionMultiplier } from '../../model/innateTreasure.js';
@@ -150,7 +151,8 @@ export class Xijie extends plugin {
       'xiuxian:player:' + usr_qq + ':lastxijie_time'
     );
     lastxijie_time = parseInt(lastxijie_time);
-    if (now_time < lastxijie_time + 7200000) {
+    const xijieCooldown = hasSuiyunAuthority(player, '天空') ? 3600000 : 7200000;
+    if (now_time < lastxijie_time + xijieCooldown) {
       // 检查是否有劫光令可重置CD
       let jieGuangLingCount = await exist_najie_thing(usr_qq, "劫光令", "道具");
       if (jieGuangLingCount > 0) {
@@ -162,13 +164,13 @@ export class Xijie extends plugin {
         await redis.set('xiuxian:player:' + usr_qq + ':lastxijie_time', 0);
       } else {
         let lastxijie_m = Math.trunc(
-          (lastxijie_time + 7200000 - now_time) / 60 / 1000
+          (lastxijie_time + xijieCooldown - now_time) / 60 / 1000
         );
         let lastxijie_s = Math.trunc(
-          ((lastxijie_time + 7200000 - now_time) % 60000) / 1000
+          ((lastxijie_time + xijieCooldown - now_time) % 60000) / 1000
         );
         e.reply(
-          `每120分钟洗劫一次，正在CD中，` +
+          `每${xijieCooldown / 60000}分钟洗劫一次，正在CD中，` +
             `剩余cd: ${lastxijie_m}分${lastxijie_s}秒`
         );
         return false;

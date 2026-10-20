@@ -1,3 +1,4 @@
+import { hasSuiyunAuthority } from '../../model/suiyunAuthority.js';
 import fs from 'fs';
 import path from 'path';
 import { multiplySuiyunLoot } from '../../model/suiyunLoot.js';
@@ -624,7 +625,7 @@ export class BOSS4 extends plugin {
   }
 
   async grantTianjiaoDrop(qq, item, amount, idempotencyKey) {
-    amount = multiplySuiyunLoot(await Read_player(qq), item, amount);
+    amount = multiplySuiyunLoot(await Read_player(qq), item, amount, { memory: false });
     if (item.class !== '遗珍') {
       await Add_najie_thing(qq, item.name, item.class, amount, undefined, 1, { idempotencyKey });
       return `${item.name} x${amount}`;
@@ -687,7 +688,7 @@ export class BOSS4 extends plugin {
         const recipient = await Read_player(qq);
         const rewards = (Array.isArray(pending.offer?.all) ? pending.offer.all : []).map(item => ({
           ...item,
-          amount: multiplySuiyunLoot(recipient, item, Math.max(1, Math.min(20, Math.floor(Number(item.amount) || 1)))),
+          amount: multiplySuiyunLoot(recipient, item, Math.max(1, Math.min(20, Math.floor(Number(item.amount) || 1))), { memory: false }),
         }));
         for (let index = 0; index < rewards.length; index++) {
           const item = rewards[index];
@@ -1837,7 +1838,7 @@ export class BOSS4 extends plugin {
     const now_Time = Date.now();
     const battleId = `${now_Time}:${usr_qq}`;
     const last_time = await redis.get(`xiuxian:player:${usr_qq}:BOSSCD`);
-    const userCooldownMs = this.userCooldownMs;
+    const userCooldownMs = this.userCooldownMs * (hasSuiyunAuthority(player, '无极') ? .5 : 1);
 
     if (player.id != "2283096140" && last_time && now_Time < parseInt(last_time) + userCooldownMs) {
       const remainingMs = parseInt(last_time) + userCooldownMs - now_Time;

@@ -8,6 +8,7 @@ const EQUIPMENT_STAT_FIELDS = ['atk', 'def', 'HP'];
 const emptyEquipmentStats = () => ({ atk: 0, def: 0, HP: 0 });
 
 export function isFixedStatEquipment(item) {
+  if (item?.天阙创世 === true && item?.百分比上限豁免 === '天阙创世') return false;
   return EQUIPMENT_STAT_FIELDS.some(field =>
     (Number(item?.[field]) || 0) > MAX_PERCENT_EQUIPMENT_STAT
   );
@@ -24,6 +25,7 @@ export function collectEquipmentStatPools(slots = [], options = {}) {
   };
 
   for (const slot of slots) {
+    const cap = slot?.天阙创世 === true && slot?.百分比上限豁免 === '天阙创世' ? 500 : MAX_PERCENT_EQUIPMENT_STAT;
     const merged = slot?.归一属性?.百分比 || {};
     const fixedEquipment = isFixedStatEquipment(slot);
     const fusionEquipment = fixedEquipment && Boolean(slot?.归一来源);
@@ -41,11 +43,11 @@ export function collectEquipmentStatPools(slots = [], options = {}) {
 
     // 单件基础词条与追加词条合并后最多加成499，即含基础500倍。
     if (options.rebalanceOverflow) {
-      percentage = rebalancePercentBonuses(percentage.atk, percentage.def, percentage.HP);
+      percentage = rebalancePercentBonuses(percentage.atk, percentage.def, percentage.HP, cap);
     }
     const pool = fusionEquipment ? pools.fusion : pools.percentage;
     for (const field of EQUIPMENT_STAT_FIELDS) {
-      pool[field] += Math.min(percentage[field], MAX_PERCENT_EQUIPMENT_STAT);
+      pool[field] += Math.min(percentage[field], cap);
     }
   }
 
@@ -57,7 +59,8 @@ export function isNameablePercentageEquipment(item) {
   const atk = Number(item?.atk) || 0;
   const def = Number(item?.def) || 0;
   const hp = Number(item?.HP) || 0;
-  if (atk > MAX_PERCENT_EQUIPMENT_STAT || def > MAX_PERCENT_EQUIPMENT_STAT || hp > MAX_PERCENT_EQUIPMENT_STAT) {
+  const cap = item?.天阙创世 === true ? 500 : MAX_PERCENT_EQUIPMENT_STAT;
+  if (atk > cap || def > cap || hp > cap) {
     return false;
   }
   return atk >= 1.5

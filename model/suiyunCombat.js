@@ -1,5 +1,6 @@
 import { getSuiyunStage, hasSuiyunSkills } from './suiyun.js';
 import { getHighRealmBarrier } from './highRealmBarrier.js';
+import { hasSuiyunAuthority } from './suiyunAuthority.js';
 
 // 未指定的推条/控制时长/防反比例集中于此；岁云灵根与月华受赐者不占功法槽。
 export const SUIYUN_COMBAT = Object.freeze({
@@ -88,7 +89,63 @@ export function resetSuiyunCombat(unit) {
   if (!unit) return unit;
   for (const field of ['_suiyunFrost', '_suiyunFrostTurn', '_suiyunControl', '_suiyunRevives', '_suiyunMoonHit', '_suiyunExecutionBlocked']) delete unit[field];
   clearSuiyunBattleRestrictions(unit);
+  for (const field of ['_天阙首击已用', '_天阙回合', '_天阙回合序号', '_天阙基础速度', '_天阙降世增幅']) delete unit[field];
+  unit._天阙护盾 = unit._天阙降世 ? value(unit.血量上限) * .5 : 0;
   return unit;
+}
+
+export function amplifySuiyunFirstAttack(attacker, damage) {
+  let multiplier = 1;
+  if (hasSuiyunAuthority(attacker, '大地') && attacker._天阙断崖 && !attacker._天阙首击已用) {
+    attacker._天阙首击已用 = true;
+    multiplier = 3;
+    delete attacker._天阙断崖;
+  }
+  return scaled(damage, multiplier);
+}
+
+export function tickSuiyunAuthorityRound(unit, enemies, token, applyDamage) {
+  const result = { messages: [], speedMultiplier: 1 };
+  if (!unit || !living(unit) || unit._天阙回合 === token) return result;
+  unit._天阙回合 = token;
+  const round = (unit._天阙回合序号 || 0) + 1;
+  unit._天阙回合序号 = round;
+  const name = label(unit);
+  if (hasSuiyunAuthority(unit, '海洋')) {
+    const heal = Math.min(value(unit.血量上限) - value(unit.当前血量),
+      scaled(unit.血量上限, .2) * getSuiyunHealingMultiplier(unit));
+    if (heal > 0) { unit.当前血量 += heal; result.messages.push(`【海洋】盖欧卡的潮汐为${name}恢复${heal}生命。`); }
+  }
+  if (hasSuiyunAuthority(unit, '天空')) {
+    const multiplier = (1 + round * .1) / (1 + (round - 1) * .1);
+    unit.速度 = scaled(unit.速度 ?? 100, multiplier, 1);
+    if (unit._speed != null) unit._speed *= multiplier;
+    result.speedMultiplier *= multiplier;
+  }
+  if (unit._天阙降世 && round === 1) {
+    for (const field of ['攻击', '防御', '速度']) unit[field] = scaled(unit[field] ?? 100, 1.5);
+    if (unit._speed != null) unit._speed *= 1.5;
+    unit._天阙降世增幅 = true;
+    result.speedMultiplier *= 1.5;
+  }
+  if (unit._天阙降世增幅 && round === 4) {
+    for (const field of ['攻击', '防御', '速度']) unit[field] /= 1.5;
+    if (unit._speed != null) unit._speed /= 1.5;
+    delete unit._天阙降世增幅;
+    result.speedMultiplier /= 1.5;
+  }
+  const strike = (round === 2 && hasSuiyunAuthority(unit, '天空') ? 3 : 0)
+    + (unit._天阙降世 && round <= 3 ? 9 : 0);
+  if (strike && applyDamage) {
+    for (const enemy of enemies.filter(enemy => living(enemy) && getHighRealmBarrier(unit, enemy)?.higherSide !== 'B')) {
+      const damage = scaled(unit.攻击, strike);
+      applyDamage(unit, enemy, damage, result.messages);
+    }
+    result.messages.push(round === 2 && hasSuiyunAuthority(unit, '天空')
+      ? `【画龙点睛】裂空座掠过天穹，向敌阵斩落3倍攻击${unit._天阙降世 ? '，岁云剑雨同时降临' : ''}。`
+      : `【岁云降世】${name}映照诸天，9倍攻击的月华剑雨落向敌阵。`);
+  }
+  return result;
 }
 
 export function tickSuiyunFrost(unit, turnToken) {
@@ -118,7 +175,14 @@ export function consumeSuiyunControl(unit) {
 
 export function reduceSuiyunDamage(defender, damage) {
   const incoming = value(damage);
-  return eligible(defender) ? Math.floor(incoming * (1 - SUIYUN_COMBAT.defenseReduction)) : incoming;
+  let reduced = eligible(defender) ? Math.floor(incoming * (1 - SUIYUN_COMBAT.defenseReduction)) : incoming;
+  if (hasSuiyunAuthority(defender, '海洋')) reduced *= .8;
+  if (value(defender?._天阙护盾) > 0) {
+    const absorbed = Math.min(reduced, defender._天阙护盾);
+    defender._天阙护盾 -= absorbed;
+    reduced -= absorbed;
+  }
+  return Math.floor(reduced);
 }
 
 /** 传入护盾和替身结算后的实际掉血；反伤只结算一次，永不递归反弹。 */
@@ -214,7 +278,7 @@ export function castSuiyunMoonSword(attacker, enemies, { applyDamage, revive, pu
     for (let index = 0; index < SUIYUN_COMBAT.hits && living(attacker) && living(target); index++) {
       let actual;
       target._suiyunMoonHit = true;
-      try { actual = deal(target, scaled(attacker.攻击, SUIYUN_COMBAT.multiplier), attacker); }
+      try { actual = deal(target, amplifySuiyunFirstAttack(attacker, scaled(attacker.攻击, SUIYUN_COMBAT.multiplier)), attacker); }
       finally { delete target._suiyunMoonHit; }
       damage += value(actual);
       hits++;

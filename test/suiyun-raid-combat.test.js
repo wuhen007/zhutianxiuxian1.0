@@ -1,3 +1,4 @@
+import * as authorities from '../model/suiyunAuthority.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -20,7 +21,7 @@ function actionFunction(name) {
 
 function loadRaid() {
   const dependencies = {
-    ...suiyun, ...memoryCombat, getSuiyunEffects, hasSuiyunSkills, prepareHighRealmBattle, mergeHighRealmRaidResult,
+    ...suiyun, ...memoryCombat, ...authorities, Read_player: async () => ({}), Write_player: async () => {}, withPlayerMutationLock: async (_id, task) => task(), getSuiyunEffects, hasSuiyunSkills, prepareHighRealmBattle, mergeHighRealmRaidResult,
     plugin: class {}, data: { jineng1: [], jineng2: [], jineng3: [], jineng_heal: [] },
     ensureNumber: (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback,
     bigNumberTransform: value => String(value),

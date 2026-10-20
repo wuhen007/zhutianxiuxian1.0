@@ -1,3 +1,4 @@
+import { getSuiyunWudaoCost } from './suiyunAuthority.js';
 import {
   calculateWudaoResult,
   getAvailableLifespan,
@@ -217,10 +218,10 @@ export function calculateWudaoCosts(player, context = {}) {
   });
   const base = getWudaoResourceCosts(player?.mijinglevel_id, player?.xiangulevel_id);
   const costTechnique = getWudaoGongfaReduction(player);
-  const costMultiplier = 1 - costTechnique.rate;
+  const costMultiplier = (1 - costTechnique.rate) * getSuiyunWudaoCost(player, 1);
   const fortune = hasRedDustFortune(player, 'question', context.now);
   const adjusted = amount => applyQuestionFortuneCost(player, Math.ceil(amount * costMultiplier), context.now);
-  const lifespan = applyQuestionFortuneCost(
+  const lifespan = result.lifespanCost === 0 ? 0 : applyQuestionFortuneCost(
     player,
     Math.floor(base.lifespan * Math.max(0.5, result.lifespanMultiplier * costMultiplier)),
     context.now
@@ -354,7 +355,7 @@ function buildWudaoSection(player, context) {
     `悟道寿元命格倍率：${report.result.lifespanMultiplier.toFixed(2)}（低于1为减耗，高于1为增耗）`,
     `收益功法：${report.technique.name} ${percent(report.technique.bonus, true)}`,
     `收益来源：灵根/体质${percent(bonus.physique, true)}｜天资${percent(bonus.aptitude, true)}｜时代${percent(bonus.era, true)}｜命格${percent(bonus.mingge, true)}`,
-    '灵根、天资、时代与收益功法只影响悟道收益；浑源法门、悟道寿元命格和问道签才影响本次消耗。',
+    '岁云常青免悟道寿元；其他消耗按浑源法门、悟道寿元命格与问道签结算，天资、时代与收益功法只影响收益。',
   ].join('\n');
 }
 

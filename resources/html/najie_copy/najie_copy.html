@@ -75,18 +75,18 @@
               【{{item.type}}】{{item.自定义名称 || item.name}}({{['劣','普','优','精','极','绝','顶'][item.pinji]}})({{['未锁定','已锁定'][item.islockd]}})
             </div>
             {{if item.自定义名称}}<div class="item_int">本名：{{item.name}}</div>{{/if}}
-            {{if item.atk>499 || item.def>499 || item.HP>499}}
+            {{set equipmentGenesis = item.天阙创世 === true && item.百分比上限豁免 === '天阙创世'}}{{set equipmentCap = equipmentGenesis ? 500 : 499}}{{if !equipmentGenesis && (item.atk>499 || item.def>499 || item.HP>499)}}
             <div class="item_int">属性:无</div>
-            <div class="item_int">攻击：{{(item.atk || 0).toFixed(0)}}{{if item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.atk}}（+{{set equipmentPercent = item.归一属性.百分比.atk}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%）{{/if}}</div>
-            <div class="item_int">防御：{{(item.def || 0).toFixed(0)}}{{if item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.def}}（+{{set equipmentPercent = item.归一属性.百分比.def}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%）{{/if}}</div>
-            <div class="item_int">血量：{{(item.HP || 0).toFixed(0)}}{{if item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.HP}}（+{{set equipmentPercent = item.归一属性.百分比.HP}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%）{{/if}}</div>
+            <div class="item_int">攻击：{{(item.atk || 0).toFixed(0)}}{{if item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.atk}}（+{{set equipmentPercent = item.归一属性.百分比.atk}}{{((equipmentPercent > equipmentCap ? equipmentCap : equipmentPercent)*100).toFixed(0)}}%）{{/if}}</div>
+            <div class="item_int">防御：{{(item.def || 0).toFixed(0)}}{{if item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.def}}（+{{set equipmentPercent = item.归一属性.百分比.def}}{{((equipmentPercent > equipmentCap ? equipmentCap : equipmentPercent)*100).toFixed(0)}}%）{{/if}}</div>
+            <div class="item_int">血量：{{(item.HP || 0).toFixed(0)}}{{if item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.HP}}（+{{set equipmentPercent = item.归一属性.百分比.HP}}{{((equipmentPercent > equipmentCap ? equipmentCap : equipmentPercent)*100).toFixed(0)}}%）{{/if}}</div>
             {{else}}
             <div class="item_int">
               属性:{{['金','木','土','水','火'][item.id-1]}}
             </div>
-            <div class="item_int">攻击：{{set equipmentPercent = ((item.atk || 0) + ((item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.atk) || 0))}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%</div>
-            <div class="item_int">防御：{{set equipmentPercent = ((item.def || 0) + ((item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.def) || 0))}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%</div>
-            <div class="item_int">血量：{{set equipmentPercent = ((item.HP || 0) + ((item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.HP) || 0))}}{{((equipmentPercent > 499 ? 499 : equipmentPercent)*100).toFixed(0)}}%</div>
+            <div class="item_int">攻击：{{set equipmentPercent = ((item.atk || 0) + ((item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.atk) || 0))}}{{((equipmentPercent > equipmentCap ? equipmentCap : equipmentPercent)*100).toFixed(0)}}%</div>
+            <div class="item_int">防御：{{set equipmentPercent = ((item.def || 0) + ((item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.def) || 0))}}{{((equipmentPercent > equipmentCap ? equipmentCap : equipmentPercent)*100).toFixed(0)}}%</div>
+            <div class="item_int">血量：{{set equipmentPercent = ((item.HP || 0) + ((item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.HP) || 0))}}{{((equipmentPercent > equipmentCap ? equipmentCap : equipmentPercent)*100).toFixed(0)}}%</div>
             {{/if}}
             <div class="item_int">暴击：{{(item.bao*100).toFixed(0)}}%</div>
             <div class="item_int">数量：{{item.数量}}</div>

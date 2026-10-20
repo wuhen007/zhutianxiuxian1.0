@@ -1,4 +1,4 @@
-import { getSuiyunEffects } from '../../model/suiyun.js';
+import { getSuiyunEffects, getSuiyunStage } from '../../model/suiyun.js';
 import { getMemoryEffects } from '../../model/memoryPath.js';
 import { addMemoryLootBonus } from '../../model/suiyunLoot.js';
 import { getLearningPotentialCost } from '../../model/gongfaTeaching.js';
@@ -1113,7 +1113,7 @@ async all_shenyao(e) {
     const sender = await Read_player(A_qq);
     const receiver = await Read_player(B_qq);
     const dimensionTrade = getDimensionTradeCompatibility(sender, receiver);
-    if (!dimensionTrade.ok) {
+    if (!dimensionTrade.ok && !getSuiyunStage(sender)) {
       return e.reply([
         '【维度壁垒·一键赠送失效】',
         `你位于第${dimensionTrade.fromLayer}层，对方位于第${dimensionTrade.toLayer}层。`,

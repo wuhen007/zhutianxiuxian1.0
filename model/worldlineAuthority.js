@@ -1,5 +1,6 @@
 import { getRealmAuthorityLevel, getRealmAuthorityPath, lowerRealmAuthority } from './realmAuthority.js';
 import { getCausalDebtMultiplier } from './innateTreasure.js';
+import { hasSuiyunAuthority } from './suiyunAuthority.js';
 
 export const WORLDLINE_STATE_VERSION = 2;
 export const BREAK_KING_EMPEROR_RETRY_COOLDOWN_MS = 30 * 60 * 1000;
@@ -746,6 +747,7 @@ export function removeArtifactRankingEntries(ranking, itemName) {
 export function compareWorldlineAuthority(attacker, target) {
   const attackerLevel = getRealmAuthorityLevel(attacker);
   const targetLevel = getRealmAuthorityLevel(target);
+  if (hasSuiyunAuthority(target, '无上') && attacker !== target) return { ok: false, reason: 'suiyun-protected', attackerLevel, targetLevel };
   if (attackerLevel < 20) return { ok: false, reason: 'authority', attackerLevel, targetLevel };
   if (targetLevel > attackerLevel) return { ok: false, reason: 'higher_target', attackerLevel, targetLevel };
   if (targetLevel === attackerLevel) return { ok: false, reason: 'same_level', attackerLevel, targetLevel };
@@ -753,6 +755,7 @@ export function compareWorldlineAuthority(attacker, target) {
 }
 
 export function destroyWorldline(target, lineId, options = {}) {
+  if (hasSuiyunAuthority(target, '无上')) return { presentEffect: 'protected', allLinesDestroyed: false, noReturn: false };
   const state = ensureWorldlineState(target);
   const normalizedLineId = String(lineId || 'unknown');
   if (!state.destroyedLines.includes(normalizedLineId)) state.destroyedLines.push(normalizedLineId);
@@ -792,6 +795,7 @@ function playerNoReturn(player, now) {
 }
 
 export function resolveAncientHistoryStrike(attacker, target, options = {}) {
+  if (hasSuiyunAuthority(target, '无上')) return { ok: false, outcome: 'protected', reason: 'suiyun-protected' };
   const comparison = compareWorldlineAuthority(attacker, target);
   const now = options.now ?? Date.now();
   if (!comparison.ok) {

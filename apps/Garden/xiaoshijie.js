@@ -1807,7 +1807,7 @@ async showEnvironmentHelp(e) {
       return true;
     }
     const player = data.getData('player', player_qq) || {};
-    const maxSlots = (Number(world.attributes?.栖息地上限) || 1) + getHabitatSlotBonus(player);
+    const maxSlots = (Number(world.attributes?.栖息地上限) || 1) + getHabitatSlotBonus(player, Number(world.attributes?.栖息地上限) || 1);
     if (petIndex >= maxSlots) {
       e.reply(`这只仙宠当前位于超出上限的栖息地位置（${petIndex + 1}/${maxSlots}），请先装备扩容道具或召回前面的仙宠`);
       return true;
@@ -1878,7 +1878,7 @@ async showEnvironmentHelp(e) {
 
     migrateWorldData(world);
     const player = data.getData('player', player_qq) || {};
-    const maxSlots = (Number(world.attributes?.栖息地上限) || 1) + getHabitatSlotBonus(player);
+    const maxSlots = (Number(world.attributes?.栖息地上限) || 1) + getHabitatSlotBonus(player, Number(world.attributes?.栖息地上限) || 1);
     const guard = (world.栖息地 || []).slice(0, maxSlots).find(pet => pet.守卫);
     if (!guard) {
       e.reply('当前没有仙宠守卫，可使用 #设置仙宠守卫[仙宠名称]');
@@ -2008,7 +2008,7 @@ async showEnvironmentHelp(e) {
 
     const targetPlayer = data.getData('player', target.world.player_qq) || {};
     const targetMaxSlots = (Number(target.world.attributes?.栖息地上限) || 1)
-      + getHabitatSlotBonus(targetPlayer);
+      + getHabitatSlotBonus(targetPlayer, Number(target.world.attributes?.栖息地上限) || 1);
     const guard = (target.world.栖息地 || []).slice(0, targetMaxSlots).find(pet => (
       pet.守卫 && !pet.累倒 && !pet.工坊 && Number(pet.精力 ?? 100) > 0
     ));
@@ -2213,7 +2213,7 @@ async showEnvironmentHelp(e) {
     let workDescriptions = [];
     const activeHabitatCount = Math.max(
       0,
-      (Number(world.attributes?.栖息地上限) || 1) + getHabitatSlotBonus(player)
+      (Number(world.attributes?.栖息地上限) || 1) + getHabitatSlotBonus(player, Number(world.attributes?.栖息地上限) || 1)
     );
     const careStates = new Map();
     let requiredMeals = 0;
@@ -3432,7 +3432,7 @@ async harvestCropBonus(player_qq, crop, seedConfig) {
       return true;
     }
     const player = data.getData('player', player_qq) || {};
-    const maxSlots = (Number(world.attributes?.栖息地上限) || 1) + getHabitatSlotBonus(player);
+    const maxSlots = (Number(world.attributes?.栖息地上限) || 1) + getHabitatSlotBonus(player, Number(world.attributes?.栖息地上限) || 1);
     if (petIndex >= maxSlots) {
       e.reply(`这只仙宠当前位于超出上限的栖息地位置（${petIndex + 1}/${maxSlots}），不能分配到工坊`);
       return true;
@@ -3634,7 +3634,7 @@ async harvestCropBonus(player_qq, crop, seedConfig) {
     if (!world.工坊) world.工坊 = JSON.parse(JSON.stringify(DEFAULT_WORKSHOPS));
 
     const player = data.getData('player', player_qq) || {};
-    const maxSlots = (Number(world.attributes?.栖息地上限) || 1) + getHabitatSlotBonus(player);
+    const maxSlots = (Number(world.attributes?.栖息地上限) || 1) + getHabitatSlotBonus(player, Number(world.attributes?.栖息地上限) || 1);
     const lines = [`【${world.world_name}】工坊总览（有效栖息地：${maxSlots}格）`];
     const supplies = ensureWorkshopSupplies(world);
     lines.push(`工坊物资：仙宠口粮x${supplies.仙宠口粮}、界源矿石x${supplies.界源矿石}、工坊构件x${supplies.工坊构件}${supplies.欠餐 ? `、欠餐x${supplies.欠餐}` : ''}`);
@@ -3873,8 +3873,8 @@ export async function get_xiaoshijie_img(e) {
                 ? '可种植更多灵植'
                 : '药田已满',
             habitatCount: world.栖息地?.length || 0,
-            habitatMax: (world.attributes.栖息地上限 || 1) + getHabitatSlotBonus(player),
-            habitat_desc: ((world.attributes.栖息地上限 || 1) + getHabitatSlotBonus(player)) > (world.栖息地?.length || 0)
+            habitatMax: (world.attributes.栖息地上限 || 1) + getHabitatSlotBonus(player, Number(world.attributes?.栖息地上限) || 1),
+            habitat_desc: ((world.attributes.栖息地上限 || 1) + getHabitatSlotBonus(player, Number(world.attributes?.栖息地上限) || 1)) > (world.栖息地?.length || 0)
                 ? '可安置更多仙宠'
                 : '栖息地已满',
             progressPercent: ((world.药田?.length || 0) / world.attributes.药田上限 * 100).toFixed(1),

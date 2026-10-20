@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { hasSuiyunAuthority } from '../../model/suiyunAuthority.js';
 
 import { plugin, verc } from '../../api/api.js';
 import {
@@ -446,6 +447,7 @@ export class WorldlineAuthority extends plugin {
 
       if (!globalScope && targetId !== actorId && await existplayer(targetId)) {
         const target = await Read_player(targetId);
+        if (hasSuiyunAuthority(target, '无上')) return e.reply('【无上】目标时间线隐于天阙，神念未曾窥见其古史。');
         const comparison = compareWorldlineAuthority(actor, target);
         if (!comparison.ok) {
           const debt = addCausalDebt(actor, comparison.reason === 'same_level' ? 45 : 80, '强行支取受护持的时间线');
@@ -666,6 +668,7 @@ export class WorldlineAuthority extends plugin {
     return withPlayerPairLock(actorId, targetId, async () => {
       const actor = await Read_player(actorId);
       const target = await Read_player(targetId);
+      if (hasSuiyunAuthority(target, '无上')) return e.reply('【无上】目标时间线隐于天阙之外，本次古史打击消散。');
       if (getRealmAuthorityLevel(actor) < 20) {
         return e.reply('古史打击要求秘境、仙古或花粉路任一体系至少达到准仙帝。');
       }

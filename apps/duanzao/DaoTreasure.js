@@ -46,6 +46,7 @@ import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { FileRollbackTransaction, writeJsonAtomically } from '../SecretPlace/rebirthTransaction.js';
 import { findYongJiByNameOrQQ, reviveFromYongJi } from '../Boss/YongJiList.js';
 import { getActiveZhutianAvatarName } from '../../model/zhutianMirror.js';
+import { getSuiyunDream, consumeSuiyunDream, SUIYUN_BRANCH_AUTHORITIES } from '../../model/suiyunAuthority.js';
 
 const APTITUDE_EVALUATIONS = Object.freeze({
   无演无尽: '亘古绝今从未有，演尽诸天万界，已超脱天道束缚',
@@ -127,6 +128,12 @@ export class DaoTreasure extends plugin {
   async requireOwner(e, authority = '') {
     const qq = await this.qq(e);
     if (!await existplayer(qq)) return null;
+    const borrower = await Read_player(qq);
+    const dream = getSuiyunDream(borrower, '大道至宝', authority);
+    if (dream && !dream.used && authority) return {
+      qq, player: borrower, dream: true,
+      state: { treasure: { name: `梦幻·${authority}`, ownerId: qq, origin: 12, authorities: { [authority]: '完整' } } },
+    };
     const state = readDaoTreasureState();
     if (!isDaoTreasureOwner(qq, state)) {
       await e.reply('大道至宝并未认你为主。');
@@ -142,6 +149,31 @@ export class DaoTreasure extends plugin {
       return null;
     }
     return { qq, player, state };
+  }
+
+  async spendOrigin(options) {
+    const player = await Read_player(options.ownerId);
+    const dream = getSuiyunDream(player, '大道至宝');
+    if (!dream || dream.used || (options.authority && options.authority !== dream.key)) return spendDaoTreasureOrigin(options);
+    return withPlayerMutationLock(options.ownerId, async () => {
+      const latest = await Read_player(options.ownerId);
+      const current = getSuiyunDream(latest, '大道至宝', dream.key);
+      if (!current || current.used) return { ok: false, reason: 'already-used', message: '这一次梦幻权柄已使用。' };
+      const transaction = new FileRollbackTransaction();
+      transaction.capture(path.join(__PATH.player_path, `${options.ownerId}.json`));
+      try {
+        const treasure = { name: `梦幻·${dream.key}`, ownerId: options.ownerId, origin: 12 };
+        await options.mutate?.(treasure, { treasure });
+        const result = await Read_player(options.ownerId);
+        if (!consumeSuiyunDream(result, '大道至宝', dream.key)) throw new Error('梦幻权柄状态已变化');
+        await Write_player(options.ownerId, result);
+        transaction.commit();
+        return { ok: true, remaining: 0, treasure };
+      } catch (error) {
+        transaction.rollback();
+        throw error;
+      }
+    });
   }
 
   async showForge(e) {
@@ -357,6 +389,8 @@ export class DaoTreasure extends plugin {
         `本名：${item.name}｜器主：${(await Read_player(qq)).名号 || qq}`,
         `固定全属性：${Number(item.固定全属性) || 0}｜全属性倍率加成：${Number(item.全属性倍率加成) || 0}`,
         '改名：#大道至宝改名 新名称（1至10字，仅改器名，不改变权柄与绑定）。',
+        ...(item.name === '无上天阙枝'
+          ? SUIYUN_BRANCH_AUTHORITIES.map(([name, command, effect]) => `${name}｜${command}：${effect}`) : []),
       ].join('\n'));
     }
     const ctx = await this.requireOwner(e);
@@ -492,7 +526,8 @@ export class DaoTreasure extends plugin {
   }
 
   async applyRewrite(e, request) {
-    const result = await spendDaoTreasureOrigin({
+    const result = await this.spendOrigin({
+      authority: '命运',
       ownerId: request.ownerQq,
       cost: request.cost,
       mutate: async () => withPlayerMutationLock(request.targetQq, async () => {
@@ -547,9 +582,10 @@ export class DaoTreasure extends plugin {
     const found = await findYongJiByNameOrQQ(target);
     if (!found.found) return e.reply('未在永寂之界寻到该修士的真灵记录。');
     const targetQq = String(found.record.qq || found.record.id || target);
-    const result = await spendDaoTreasureOrigin({
+    const result = await this.spendOrigin({
       ownerId: ctx.qq,
       cost: 6,
+      authority: '生死',
       mutate: async () => {
         const revived = await reviveFromYongJi(targetQq);
         if (!revived.success) throw new Error(revived.reason || '映照失败');
@@ -570,9 +606,10 @@ export class DaoTreasure extends plugin {
     if (!name) return e.reply('用法：#推演终极功法 功法名 攻伐/护道/轮回/悟道');
     const allTechniques = [...(data.gongfa_list || []), ...(data.timegongfa_list || []), ...(data.dijingList || [])];
     if (allTechniques.some(item => item.name === name)) return e.reply(`诸天已有功法【${name}】，推演不可覆盖既有传承。`);
-    const result = await spendDaoTreasureOrigin({
+    const result = await this.spendOrigin({
       ownerId: ctx.qq,
       cost: 8,
+      authority: '万法',
       useKey: 'ultimate-technique',
       mutate: async treasure => {
         const playerPath = path.join(__PATH.player_path, `${ctx.qq}.json`);
@@ -624,9 +661,10 @@ export class DaoTreasure extends plugin {
     const name = cleanName(String(e.msg).replace(/^#开辟大道界\s+/, ''), 10);
     if (!name) return e.reply('大道界名称需为1至10个字符。');
     const worldPath = path.join(data.lib_path, '小世界列表.json');
-    const result = await spendDaoTreasureOrigin({
+    const result = await this.spendOrigin({
       ownerId: ctx.qq,
       cost: 12,
+      authority: '世界',
       useKey: 'dao-world',
       mutate: async treasure => {
         const transaction = new FileRollbackTransaction();

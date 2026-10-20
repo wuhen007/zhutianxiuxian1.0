@@ -11,7 +11,7 @@ import { getGodDemonStealRule } from '../model/realmAuthority.js';
 import { hasSupremeInnate } from '../model/supremePath.js';
 import { create1v1BattleResult, createTeamBattleResult } from '../model/combat/BattleResult.js';
 import * as suiyunPvp from '../model/suiyunPvp.js';
-import { getSuiyunEvergreenSpeed } from '../model/suiyunCombat.js';
+import { getSuiyunEvergreenSpeed, amplifySuiyunFirstAttack } from '../model/suiyunCombat.js';
 
 const source = fs.readFileSync(new URL('../model/xiuxian.js', import.meta.url), 'utf8');
 const raidSource = fs.readFileSync(new URL('../apps/Battle/tuanben.js', import.meta.url), 'utf8');
@@ -38,7 +38,7 @@ function functionSource(name) {
 function runtime(overrides = {}) {
   const unexpected = () => { throw new Error('跨境裁决不应进入普通技能执行阶段'); };
   const bindings = {
-    ...suiyunPvp, getSuiyunEvergreenSpeed,
+    ...suiyunPvp, getSuiyunEvergreenSpeed, amplifySuiyunFirstAttack,
     prepareHighRealmBattle, mergeHighRealmRaidResult, getHighRealmBarrier,
     create1v1BattleResult, createTeamBattleResult,
     zd_battle_1v1: unexpected,

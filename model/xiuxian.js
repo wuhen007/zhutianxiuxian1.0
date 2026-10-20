@@ -30,6 +30,7 @@ import { releaseJuelingLifespanForAuthority } from './juelingLifespan.js';
 import { applyClowWishBattleWeakness } from './clowWish.js';
 import { findTalentSynchronizationMatch } from './talentSynchronization.js';
 import { getSuiyunEffects, getSuiyunLotusBonus, hasSuiyunSkills } from './suiyun.js';
+import { claimSuiyunBattleAuthority, getSuiyunEffectiveDefense } from './suiyunAuthority.js';
 import { getMemoryStage, normalizeMemoryPlayer } from './memoryPath.js';
 import { getSuiyunPvpSource, prepareSuiyunPvpBattle, restoreSuiyunPvpResult } from './suiyunPvp.js';
 import { computePetStoredBonus, rebuildPlayerLucky, syncSuiyunLuckyBonus } from './petLuckyCalc.js';
@@ -38,7 +39,7 @@ import {
   resetMemoryCombat, tickMemoryCombatRound, tryMemoryLethalSurvival,
 } from './memoryCombat.js';
 import {
-  castSuiyunMoonSword, consumeSuiyunControl, reduceSuiyunDamage,
+  castSuiyunMoonSword, consumeSuiyunControl, reduceSuiyunDamage, amplifySuiyunFirstAttack, tickSuiyunAuthorityRound,
   reflectSuiyunDamage, resetSuiyunCombat, tickSuiyunFrost, trySuiyunRevival,
   clearSuiyunBattleRestrictions, canExecuteCombatTarget, executeSuiyunMoonTarget, getSuiyunHealingMultiplier, getSuiyunEvergreenSpeed,
 } from './suiyunCombat.js';
@@ -7214,6 +7215,12 @@ export async function Go(e, options = {}) {
     // 查询redis中的人物动作
     let action = await redis.get('xiuxian:player:' + usr_qq + ':action');
     action = JSON.parse(action);
+    if (player.当前大道至宝 === '无上天阙枝'
+      && (action?.heianlaolong || ['天牢', '禁闭', '被囚禁异域', '被关押黑暗牢笼'].includes(action?.action))) {
+        await redis.del('xiuxian:player:' + usr_qq + ':action');
+        await e.reply('【无上】天阙权柄压落，囚牢锁链自解，你已脱身。');
+        return true;
+    }
     
     if (action != null) {
         // 人物有动作查询动作结束时间
@@ -8613,6 +8620,7 @@ async function zd_battle_1v1(AA_player, BB_player, options = {}) {
   // 保持输入、战斗状态与返回字段的 A/B 归属一致。
   let A_player = JSON.parse(JSON.stringify(AA_player));
   let B_player = JSON.parse(JSON.stringify(BB_player));
+  await claimSuiyunBattleAuthority([A_player, B_player], { read: Read_player, write: Write_player, lock: withPlayerMutationLock });
   resetSuiyunCombat(A_player);
   resetSuiyunCombat(B_player);
   resetMemoryCombat(A_player);
@@ -9367,7 +9375,7 @@ let B_speed = getBattleUnitSpeed(B_player);
     }
 
     const 荒无看破防御 = context === 'main' && applyHuangwuIntentTurn(attacker, defender, msg);
-    let 基础伤害 = Harm(attacker.攻击 * 0.85, defender.防御);
+    let 基础伤害 = Harm(attacker.攻击 * 0.85, getSuiyunEffectiveDefense(attacker, defender));
     let 暴击伤害 = Math.trunc(基础伤害 * baoji);
     let 法球伤害 = Math.trunc(attacker.攻击 * attacker.法球倍率);
     let 伤害 = 暴击伤害 + 法球伤害;
@@ -10475,6 +10483,11 @@ msg.push(bSpeedMsg);
     // 霜寒按外层战斗回合结算，未能出手的受控单位也会衰减。
     for (const unit of [A_player, B_player, ...A_tahua_entities, ...B_tahua_entities]) {
       msg.push(...tickMemoryCombatRound(unit, `duel:${cnt}`).messages);
+      const authority = tickSuiyunAuthorityRound(unit, unit === A_player ? [B_player] : [A_player], `duel:${cnt}`,
+        (source, target, damage, messages) => applySuiyunBattleDamage(source, target, damage, messages));
+      msg.push(...authority.messages);
+      if (unit === A_player) A_speed *= authority.speedMultiplier;
+      if (unit === B_player) B_speed *= authority.speedMultiplier;
       const frost = tickSuiyunFrost(unit, `duel:${cnt}`);
       msg.push(...frost.messages);
       if (unit === A_player) A_speed *= frost.speedMultiplier;
@@ -10657,7 +10670,7 @@ msg.push(bSpeedMsg);
         if (Math.random() < 0.25) {
           msg.push(`${attacker.名号} 演化出了阴阳生死图，虚空抖动，一副阐述阴阳生死大道的神图出现，天地间一瞬间只剩下了阴阳黑白鱼，其上散发出的威势让人心生绝望，似要破灭一切，重开此界`);
           
-          let 伤害 = Harm(attacker.攻击 * 0.85, defender.防御);
+          let 伤害 = Harm(attacker.攻击 * 0.85, getSuiyunEffectiveDefense(attacker, defender));
           let 法球伤害 = Math.trunc(伤害 * attacker.法球倍率);
           伤害 = Math.trunc(1.5 * 法球伤害);
           
@@ -10688,7 +10701,7 @@ msg.push(bSpeedMsg);
         if (Math.random() < 0.1) {
           msg.push(`${attacker.名号} 发动了异象仙王临九天，召出一道身影，那是另一个他自己，高坐九重天，身绕玄黄气，俯瞰天地间，如同一尊仙王出世，威震苍穹`);
           
-          let 伤害 = Harm(attacker.攻击 * 0.85, defender.防御);
+          let 伤害 = Harm(attacker.攻击 * 0.85, getSuiyunEffectiveDefense(attacker, defender));
           let 法球伤害 = Math.trunc(伤害 * attacker.法球倍率);
           伤害 = Math.trunc(2 * 法球伤害);
           
@@ -11174,6 +11187,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
   // 初始化所有参战单位
   const allUnits = [];
+  await claimSuiyunBattleAuthority([...A_team, ...B_team], { read: Read_player, write: Write_player, lock: withPlayerMutationLock });
 
   // 团队状态追踪
   // P3-1: 临字秘状态打包为对象（与 1v1 一致）
@@ -11840,7 +11854,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
         attackMsgs.push(`${attacker.名号}撑开了异象锦绣山河！`);
       }
       if (Math.random() < 0.25) {
-        let 伤害 = Harm(attacker.攻击 * 0.85, defender.防御);
+        let 伤害 = Harm(attacker.攻击 * 0.85, getSuiyunEffectiveDefense(attacker, defender));
         let 法球伤害 = Math.trunc(伤害 * attacker.法球倍率);
         伤害 = Math.trunc(1.5 * 法球伤害);
         伤害 = applyTeamSuiyunDamage(attacker, defender, 伤害, attackMsgs);
@@ -11968,7 +11982,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
     // 技能触发
     const 荒无看破防御 = applyHuangwuIntentTurn(attacker, defender, attackMsgs);
-    let 基础伤害 = Harm(attacker.攻击 * 0.85, defender.防御);
+    let 基础伤害 = Harm(attacker.攻击 * 0.85, getSuiyunEffectiveDefense(attacker, defender));
     let 暴击伤害 = Math.trunc(基础伤害 * baoji);
     let 法球伤害 = Math.trunc(attacker.攻击 * attacker.法球倍率);
     let 伤害 = 暴击伤害 + 法球伤害;
@@ -12565,6 +12579,8 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
     for (const unit of allUnits) {
       msg.push(...tickMemoryCombatRound(unit, `team:${cnt}`).messages);
+      msg.push(...tickSuiyunAuthorityRound(unit, unit._team === 'A' ? B_team : A_team, `team:${cnt}`,
+        (source, target, damage, messages) => applySuiyunBattleDamage(source, target, damage, messages)).messages);
       const frost = tickSuiyunFrost(unit, `team:${cnt}`);
       msg.push(...frost.messages);
       if (unit.当前血量 <= 0) {
@@ -12815,6 +12831,7 @@ export async function tb_battle(players, boss, team) {
   // 深拷贝玩家和BOSS数据
   let teamData = players.map(p => JSON.parse(JSON.stringify(p)));
   let bossCopy = JSON.parse(JSON.stringify(boss));
+  await claimSuiyunBattleAuthority([...teamData, bossCopy], { read: Read_player, write: Write_player, lock: withPlayerMutationLock });
   for (const unit of [...teamData, bossCopy]) { resetSuiyunCombat(unit); resetMemoryCombat(unit); }
   bossCopy.初始血量 = bossCopy.当前血量;
   teamData.forEach(normalizeBattleOrbMultiplier);
@@ -12903,6 +12920,8 @@ export async function tb_battle(players, boss, team) {
 
     for (const unit of [...teamData, bossCopy]) {
       msg.push(...tickMemoryCombatRound(unit, `raid:${cnt}`).messages);
+      msg.push(...tickSuiyunAuthorityRound(unit, unit === bossCopy ? teamData : [bossCopy], `raid:${cnt}`,
+        (source, target, damage, messages) => applySuiyunBattleDamage(source, target, damage, messages)).messages);
       const frost = tickSuiyunFrost(unit, `raid:${cnt}`);
       msg.push(...frost.messages);
       reviveSuiyunRaid(unit);
@@ -13233,7 +13252,7 @@ async function calculateAttack(attacker, defender, actionIndex, jineng1, jineng2
   // P0-5: 伤害公式用 (原值 + 装备加成) 而不是修改后属性
   const realAtk = originalAtk + weaponAtkBoost;
   const realDef = originalDef + weaponDefBoost;
-  let 伤害 = Harm(realAtk * 0.85, defender.防御);
+  let 伤害 = Harm(realAtk * 0.85, getSuiyunEffectiveDefense(attacker, defender));
   let 法球伤害 = Math.trunc(realAtk * attacker.法球倍率);
   伤害 = Math.trunc(伤害 + 法球伤害 + realDef * 0.1);
 
@@ -13518,7 +13537,7 @@ export function calcDamage(attacker, defender, rawDamage, dmgTypeOrBuckets = '�
       total = Math.trunc(total * (1 - generalReduction));
       msgs.push(`${defender.名号}的道种护体抵消了${bigNumberTransform(before - total)}点伤害！`);
     }
-    const treasureDamage = applyNewTreasureDamageRules(attacker, defender, total);
+    const treasureDamage = applyNewTreasureDamageRules(attacker, defender, amplifySuiyunFirstAttack(attacker, total));
     msgs.push(...treasureDamage.messages);
     return { actual_damage: treasureDamage.damage, dodged: false, msgs };
   }
@@ -13556,7 +13575,7 @@ export function calcDamage(attacker, defender, rawDamage, dmgTypeOrBuckets = '�
     dmg = Math.trunc(dmg * (1 - generalReduction));
     msgs.push(`${defender.名号}的道种护体抵消了${bigNumberTransform(before - dmg)}点伤害！`);
   }
-  const treasureDamage = applyNewTreasureDamageRules(attacker, defender, dmg);
+  const treasureDamage = applyNewTreasureDamageRules(attacker, defender, amplifySuiyunFirstAttack(attacker, dmg));
   msgs.push(...treasureDamage.messages);
   return { actual_damage: treasureDamage.damage, dodged: false, msgs };
 }

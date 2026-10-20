@@ -69,7 +69,7 @@ test('天神破虚道与后续主线、极境试炼统一接入恐怖威能结�
   assert.match(src, /const base = horror\.damage;/);
   assert.doesNotMatch(src, /horror\.damage \* daoHeartMultiplier/);
   assert.match(src, /_withTransientTribulationEffects\s*\(player, action\)/);
-  assert.match(src, /finally\s*\{\s*this\._resetTransientTribulationEffects\(player\)/);
+  assert.match(src, /finally\s*\{[\s\S]*?this\._resetTransientTribulationEffects\(player\)/);
   assert.match(src, /_resetTransientTribulationEffects\s*\(player\)/);
   assert.doesNotMatch(src, /const r = originalDamage \* \(player\.者字秘效果/);
   assert.doesNotMatch(src, /const r = originalDamage \* \(player\.不灭经效果/);

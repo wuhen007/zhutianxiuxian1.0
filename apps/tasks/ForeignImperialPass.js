@@ -1,3 +1,4 @@
+import { hasSuiyunAuthority } from '../../model/suiyunAuthority.js';
 import plugin from '../../../../lib/plugins/plugin.js';
 import fs from 'fs';
 import path from 'path';
@@ -405,9 +406,10 @@ export class ForeignImperialPass extends plugin {
     const year = currentWorldYear();
     const wave = state.wave;
     const ranking = rankImperialPassPrestige(state.prestige);
-    const captive = Math.random() < SURRENDER_DEMAND_CHANCE
+    let captive = Math.random() < SURRENDER_DEMAND_CHANCE
       ? ranking.find(item => !(state.prisoners || []).some(prisoner => String(prisoner.qq) === String(item.qq)))
       : null;
+    if (captive && hasSuiyunAuthority(await Read_player(String(captive.qq)), '理想')) captive = null;
     state.history.push({ wave, outcome: 'routed', year, kills: state.active.totalKills, captive: captive?.qq || null });
     state.history = state.history.slice(-20);
     state.status = 'resting';

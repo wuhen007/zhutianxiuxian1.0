@@ -1,3 +1,4 @@
+import { getSuiyunWudaoCost, hasSuiyunAuthority } from '../../model/suiyunAuthority.js';
 import { plugin, verc, config, data } from '../../api/api.js';
 import fs from 'fs';
 import {
@@ -1500,7 +1501,9 @@ if (player.mijinglevel_id > 10 && player.mijinglevel_id < 18) {
     return;
     }
         // 检查剑云海庇护
-      if (player["player.剑云海庇护"] && player["player.剑云海庇护"].黑暗牢笼 > 0) {
+      if (hasSuiyunAuthority(player, '理想')) {
+    return e.reply('【理想】捷克罗姆击碎黑暗锁链，本次免于囚禁；请再次尝试证道。');
+} else if (player["player.剑云海庇护"] && player["player.剑云海庇护"].黑暗牢笼 > 0) {
     // 消耗一次庇护
     player["player.剑云海庇护"].黑暗牢笼--;
     await Write_player(usr_qq, player);
@@ -1922,11 +1925,11 @@ async hudao(e) {
       });
       const baseCosts = getWudaoResourceCosts(player.mijinglevel_id, player.xiangulevel_id);
       const wudaoGongfa = getWudaoGongfaReduction(player);
-      const wudaoCostMultiplier = (1 - wudaoGongfa.rate) * getDaoHeartWudaoCostMultiplier(player);
+      const wudaoCostMultiplier = (1 - wudaoGongfa.rate) * getDaoHeartWudaoCostMultiplier(player) * getSuiyunWudaoCost(player, 1);
       const potentialCost = applyQuestionFortuneCost(player, Math.ceil(baseCosts.potential * wudaoCostMultiplier));
       const cultivationCost = applyQuestionFortuneCost(player, Math.ceil(baseCosts.cultivation * wudaoCostMultiplier));
       const bloodCost = applyQuestionFortuneCost(player, Math.ceil(baseCosts.blood * wudaoCostMultiplier));
-      const lifespanCost = applyQuestionFortuneCost(
+      const lifespanCost = result.lifespanCost === 0 ? 0 : applyQuestionFortuneCost(
         player,
         Math.floor(baseCosts.lifespan * Math.max(0.5, result.lifespanMultiplier * wudaoCostMultiplier))
       );

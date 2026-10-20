@@ -1,3 +1,4 @@
+import { hasSuiyunAuthority } from '../../model/suiyunAuthority.js';
 import fs from 'fs';
 import { plugin, puppeteer, verc, data, Show, config } from '../../api/api.js';
 import { AppName } from '../../app.config.js';
@@ -542,6 +543,7 @@ async viewGlobalPush(e) {
     const target = await Read_player(targetQQ);
     
     // 执行打入天牢
+    if (hasSuiyunAuthority(target, '理想')) return e.reply('【理想】捷克罗姆守护此身，天牢锁链已碎。');
     await this.setPlayerToPrison(targetQQ, minutes);
     
     // 构建天牢文案

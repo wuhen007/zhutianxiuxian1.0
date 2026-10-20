@@ -1,3 +1,4 @@
+import { hasSuiyunAuthority } from './suiyunAuthority.js';
 import { addGongfaProficiency, getGongfaProficiencyProfile } from './gongfaProficiency.js';
 import { reduceTribulationDamageByDefense } from './tribulationDamage.js';
 import { getPassiveTribulationDamageMultiplier } from './innateTreasure.js';
@@ -674,6 +675,7 @@ export function calculateFlowerDaoGain(player, realmId, random = Math.random, op
     world: clamp(number(options.worldBonus), 0, 0.5),
     wound: wound.daoMultiplier - 1,
     daoHeart: clamp(number(options.daoHeartMultiplier, 1), 0.5, 1) - 1,
+    ideal: hasSuiyunAuthority(player, '理想') ? .2 : 0,
   };
   const additiveBonus = Object.entries(bonuses)
     .filter(([name]) => !['world', 'wound', 'daoHeart'].includes(name))
@@ -902,11 +904,12 @@ export function applyFlowerTribulationOutcome(player, outcome, random = Math.ran
   const pollutionGain = Math.max(1, Math.trunc(gate.rule.failurePollution * stoneJarRate)) + (mutated ? 6 : 0);
   player.始祖污染度 = Math.min(POLLUTION_MAX, player.始祖污染度 + pollutionGain);
   player.进化积淀 += Math.max(6, Math.trunc(gate.rule.rewardAccumulation * 0.2));
-  const cultivationLoss = Math.max(0, Math.floor(Number(player.修为 || 0) * 0.15));
-  const bloodLoss = Math.max(0, Math.floor(Number(player.血气 || 0) * 0.15));
+  const lossRate = hasSuiyunAuthority(player, '霜华') ? .5 : 1;
+  const cultivationLoss = Math.max(0, Math.floor(Number(player.修为 || 0) * 0.15 * lossRate));
+  const bloodLoss = Math.max(0, Math.floor(Number(player.血气 || 0) * 0.15 * lossRate));
   player.修为 = Math.max(0, Number(player.修为 || 0) - cultivationLoss);
   player.血气 = Math.max(0, Number(player.血气 || 0) - bloodLoss);
-  player.道伤 = Math.max(0, Math.trunc(number(player.道伤)) + 1);
+  player.道伤 = Math.max(0, number(player.道伤)) + lossRate;
   gate.path.history.push({ realmId, name: gate.rule.name, ok: false, failedStage: outcome.failedStage || '', at: now });
   gate.path.history = gate.path.history.slice(-20);
   return {
@@ -916,7 +919,7 @@ export function applyFlowerTribulationOutcome(player, outcome, random = Math.ran
     pollutionGain,
     mutated,
     failures: gate.failures + 1,
-    punishment: { cultivationLoss, bloodLoss, wounds: 1 },
+    punishment: { cultivationLoss, bloodLoss, wounds: lossRate },
   };
 }
 

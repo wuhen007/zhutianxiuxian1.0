@@ -80,6 +80,11 @@ test('归一追加词条在所有装备模板中可编译并正确合并显示',
       灵石上限: 1,
       装备: [
         {
+          id: 99, name: '天阙创世剑', type: '武器', pinji: 0, islockd: 0,
+          atk: 500, def: 500, HP: 500, bao: 0, 数量: 1, 出售价: 0,
+          天阙创世: true, 百分比上限豁免: '天阙创世',
+        },
+        {
           id: 1,
           name: '固定归一剑',
           type: '武器',
@@ -154,6 +159,7 @@ test('归一追加词条在所有装备模板中可编译并正确合并显示',
   assert.match(output, /攻击：49900%/);
   assert.match(output, /攻击：1000（\+49900%）/);
   assert.doesNotMatch(output, /60000%/);
+  assert.match(output, /攻击：50000%/);
 });
 
 test('所有装备模板的单件百分比都按499上限渲染，保留正常小数词条', () => {
@@ -166,12 +172,14 @@ test('所有装备模板的单件百分比都按499上限渲染，保留正常�
         归一属性: { 百分比: { atk: rate, def: rate, HP: rate } },
       };
       const data = {
+        equipmentCap: 499,
         item, arms: item, armor: item, treasure: item,
         equipment: { 武器: item, 护具: item, 法宝: item, 帝兵: item },
         $value: { name: item },
       };
       for (const expression of expressions) {
         assert.equal(template.render(expression, data), (Math.min(499, rate) * 100).toFixed(0), file);
+        assert.equal(template.render(expression, { ...data, equipmentCap: 500 }), (Math.min(500, rate) * 100).toFixed(0), `${file}:创世`);
       }
     }
   }

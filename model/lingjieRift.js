@@ -1,3 +1,4 @@
+import { hasSuiyunAuthority } from './suiyunAuthority.js';
 import { getSuiyunEffects } from './suiyun.js';
 import { getMemoryEffects } from './memoryPath.js';
 import { isDaofaActive } from './daofa.js';
@@ -134,7 +135,9 @@ export function calculateRiftExploreDuration(player, minggeReductionMs = 0) {
     messages.push(`命格·秘境加速：-${Math.round(safeMinggeReductionMs / 1000)}秒`);
   }
 
-  const durationMs = Math.max(RIFT_MIN_EXPLORE_MS, RIFT_EXPLORE_MS - reductionMs);
+  const skyReduction = hasSuiyunAuthority(player, '天空') ? 60_000 : 0;
+  if (skyReduction) messages.push('天空引路：-60秒');
+  const durationMs = Math.max(1_000, Math.max(RIFT_MIN_EXPLORE_MS, RIFT_EXPLORE_MS - reductionMs) - skyReduction);
   return {
     durationMs,
     reductionMs: RIFT_EXPLORE_MS - durationMs,

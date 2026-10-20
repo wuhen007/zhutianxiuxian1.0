@@ -39,6 +39,7 @@ import {
   getSecretPlaceActionEndTime,
 } from '../../model/secretPlaceAddiction.js';
 import { FileRollbackTransaction } from '../SecretPlace/rebirthTransaction.js';
+import { getSuiyunDream, consumeSuiyunDream, SUIYUN_BRANCH_AUTHORITIES } from '../../model/suiyunAuthority.js';
 import {
   AUTHORITY_COOLDOWNS,
   ETERNAL_MAP_COMPONENTS,
@@ -230,6 +231,8 @@ export class InnateTreasureAuthorities extends plugin {
   async showTreasureCatalog(e) {
     if (!verc({ e })) return false;
     const requestedName = String(e.msg || '').replace(/^#(?:先天)?至宝图鉴\s*/, '').trim();
+    if (requestedName === '无上天阙枝') return e.reply(['【无上天阙枝·十三权柄】',
+      ...SUIYUN_BRANCH_AUTHORITIES.map(([name, command, effect]) => `${name}｜${command}\n${effect}`)].join('\n\n'));
     const state = readInnateTreasureState();
     if (!requestedName) {
       const statuses = await Promise.all(INNATE_TREASURE_NAMES.map(name => this.treasureOwnerStatus(state, name)));
@@ -436,11 +439,16 @@ export class InnateTreasureAuthorities extends plugin {
       await e.reply(`【${treasureName}】的先天权柄正被道天清算封禁，还需${remaining}才能再次显化。`);
       return null;
     }
+    const dream = getSuiyunDream(player, treasureName, cooldownKey);
+    if (dream?.used && !dream.passive) {
+      await e.reply('这一次梦幻权柄已使用，请等待下一次梦幻冷却。');
+      return null;
+    }
     if (!hasEquippedInnateTreasure(player, treasureName, cooldownKey)) {
       await e.reply(`需先执掌【${treasureName}】才能动用此权柄。`);
       return null;
     }
-    if (cooldownKey) {
+    if (cooldownKey && !dream) {
       const remaining = getCooldownRemaining(player, cooldownKey);
       if (remaining > 0) {
         await e.reply(`【${cooldownKey}】尚在冷却，还需${formatCooldown(remaining)}。`);
@@ -963,8 +971,9 @@ export class InnateTreasureAuthorities extends plugin {
     const qq = String(await channel(String(e.user_id).replace('qg_', '')));
     if (!await existplayer(qq)) return false;
     const player = await Read_player(qq);
-    if (player.当前大道至宝 !== ETERNAL_MAP_NAME) return e.reply('需先执掌【永恒仙图】才能改写既定事实。');
-    const remaining = getCooldownRemaining(player, '永恒改命');
+    const dream = getSuiyunDream(player, ETERNAL_MAP_NAME, '永恒改命');
+    if (player.当前大道至宝 !== ETERNAL_MAP_NAME && (!dream || dream.used)) return e.reply('需先执掌【永恒仙图】才能改写既定事实。');
+    const remaining = dream ? 0 : getCooldownRemaining(player, '永恒改命');
     if (remaining > 0) return e.reply(`【永恒改命】尚在冷却，还需${formatCooldown(remaining)}。`);
     const id = String(e.msg).replace(/^#永恒改命\s+/, '').trim();
     const records = Array.isArray(player.先天权柄?.永恒改命记录) ? player.先天权柄.永恒改命记录 : [];
@@ -1037,6 +1046,7 @@ export class InnateTreasureAuthorities extends plugin {
     if (!ctx) return false;
     const mode = String(e.msg).match(/^#切换太极\s+(阴|阳)$/)?.[1];
     getAuthorityState(ctx.player).太极模式 = mode;
+    consumeSuiyunDream(ctx.player, '太极图', '切换太极');
     await Write_player(ctx.qq, ctx.player);
     return e.reply(mode === '阴'
       ? '太极图转入阴相：受击时有30%概率化去伤害并立即反击。'

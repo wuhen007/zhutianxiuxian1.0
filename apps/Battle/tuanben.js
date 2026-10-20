@@ -1,10 +1,11 @@
 import { getSuiyunEffects, hasSuiyunSkills } from '../../model/suiyun.js';
+import { claimSuiyunBattleAuthority, getSuiyunEffectiveDefense } from '../../model/suiyunAuthority.js';
 import {
   consumeMemoryTrick, hasMemoryCombatEffects, recordMemoryAttack,
   resetMemoryCombat, tickMemoryCombatRound, tryMemoryLethalSurvival,
 } from '../../model/memoryCombat.js';
 import {
-  castSuiyunMoonSword, consumeSuiyunControl, reduceSuiyunDamage,
+  castSuiyunMoonSword, consumeSuiyunControl, reduceSuiyunDamage, tickSuiyunAuthorityRound,
   reflectSuiyunDamage, resetSuiyunCombat, tickSuiyunFrost, trySuiyunRevival,
   clearSuiyunBattleRestrictions, canExecuteCombatTarget, executeSuiyunMoonTarget, getSuiyunHealingMultiplier, getSuiyunEvergreenSpeed,
 } from '../../model/suiyunCombat.js';
@@ -2241,7 +2242,7 @@ if (safeAttacker.灵根?.name === "小成·荒古圣体" || safeAttacker.灵根?
     // 暴击计算 - 使用 this.baojishanghai
 
   // 基础伤害计算 - 使用统一的calculateHarm函数
-  let 基础伤害 = calculateHarm(safeAttacker.攻击 * 0.85, safeDefender.防御);
+  let 基础伤害 = calculateHarm(safeAttacker.攻击 * 0.85, getSuiyunEffectiveDefense(safeAttacker, safeDefender));
   let 法球伤害 = Math.trunc(safeAttacker.攻击 * safeAttacker.法球倍率);
   let 伤害 = Math.trunc(基础伤害 + 法球伤害 + safeAttacker.防御 * 0.1);
   
@@ -2604,6 +2605,7 @@ const addBattleLog = (...lines) => {
   // 全员统一用真实速度：基础速度 + 秘境*50 + 仙古*50（与主战斗系统一致，不再加 2500 基准）
   // boss 无秘境/仙古字段 → 取裸速度（魔君700 / 狠人1000 / 尸骸1200）；玩家带境界加成 → 约 950~1450
   const allUnits = [bossCopy, ...playersData];
+  await claimSuiyunBattleAuthority(allUnits, { read: Read_player, write: Write_player, lock: withPlayerMutationLock });
   for (const u of allUnits) {
     resetSuiyunCombat(u);
     resetMemoryCombat(u);
@@ -2657,6 +2659,9 @@ const addBattleLog = (...lines) => {
     for (const unit of allUnits) {
       const memoryRound = tickMemoryCombatRound(unit, cnt);
       if (memoryRound.messages.length) await addBattleLog(...memoryRound.messages);
+      const authority = tickSuiyunAuthorityRound(unit, unit === bossCopy ? playersData : [bossCopy], cnt,
+        (source, target, damage, messages) => applyRaidSuiyunDamage(target, source, damage, messages));
+      if (authority.messages.length) await addBattleLog(...authority.messages);
       const frost = tickSuiyunFrost(unit, cnt);
       if (frost.active) {
         await addBattleLog(...frost.messages);

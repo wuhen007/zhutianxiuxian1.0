@@ -688,7 +688,7 @@ if (!ifexist) {
 
     // 初始化栖息地
     if (!world.栖息地) world.栖息地 = [];
-    const maxSlots = (Number(world.attributes?.栖息地上限) || 1) + getHabitatSlotBonus(player);
+    const maxSlots = (Number(world.attributes?.栖息地上限) || 1) + getHabitatSlotBonus(player, Number(world.attributes?.栖息地上限) || 1);
     if (world.栖息地.length >= maxSlots) {
       e.reply(`你的小世界栖息地已满（${world.栖息地.length}/${maxSlots}），请先#召回仙宠 腾出位置`);
       return false;
@@ -820,7 +820,7 @@ if (!ifexist) {
     }
 
     const player = data.getData('player', usr_qq);
-    const maxSlots = (Number(world.attributes?.栖息地上限) || 1) + getHabitatSlotBonus(player);
+    const maxSlots = (Number(world.attributes?.栖息地上限) || 1) + getHabitatSlotBonus(player, Number(world.attributes?.栖息地上限) || 1);
     e.reply(`${pet.name}已从栖息地召回（${world.栖息地.length}/${maxSlots}）`);
     return true;
   }

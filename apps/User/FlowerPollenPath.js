@@ -85,6 +85,7 @@ import { calculateMinggePotentialCost, getMinggeEffects } from '../../model/ming
 import { applyQuestionFortuneCost } from '../../model/redDustFortune.js';
 import { getTitleWudaoBonus } from '../../model/titleSystem.js';
 import { getKongtongModifiers, getPassiveTribulationDamageMultiplier } from '../../model/innateTreasure.js';
+import { getSuiyunWudaoCost, beginSuiyunTribulation, protectSuiyunTribulationLoss } from '../../model/suiyunAuthority.js';
 import { getPlayerPlaneName } from '../../model/planeCoords.js';
 import { isFlowerAncestorSeedOwner } from '../../model/shengxuOpportunity.js';
 import {
@@ -781,6 +782,7 @@ export class FlowerPollenPath extends plugin {
       const wudaoGongfa = getWudaoGongfaReduction(player);
       const costMultiplier = (1 - wudaoGongfa.rate)
         * getDaoHeartWudaoCostMultiplier(player)
+        * getSuiyunWudaoCost(player, 1)
         * (stoneJar ? 0.9 : 1);
       const cost = {
         potential: applyQuestionFortuneCost(
@@ -791,7 +793,7 @@ export class FlowerPollenPath extends plugin {
         blood: applyQuestionFortuneCost(player, Math.ceil(baseCosts.blood * costMultiplier)),
         lifespan: applyQuestionFortuneCost(
           player,
-          Math.floor(getWudaoLifespanCost({ lifespanCost: baseCosts.lifespan }, minggeEffects).cost * costMultiplier)
+          Math.floor(getWudaoLifespanCost({ lifespanCost: baseCosts.lifespan }, minggeEffects, player).cost * costMultiplier)
         ),
         spirit: applyQuestionFortuneCost(player, Math.ceil(baseCosts.spirit * costMultiplier)),
       };
@@ -1017,6 +1019,7 @@ export class FlowerPollenPath extends plugin {
       player.修为 -= cost.cultivation;
       player.血气 -= cost.blood;
 
+      beginSuiyunTribulation(player);
       const levels = {
         Level_list: data.Level_list,
         LevelMax_list: data.LevelMax_list,
@@ -1041,6 +1044,7 @@ export class FlowerPollenPath extends plugin {
       ].filter(Boolean).join('\n'));
 
       // ===== 逐阶段逐道雷劫（每阶段至少 10 道）=====
+      const suiyunLifeBefore = player.生命本源;
       let outcome = { ok: true, failedStage: null };
       let diedAt = null;
       outer: for (let stageIndex = 0; stageIndex < gate.rule.stages.length; stageIndex++) {
@@ -1106,6 +1110,8 @@ export class FlowerPollenPath extends plugin {
 
       // ===== 奖惩结算 =====
       const settlement = applyFlowerTribulationOutcome(player, outcome, Math.random, { realmId, stoneJar, now: Date.now() });
+      protectSuiyunTribulationLoss(player, { ...player, 生命本源: suiyunLifeBefore });
+      delete player._基拉祈渡劫;
       await Write_player(userId, player);
       await refreshAttributes(userId);
 
@@ -1113,7 +1119,7 @@ export class FlowerPollenPath extends plugin {
         return e.reply([
           `【${gate.rule.name}·${settlement.mutated ? '始祖异变' : '渡劫失败'}】`,
           `在第${(diedAt?.stageIndex ?? 0) + 1}阶段·第${diedAt?.wave ?? 1}道雷劫时，生命真形被劈碎！`,
-          `修为 -${bigNumberTransform(settlement.punishment.cultivationLoss)}、血气 -${bigNumberTransform(settlement.punishment.bloodLoss)}｜道伤 +1`,
+          `修为 -${bigNumberTransform(settlement.punishment.cultivationLoss)}、血气 -${bigNumberTransform(settlement.punishment.bloodLoss)}｜道伤 +${settlement.punishment.wounds}`,
           `始祖污染度 +${settlement.pollutionGain}（当前${player.始祖污染度}/100），花粉隐患 ${player.花粉隐患}。`,
           `失败保护：下次渡劫雷劫伤害 -${Math.min(15, Math.trunc(settlement.failures * 3))}%。`,
           '可净化隐患与污染后，再次发送 #花粉渡劫。',

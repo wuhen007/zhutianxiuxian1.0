@@ -1,3 +1,4 @@
+import { hasSuiyunAuthority } from '../../model/suiyunAuthority.js';
 import { hasSuiyunFreeDungeonEntry, getSuiyunDungeonEntryPlace, getSuiyunStage } from '../../model/suiyun.js';
 import { plugin, verc, data } from '../../api/api.js';
 import { getMinggeEffects, getMinggeSecretPlaceReductionMs } from '../../model/mingge.js';
@@ -2071,6 +2072,12 @@ async function calculateTimeReductionForAddiction(player, i) {
      * 不随层数 i 缩放，统一换算为分钟并入 timeReduction，文案展示秒数。
      */
     const secretPlaceEffects = getMinggeEffects(player, data.minggeList);
+    if (hasSuiyunAuthority(player, '天空')) {
+        // 沉迷按轮结算，与行字秘、道法仙术同为本文件的「每轮10分钟」口径；单次秘境入口另减60秒。
+        const skyReduction = 10 * i;
+        timeReduction += skyReduction;
+        msgs.push(`【天空】裂空座引路，本次探索共减少${skyReduction}分钟。`);
+    }
     const secretPlaceReductionMs = getMinggeSecretPlaceReductionMs(secretPlaceEffects);
     if (secretPlaceReductionMs > 0) {
         timeReduction += secretPlaceReductionMs / 60000;

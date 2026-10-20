@@ -6,6 +6,7 @@ import { getDungeonGongfaReduction } from './gongfaProficiency.js';
 import { hasPercentageStats } from './tianjiaoTaint.js';
 import { isNameablePercentageEquipment } from './equipmentStats.js';
 import { writeJsonAtomically } from '../utils/atomicJson.js';
+import { getSuiyunDream, consumeSuiyunDream, getSuiyunTribulationMultiplier, getSuiyunExplorationDuration } from './suiyunAuthority.js';
 import {
   DAO_TREASURE_ALL_ATTRIBUTE_BONUS,
   DAO_TREASURE_FIXED_ATTRIBUTES,
@@ -703,6 +704,7 @@ export function getEquippedOtherShoreDaoAuthority(player, treasureName = '', aut
 }
 
 export function hasEquippedInnateTreasure(player, name, authorityKey = '') {
+  if (getSuiyunDream(player, name, authorityKey)) return true;
   if (player?.当前先天至宝 === name ||
     (player?.当前大道至宝 === ETERNAL_MAP_NAME && ETERNAL_MAP_COMPONENTS.includes(name))) {
     return true;
@@ -853,6 +855,8 @@ export function getCooldownRemaining(player, key, now = Date.now()) {
 }
 
 export function startAuthorityCooldown(player, key, now = Date.now()) {
+  if (player?.岁云梦幻?.key === key
+    && consumeSuiyunDream(player, player.岁云梦幻.treasureName, key, now)) return now + 86_400_000;
   const duration = AUTHORITY_COOLDOWNS[key];
   if (!duration) throw new Error(`未知权柄冷却：${key}`);
   const inherited = getEquippedOtherShoreDaoAuthority(player, '', key);
@@ -947,9 +951,10 @@ export function applyNewTreasureDamageRules(attacker, defender, damage) {
   return { damage: result, messages };
 }
 
-export function getDungeonTimedActionMultiplier(player) {
+export function getDungeonTimedActionMultiplier(player, durationMs = 0) {
   const technique = getDungeonGongfaReduction(player);
-  return Math.max(0.5, getTimedActionMultiplier(player) * (1 - technique.rate));
+  const multiplier = Math.max(0.5, getTimedActionMultiplier(player) * (1 - technique.rate));
+  return durationMs > 0 ? getSuiyunExplorationDuration(player, durationMs * multiplier) / durationMs : multiplier;
 }
 
 // 逐日仙辇穿梭维度壁垒时「瞬间穿梭」的极小概率（1%）
@@ -1006,8 +1011,9 @@ export function getSmallWorldYieldMultiplier(player) {
   return hasEquippedInnateTreasure(player, '山河社稷图', '被动:1') ? 2 : 1;
 }
 
-export function getHabitatSlotBonus(player) {
-  return hasEquippedInnateTreasure(player, '山河社稷图', '被动:1') ? 2 : 0;
+export function getHabitatSlotBonus(player, baseCapacity = 1) {
+  const bonus = hasEquippedInnateTreasure(player, '山河社稷图', '被动:1') ? 2 : 0;
+  return Math.max(bonus, player?.当前大道至宝 === '无上天阙枝' ? 24 - baseCapacity : 0);
 }
 
 export function getInnerWorldOpenChance(baseChance, player) {
@@ -1036,7 +1042,7 @@ export function getTribulationDamageMultiplier(player) {
 }
 
 export function getPassiveTribulationDamageMultiplier(player) {
-  return hasEquippedInnateTreasure(player, '万劫天碑', '被动:1') ? 0.85 : 1;
+  return (hasEquippedInnateTreasure(player, '万劫天碑', '被动:1') ? 0.85 : 1) * getSuiyunTribulationMultiplier(player);
 }
 
 export function hasReincarnationProtection(player, now = Date.now()) {

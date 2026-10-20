@@ -4,6 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import template from 'art-template';
 import * as dao from '../model/daoTreasure.js';
+import * as suiyunAuthority from '../model/suiyunAuthority.js';
 import { createEternalImmortalMap, hasEquippedInnateTreasure } from '../model/innateTreasure.js';
 import { swapEquipmentState } from '../model/equipmentSwap.js';
 import { withPlayerMutationLock } from '../utils/playerMutationLock.js';
@@ -18,7 +19,7 @@ function fixture(item) {
     registry: { treasure: { name: item.name, ownerId: owner, integrity: 100, origin: 9, authorities: { 世界: '完整' } } },
   };
   const deps = {
-    ...dao, path, withPlayerMutationLock, plugin: class { constructor(value) { Object.assign(this, value); } },
+    ...dao, ...suiyunAuthority, path, withPlayerMutationLock, plugin: class { constructor(value) { Object.assign(this, value); } },
     verc: () => true, channel: async id => id, existplayer: async () => true,
     Read_player: async () => clone(state.player), Read_equipment: async () => ({ 至宝: clone(state.item) }),
     getActiveZhutianAvatarName: () => state.avatar ? '测试化身' : '',
