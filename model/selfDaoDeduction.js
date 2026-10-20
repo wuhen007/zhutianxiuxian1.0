@@ -1,6 +1,7 @@
 import { getRealmAuthorityLevel, getRealmAuthorityPath, hasReachedImmortalEmperor, rememberImmortalEmperorHistory } from './realmAuthority.js';
 import { synchronizeCausalFacts } from './worldlineAuthority.js';
 import { tryEternalFateRewrite } from './innateTreasure.js';
+import { hasSuiyunCultivationLifespanImmunity } from './suiyun.js';
 
 export { resetSelfDaoAfterImmortalEmperorFall } from './realmAuthority.js';
 
@@ -135,15 +136,16 @@ export function getSacrificeDaoAttempts(player) {
 }
 
 export function getSelfDaoDeductionCosts(player) {
-  if (getRealmAuthorityLevel(player) >= 21) return SACRIFICE_DAO_COSTS;
   const attempts = Math.max(0, Math.trunc(number(player?.己道推演?.attempts)));
-  if (attempts < SELF_DAO_REALM_AWAKENING) return SELF_DAO_COSTS;
-  return Object.fromEntries(Object.entries(SELF_DAO_COSTS).map(([key, cost]) => [
+  const costs = getRealmAuthorityLevel(player) >= 21 ? SACRIFICE_DAO_COSTS
+    : attempts < SELF_DAO_REALM_AWAKENING ? SELF_DAO_COSTS
+    : Object.fromEntries(Object.entries(SELF_DAO_COSTS).map(([key, cost]) => [
     key,
     key === 'mind' ? cost
       : key === 'era' ? (attempts < 10 ? 50 : attempts < 15 ? 70 : 80)
         : cost * SELF_DAO_LATE_COST_MULTIPLIER,
   ]));
+  return hasSuiyunCultivationLifespanImmunity(player) ? { ...costs, lifespan: 0 } : costs;
 }
 
 export function getSelfDaoDeductionGate(player) {
@@ -198,9 +200,11 @@ export function consumeSelfDaoDeduction(player, now = Date.now()) {
   player.仙道潜力 = number(player.仙道潜力) - costs.potential;
   player.修为 = number(player.修为) - costs.cultivation;
   player.血气 = number(player.血气) - costs.blood;
-  const lifeField = lifespanField(player);
-  player[lifeField] = number(player[lifeField]) - costs.lifespan;
-  if (lifeField === '压制寿元') player.寿元 = Math.min(number(player.寿元), player.压制寿元, 9999);
+  if (costs.lifespan > 0) {
+    const lifeField = lifespanField(player);
+    player[lifeField] = number(player[lifeField]) - costs.lifespan;
+    if (lifeField === '压制寿元') player.寿元 = Math.min(number(player.寿元), player.压制寿元, 9999);
+  }
 
   const state = gate.state;
   if (gate.sacrifice) {

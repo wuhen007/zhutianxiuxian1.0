@@ -1,7 +1,8 @@
 import { getRealmAuthorityLevel, getRealmAuthorityPath } from '../../model/realmAuthority.js';
 import { getFlowerDaoGateState } from '../../model/flowerPollenPath.js';
-import { getSuiyunEffects } from '../../model/suiyun.js';
+import { getSuiyunEffects, hasSuiyunCultivationLifespanImmunity } from '../../model/suiyun.js';
 import { getMemoryEffects } from '../../model/memoryPath.js';
+import { hasSuiyunAuthority } from '../../model/suiyunAuthority.js';
 
 export const DAO_PATH_VERSION = 2;
 export const DAO_DAILY_LIMIT = 3;
@@ -522,7 +523,8 @@ export function getTechniqueWudaoProfile(learnedNames, techniquePools = {}) {
   return best;
 }
 
-export function getWudaoLifespanCost(rule, minggeEffects = {}) {
+export function getWudaoLifespanCost(rule, minggeEffects = {}, player = null) {
+  if (hasSuiyunCultivationLifespanImmunity(player)) return { cost: 0, multiplier: 0 };
   const reduction = clamp(minggeEffects.悟道寿元消耗减少, 0, 0.5);
   const increase = clamp(minggeEffects.悟道寿元消耗增加, 0, 1);
   const multiplier = clamp(1 - reduction + increase, 0.5, 2);
@@ -555,6 +557,7 @@ export function calculateWudaoResult(options) {
     world: clamp(worldBonus, 0, 0.5),
     mingge: clamp(minggeEffects.悟道收益, -0.5, 1),
     tea: useTea ? 0.5 : 0,
+    ideal: hasSuiyunAuthority(options.player, '理想') ? .2 : 0,
   };
   const totalBonus = Object.entries(bonuses)
     .filter(([name]) => name !== 'world')
@@ -571,7 +574,7 @@ export function calculateWudaoResult(options) {
     1,
     Math.floor(rule.baseGain * multiplier * randomFactor * (enlightened ? 2 : 1))
   );
-  const lifespan = getWudaoLifespanCost(rule, minggeEffects);
+  const lifespan = getWudaoLifespanCost(rule, minggeEffects, options.player);
 
   return {
     gain,
@@ -626,6 +629,7 @@ export function getAvailableLifespan(player) {
 
 export function consumePlayerLifespan(player, amount) {
   const cost = Math.max(0, Math.floor(Number(amount) || 0));
+  if (cost === 0) return true;
   const available = getAvailableLifespan(player);
   if (available <= cost) return false;
 
