@@ -94,7 +94,7 @@ export class MemoryPath extends Suiyun {
       `【${player.灵根.name}】生命本源 ${player.生命本源}/${getMemoryLifeMaximum(player)}`,
       `模拟值 ${player.模拟值 || 0}/100`,
       `因子：${factors.join('、') || '尚未模拟'}；逐火 ${state.逐火次数 || 0}/12，泰坦 ${state.泰坦次数 || 0}/12。`,
-      `悟道+${Math.round(effects.enlightenmentBonus * 100)}%｜渡劫减伤${Math.round(effects.tribulationReduction * 100)}%｜物品${effects.lootMultiplier}倍，普通物品额外+${effects.lootBonus}件。`,
+      `悟道+${Math.round(effects.enlightenmentBonus * 100)}%｜渡劫减伤${Math.round(effects.tribulationReduction * 100)}%｜物品${effects.lootMultiplier}倍（每6个泰坦+1倍，最高4倍；天骄讨伐除外）。`,
       `门径：副本修为、血气、灵石、寿元代价减少${Math.round(effects.dungeonCostReduction * 100)}%。`,
     ].join('\n');
   }

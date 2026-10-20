@@ -103,9 +103,9 @@ export function getMemoryEffects(player) {
   return {
     enlightenmentBonus: count * .03,
     tribulationReduction: Math.min(.95, (stage >= 2 ? .3 : 0) + count * .03),
-    // 黄金改为结算后的额外件数，泰坦仍沿用每3个+3的倍率。
-    lootMultiplier: (stage >= 2 ? 2 : 1) + Math.floor(titan / 3) * 3,
-    lootBonus: Math.floor(count / 6),
+    lootMultiplier: Math.min(4, (stage >= 2 ? 2 : 1) + Math.floor(titan / 6)),
+    // 保留中性字段兼容各结算入口，普通物品不再额外加件。
+    lootBonus: 0,
     dungeonCostReduction: [0, .2, .3, .4][tier('门径')],
     // 保留中性字段兼容旧调用；门径不再改变副本耗时。
     dungeonSpeed: 1,

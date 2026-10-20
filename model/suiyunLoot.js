@@ -10,10 +10,11 @@ export function addMemoryLootBonus(player, item, amount) {
 }
 
 // Only call for generated loot, never purchases, transfers, withdrawals or refunds.
-export function multiplySuiyunLoot(player, item, amount) {
+export function multiplySuiyunLoot(player, item, amount, { memory = true } = {}) {
   const value = Number(amount);
   if (!Number.isFinite(value) || value <= 0) return 0;
   const multiplier = isItemPermanentlyNonTradeable(item) ? 1
-    : getSuiyunEffects(player).lootMultiplier * getMemoryEffects(player).lootMultiplier;
-  return addMemoryLootBonus(player, item, Math.floor(value * multiplier));
+    : getSuiyunEffects(player).lootMultiplier * (memory ? getMemoryEffects(player).lootMultiplier : 1);
+  const quantity = Math.floor(value * multiplier);
+  return memory ? addMemoryLootBonus(player, item, quantity) : quantity;
 }

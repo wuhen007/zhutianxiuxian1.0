@@ -113,7 +113,7 @@ test('逐火6小时、泰坦1小时边界，失败与旧战报不推进', () => 
   assert.equal(applyMemoryTitanTrial(p, true, { now: MEMORY_HOUR_MS, expectedIndex: 0 }).progress, 1);
 });
 
-test('12因子保留额外悟道减伤，黄金按件数、泰坦按倍率分别结算', () => {
+test('12因子保留悟道减伤，满泰坦物品4倍且无额外件数', () => {
   const p = player();
   p.灵根 = createMemoryRoot(4);
   for (const tier of [1, 2, 3]) {
@@ -121,8 +121,8 @@ test('12因子保留额外悟道减伤，黄金按件数、泰坦按倍率分别
     const effects = getMemoryEffects(p);
     assert.equal(effects.enlightenmentBonus, .36);
     assert.ok(Math.abs(effects.tribulationReduction - .66) < 1e-12);
-    assert.equal(effects.lootMultiplier, tier === 3 ? 14 : 2);
-    assert.equal(effects.lootBonus, 2);
+    assert.equal(effects.lootMultiplier, tier === 3 ? 4 : 2);
+    assert.equal(effects.lootBonus, 0);
     assert.equal(effects.fishingMultiplier, tier + 1);
     assert.equal(effects.dungeonSpeed, 1);
     assert.equal(effects.dungeonTimeMultiplier, 1);
@@ -159,20 +159,21 @@ test('天空炼化护持精确三/四/五权柄差，超出门槛才放行', () 
   }
 });
 
-test('因子强化保留黄金额外件数，每三泰坦按原规则增加倍率', () => {
+test('因子强化每六泰坦增加一倍，旧存档十二泰坦即时按四倍结算', () => {
   const p = player();
   p.灵根 = createMemoryRoot(4);
-  p.记忆命途.因子 = Object.fromEntries(MEMORY_FACTORS.slice(0, 9).map(name => [name, 2]));
+  p.记忆命途.因子 = Object.fromEntries(MEMORY_FACTORS.map(name => [name, 2]));
   let previous = getMemoryEffects(p).lootMultiplier;
   assert.equal(previous, 2);
-  for (const name of MEMORY_FACTORS.slice(0, 9)) {
+  for (const [index, name] of MEMORY_FACTORS.entries()) {
     p.记忆命途.因子[name] = 3;
     const current = getMemoryEffects(p).lootMultiplier;
-    assert.equal(getMemoryEffects(p).lootBonus, 1);
+    assert.equal(getMemoryEffects(p).lootBonus, 0);
+    assert.equal(current, index < 5 ? 2 : index < 11 ? 3 : 4);
     assert.ok(current >= previous);
     previous = current;
   }
-  assert.equal(previous, 11);
+  assert.equal(previous, 4);
 });
 
 test('停用诗篇、炼化、觐见和兑换后，旧余额不增不减也不消耗凭证', () => {

@@ -288,6 +288,8 @@ test('因子面板保留有效成长指引，不显示暂停的经济项目且�
   const message = await f.app.viewFactors(f.event('#记忆因子'));
   assert.match(message, /浪漫·泰坦/);
   assert.match(message, /门径·强化/);
+  assert.match(message, /物品2倍（每6个泰坦\+1倍，最高4倍；天骄讨伐除外）/);
+  assert.doesNotMatch(message, /普通物品额外/);
   assert.match(message, /2%模拟值，逃离不累计/);
   assert.doesNotMatch(message, /记忆棱镜|记忆碎片|诗篇|星神觐见|奇怪的数据|六相冰封|记忆造物|记忆回溯/);
   assert.deepEqual(f.player, before);
