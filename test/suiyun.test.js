@@ -30,18 +30,15 @@ test('觉醒无境界要求，本源按总量200设置，顶级天资名称为�
   assert.equal(getSuiyunEffects({ 灵根: { name: '凡体' }, 岁云: p.岁云 }).lootMultiplier, 1);
 });
 
-test('三组试炼严格顺序，12/12/9，上次尝试不足一小时拦截且失败也冷却', () => {
+test('梦幻单次试炼替代引月十二次，失败可重试，后续十二剑与九见证仍按顺序', () => {
   const p = player();
   assert.equal(buildSuiyunTrialBattle(p, 'frost').ok, false);
   assert.equal(applySuiyunTrialResult(p, 'moon', false, 0, { now: 0 }).ok, true);
-  assert.equal(buildSuiyunTrialBattle(p, 'moon', { now: SUIYUN_HOUR_MS - 1 }).ok, false);
-  for (let i = 0; i < 12; i++) {
-    const now = (i + 1) * SUIYUN_HOUR_MS;
-    const trial = buildSuiyunTrialBattle(p, 'moon', { now });
-    assert.equal(trial.ok, true);
-    assert.equal(trial.index, i);
-    assert.equal(applySuiyunTrialResult(p, 'moon', true, 1, { now, expectedIndex: i }).ok, true);
-  }
+  const trial = buildSuiyunTrialBattle(p, 'moon', { now: 1 });
+  assert.equal(trial.ok, true);
+  assert.equal(trial.index, 0);
+  assert.equal(trial.enemy.名号, '梦幻·月华试炼');
+  assert.equal(applySuiyunTrialResult(p, 'moon', true, 1, { now: 1, expectedIndex: 0 }).ok, true);
   assert.equal(buildSuiyunTrialBattle(p, 'moon', { now: 99 * SUIYUN_HOUR_MS }).ok, false);
   assert.equal(buildSuiyunTrialBattle(p, 'witness').ok, false);
   for (let i = 0; i < 12; i++) assert.equal(applySuiyunTrialResult(p, 'frost', true).ok, true);

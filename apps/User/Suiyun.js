@@ -99,7 +99,7 @@ export class Suiyun extends plugin {
       rule: [
         { reg: '^#(?:消耗|使用|服用|炼化)\\s*岁云的?残念(?:\\s*\\*?1)?$', fnc: 'consumeRemnant' },
         { reg: '^#岁云见证$', fnc: 'advance' },
-        { reg: '^#引月入体$', fnc: 'moonTrial' },
+        { reg: '^#开启梦幻试炼$', fnc: 'moonTrial' },
         { reg: '^#化霜入剑$', fnc: 'frostTrial' },
         { reg: '^#月之见证$', fnc: 'witnessTrial' },
         { reg: '^#月华炼化.*$', fnc: 'refine' },
@@ -446,7 +446,7 @@ export class Suiyun extends plugin {
         `月华映照宗庭，你自动入主【${SUIYUN_PALACE_FACTION}】，位登【${SUIYUN_PALACE_POSITION}】；并得宫主帝经《${SUIYUN_PALACE_TECHNIQUE}》x1。`,
         '宫主权限：#剑宫兑换 物品名（岁云剑宫宝库）；#开启剑宫宝库（每日供奉）。',
         world ? '小世界升华为【月华天宫】，每现实小时产出50点仙道潜力；岁云化身起另产0.5点岁云之力，岁云之力受小世界时间流速加成。' : '开辟小世界后将自动升华为月华天宫，岁云化身起每现实小时产0.5岁云之力×世界时间流速。',
-        '发送 #岁云之力 查看传承；依次完成 #引月入体、#化霜入剑、#月之见证 后，以 #岁云见证 晋升。',
+        '发送 #岁云之力 查看传承；完成 #开启梦幻试炼、#化霜入剑、#月之见证 后，以 #岁云见证 晋升。',
       ].join('\n'));
     });
   }
@@ -654,7 +654,7 @@ export class Suiyun extends plugin {
 
   status(player) {
     const state = ensureSuiyunState(player);
-    return `传承：${STAGES[getSuiyunStage(player) - 1]}｜月华值：${player.月华值 || 0}｜生命本源：${player.生命本源}/${getSuiyunLifeMaximum(player)}${player.岁云法则 ? '｜岁云法则：已领悟' : ''}\n引月入体 ${state.引月入体}/12 → 化霜入剑 ${state.化霜入剑}/12 → 月之见证 ${state.月之见证}/9`;
+    return `传承：${STAGES[getSuiyunStage(player) - 1]}｜月华值：${player.月华值 || 0}｜生命本源：${player.生命本源}/${getSuiyunLifeMaximum(player)}${player.岁云法则 ? '｜岁云法则：已领悟' : ''}\n梦幻试炼 ${state.梦幻试炼}/1 → 化霜入剑 ${state.化霜入剑}/12 → 月之见证 ${state.月之见证}/9`;
   }
 
   async settlePalace(qq, player) {
@@ -705,7 +705,7 @@ export class Suiyun extends plugin {
         `云月之莲累计炼化：${lotus.moonlight}月华｜${lotus.active ? '成长已生效' : '装备后生效'}；#云月之莲 查看成长。`,
         `悟道加成${Math.round(effects.enlightenmentBonus * 100)}%｜渡劫减伤${Math.round(effects.tribulationReduction * 100)}%｜物品获取${effects.lootMultiplier}倍`,
         `灵根幸运+${Math.round(effects.luckBonus * 100)}%｜秘境通行：${effects.freeDungeonEntry ? '免入场资源消耗' : '霜月剑尊起免入场资源消耗'}`,
-        '自带战技：霜剑入月（至多9敌各9剑、每剑25倍、绝控霜寒，低于15%斩杀禁复活）；岁云归一（防御反伤）；白云苍狗（每战3次复活）；岁云常青（常驻基础速度+200，免疫即死、禁复活、禁疗，讨伐天骄单次至多斩落40%气血）；如月长存（渡劫濒死自保复活）。#战斗技能 查看详情。',
+        '自带战技：霜剑入月（至多9敌各9剑、每剑25倍、绝控霜寒，低于15%斩杀禁复活）；岁云归一（防御反伤）；白云苍狗（每战3次复活）；岁云常青（常驻基础速度+200，免疫即死、禁复活、禁疗，悟道与推演己道免寿元，讨伐天骄单次至多斩落40%气血）；如月长存（渡劫濒死自保复活）。#战斗技能 查看详情。',
         `宫主权柄：#剑宫兑换 物品名（岁云剑宫宝库）、#开启剑宫宝库（每日一次供奉）；宫主帝经《${SUIYUN_PALACE_TECHNIQUE}》。`,
         '全系列被动：免疫绝灵侵蚀与寿元压制。#岁岁年年 [材料/潜力丹/封灵符/心神丹]：每现实小时领取1件；封灵符默认为普通封灵符；#刻舟求剑：探索岁云殿堂。',
         '岁云剑尊齐套（岁云剑＋岁云袍＋云月之莲）：位面穿梭只耗修为与血气，不耗寿元、无需等待、不必先记坐标。',

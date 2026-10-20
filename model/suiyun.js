@@ -53,7 +53,7 @@ export const SUIYUN_STAGES = Object.freeze([
 ].map(Object.freeze));
 
 export const SUIYUN_TRIALS = Object.freeze({
-  moon: Object.freeze({ field: '引月入体', count: 12, command: '#引月入体', label: '化月如霜' }),
+  moon: Object.freeze({ field: '梦幻试炼', count: 1, command: '#开启梦幻试炼', label: '梦幻的认可' }),
   frost: Object.freeze({ field: '化霜入剑', count: 12, command: '#化霜入剑', label: '霜华似剑' }),
   witness: Object.freeze({ field: '月之见证', count: 9, command: '#月之见证', label: '以月证剑' }),
 });
@@ -66,6 +66,13 @@ const randomInteger = (min, max, random) => min + Math.floor(Math.min(1 - Number
 
 export function getSuiyunStage(player) {
   return SUIYUN_STAGES.findIndex(stage => stage.name === player?.灵根?.name) + 1;
+}
+
+/** 常青护持修道寿元；只由悟道、己道推演消费入口使用，自然寿元流逝照常结算。 */
+export function hasSuiyunCultivationLifespanImmunity(player) {
+  return getSuiyunStage(player) > 0
+    && !player?._tahua_type && !player?._yiqihua_entity && !player?._万灵魔幡主魂
+    && !player?._帝骑分身 && !player?._圆神分身 && player?.分身 !== true;
 }
 
 /** 赐予仅传授三项战技，不赋予岁云灵根的其他被动或再传授资格。 */
@@ -126,6 +133,7 @@ export function ensureSuiyunState(player) {
   if (!player.岁云 || typeof player.岁云 !== 'object' || Array.isArray(player.岁云)) player.岁云 = {};
   const state = player.岁云;
   state.version = 1;
+  if (Number(state.引月入体) >= 12 && !Number(state.梦幻试炼)) state.梦幻试炼 = 1;
   for (const trial of Object.values(SUIYUN_TRIALS)) {
     state[trial.field] = Math.min(trial.count, Math.trunc(positive(state[trial.field])));
   }
@@ -186,7 +194,7 @@ export function advanceSuiyun(player, { now = Date.now() } = {}) {
     return fail(`下一阶段需达到仙古·${next.realmName}境界（跨体系等效权柄${next.realm}级）。`);
   }
   if (current === 1 && Object.values(SUIYUN_TRIALS).some(trial => state[trial.field] < trial.count)) {
-    return fail('先依次完成引月入体12次、化霜入剑12关、月之见证9战。');
+    return fail('先完成 #开启梦幻试炼，再完成化霜入剑12关、月之见证9战。');
   }
   player.灵根 = createSuiyunRoot(current + 1);
   state.炼化本源 = 0;
@@ -206,11 +214,8 @@ function trialEligibility(player, route, now) {
   if (!config) return fail('未知月华试炼。');
   const state = ensureSuiyunState(player);
   if (state[config.field] >= config.count) return fail('这重月华试炼已经圆满。');
-  if (route !== 'moon' && state.引月入体 < 12) return fail('请先完成十二次引月入体。');
+  if (route !== 'moon' && state.梦幻试炼 < 1) return fail('请先完成 #开启梦幻试炼。');
   if (route === 'witness' && state.化霜入剑 < 12) return fail('请先完成十二道化霜入剑试炼。');
-  if (route === 'moon' && state.上次引月 != null && now < finite(state.上次引月) + SUIYUN_HOUR_MS) {
-    return { ...fail('引月入体每现实小时可试炼一次。'), retryAt: finite(state.上次引月) + SUIYUN_HOUR_MS };
-  }
   return { ok: true, state, config, index: state[config.field] };
 }
 
@@ -223,7 +228,7 @@ export function buildSuiyunTrialBattle(player, route, { now = Date.now() } = {})
   attacker.当前血量 = hp;
   const scale = (route === 'moon' ? .5 : route === 'frost' ? .65 : .8) + index * .035;
   const enemy = {
-    名号: `${config.label}·第${index + 1}道月影`,
+    名号: route === 'moon' ? '梦幻·月华试炼' : `${config.label}·第${index + 1}道月影`,
     攻击: Math.max(1, Math.floor(finite(player.攻击, 10) * scale)),
     防御: Math.max(1, Math.floor(finite(player.防御, 10) * scale)),
     血量上限: Math.max(1, Math.floor(hp * scale)), 当前血量: Math.max(1, Math.floor(hp * scale)),

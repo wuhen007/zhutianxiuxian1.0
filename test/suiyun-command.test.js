@@ -140,7 +140,7 @@ function fixture() {
 
 test('岁云命令注册完整，改写解析兼容前后艾特且不吞目标名字', () => {
   const f = fixture();
-  for (const command of ['#消耗岁云的残念', '#岁云见证', '#引月入体', '#化霜入剑', '#月之见证', '#云月修炼', '#云月之莲', '#月华炼化 灾厄', '#月华救赎', '#岁云更改 命格 道心通明']) {
+  for (const command of ['#消耗岁云的残念', '#岁云见证', '#开启梦幻试炼', '#化霜入剑', '#月之见证', '#云月修炼', '#云月之莲', '#月华炼化 灾厄', '#月华救赎', '#岁云更改 命格 道心通明']) {
     assert.ok(f.app.rule.some(rule => new RegExp(rule.reg).test(command)), command);
   }
   assert.deepEqual(f.parse(f.event('#岁云更改 天资 @123 无演无尽')), { kind: '天资', name: '无演无尽' });
