@@ -8,6 +8,7 @@ import {
 import {
   SUIYUN_BRANCH, SUIYUN_BRANCH_AUTHORITIES, hasSuiyunAuthority, hasSuiyunBranch,
   suiyunAuthorityRemaining, suiyunAuthorityState, startSuiyunAuthority, createSuiyunGenesisItem,
+  SUIYUN_AUTHORITY_SEALS, formatSuiyunAuthoritySeals, unsealSuiyunAuthority,
 } from '../../model/suiyunAuthority.js';
 import { getLifeSourceRepairMaximum } from '../../model/lifeSourceRepair.js';
 import { INNATE_TREASURE_CATALOG, formatCooldown } from '../../model/innateTreasure.js';
@@ -25,6 +26,7 @@ export class SuiyunAuthority extends plugin {
       name: '天阙十三权柄', dsc: '无上天阙枝主动与被动', event: 'message', priority: 568,
       rule: [
         { reg: '^#(?:天阙权柄|无上天阙枝)$', fnc: 'panel' },
+        ...SUIYUN_AUTHORITY_SEALS.map(seal => ({ reg: `^${seal.command}$`, fnc: 'unseal' })),
         { reg: '^#梦幻(?:\\s+.*)?$', fnc: 'dream' },
         { reg: '^#(?:断崖之剑|岁云降世)$', fnc: 'prepare' },
         { reg: '^#根源波动.*$', fnc: 'originPulse' },
@@ -50,7 +52,8 @@ export class SuiyunAuthority extends plugin {
     if (!await existplayer(targetId)) return e.reply('目标尚未踏入仙途。');
     const message = await withLocks([qq, targetId], async () => {
       const player = await Read_player(qq);
-      if (!hasSuiyunAuthority(player, key)) return `请先装备并执掌【${SUIYUN_BRANCH}】。`;
+      if (!hasSuiyunBranch(player)) return `请先装备并执掌【${SUIYUN_BRANCH}】。`;
+      if (!hasSuiyunAuthority(player, key)) return `【${key}】尚未解封，请用 #天阙权柄 查看条件。`;
       const remaining = suiyunAuthorityRemaining(player, key);
       if (cooldown && remaining) return `【${key}】尚需${formatCooldown(remaining)}。`;
       const recipient = targetId === qq ? player : await Read_player(targetId);
@@ -67,6 +70,7 @@ export class SuiyunAuthority extends plugin {
         if (!hasSuiyunBranch(player) && player.岁云梦幻) player.岁云梦幻.used = true;
         await Write_player(qq, player);
         if (targetId !== qq) await Write_player(targetId, recipient);
+        if (result.refreshAttributes) await player_efficiency(qq);
         transaction.commit();
         return result.message;
       } catch (error) {
@@ -82,8 +86,32 @@ export class SuiyunAuthority extends plugin {
     const player = await Read_player(qq);
     return e.reply([
       `【无上天阙枝】${hasSuiyunBranch(player) ? '已执掌' : '未装备'}`,
-      ...SUIYUN_BRANCH_AUTHORITIES.map(([name, command, effect]) => `${name}｜${command}\n${effect}`),
+      ...formatSuiyunAuthoritySeals(player),
+      ...SUIYUN_BRANCH_AUTHORITIES.map(([name, command, effect]) => `${hasSuiyunAuthority(player, name) ? '【可用】' : '【封印】'}${name}｜${command}\n${effect}`),
     ].join('\n\n'));
+  }
+  async unseal(e) {
+    const qq = await this.actor(e);
+    if (!qq) return false;
+    const message = await withPlayerMutationLock(qq, async () => {
+      const player = await Read_player(qq);
+      const bag = await Read_najie(qq);
+      const transaction = new FileRollbackTransaction();
+      transaction.capture(path.join(__PATH.player_path, `${qq}.json`));
+      transaction.capture(path.join(__PATH.najie_path, `${qq}.json`));
+      try {
+        const result = unsealSuiyunAuthority(player, bag, String(e.msg).trim());
+        if (!result.ok) return result.message;
+        if (result.inventoryChanged && await Write_najie(qq, bag) === false) throw new Error('纳戒当前封锁，解封未结算');
+        await Write_player(qq, player);
+        transaction.commit();
+        return result.message;
+      } catch (error) {
+        transaction.rollback();
+        throw error;
+      }
+    });
+    return e.reply(message);
   }
   prepare(e) {
     const key = e.msg === '#断崖之剑' ? '大地' : '岁云降世';
@@ -118,24 +146,15 @@ export class SuiyunAuthority extends plugin {
     }, { target: true, cooldown: false });
   }
   learn(e) {
-    return this.run(e, '无极', async ({ qq, player }) => {
+    return this.run(e, '无极', async ({ player }) => {
       const name = String(e.msg).replace(/^#无极悟技\s*/, '').trim();
       const item = [...(data.gongfa_list || []), ...(data.timegongfa_list || []), ...(data.dijingList || [])].find(item => item.name === name);
-      if (!item) return { message: '用法：#无极悟技 技能名；填写现有功法秘籍名称。' };
+      if (!item) return { message: '用法：#无极悟技 技能名；填写现有功法名称，无需持有秘籍。' };
       if (player.学习的功法?.includes(name)) return { message: '这一项技能已经学会。' };
-      const bag = await Read_najie(qq);
-      const scroll = bag.功法?.find(entry => entry.name === name && Number(entry.数量) > 0);
-      if (!scroll) return { message: `纳戒中需要一份【${name}】秘籍。` };
-      scroll.数量--;
       player.学习的功法 ||= [];
       player.学习的功法.push(name);
-      if (await Write_najie(qq, bag) === false) throw new Error('纳戒当前封锁');
-      return { ok: true, message: `【无极】道之三龙共鸣，【${name}】已百分百学会；秘籍消耗1份。` };
-    }, { cooldown: false }).then(async result => {
-      const qq = await this.actor(e);
-      if (qq) await player_efficiency(qq);
-      return result;
-    });
+      return { ok: true, refreshAttributes: true, message: `【无极】道之三龙共鸣，【${name}】已百分百领悟；无需秘籍，无额外消耗。` };
+    }, { cooldown: false });
   }
   genesis(e) {
     return this.run(e, '创世', async ({ qq }) => {

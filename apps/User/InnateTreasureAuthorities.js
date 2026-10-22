@@ -39,7 +39,7 @@ import {
   getSecretPlaceActionEndTime,
 } from '../../model/secretPlaceAddiction.js';
 import { FileRollbackTransaction } from '../SecretPlace/rebirthTransaction.js';
-import { getSuiyunDream, consumeSuiyunDream, SUIYUN_BRANCH_AUTHORITIES } from '../../model/suiyunAuthority.js';
+import { getSuiyunDream, consumeSuiyunDream, SUIYUN_BRANCH_AUTHORITIES, formatSuiyunAuthoritySeals } from '../../model/suiyunAuthority.js';
 import {
   AUTHORITY_COOLDOWNS,
   ETERNAL_MAP_COMPONENTS,
@@ -231,8 +231,12 @@ export class InnateTreasureAuthorities extends plugin {
   async showTreasureCatalog(e) {
     if (!verc({ e })) return false;
     const requestedName = String(e.msg || '').replace(/^#(?:先天)?至宝图鉴\s*/, '').trim();
-    if (requestedName === '无上天阙枝') return e.reply(['【无上天阙枝·十三权柄】',
-      ...SUIYUN_BRANCH_AUTHORITIES.map(([name, command, effect]) => `${name}｜${command}\n${effect}`)].join('\n\n'));
+    if (requestedName === '无上天阙枝') {
+      const qq = String(await channel(String(e.user_id).replace('qg_', '')));
+      const player = await existplayer(qq) ? await Read_player(qq) : {};
+      return e.reply(['【无上天阙枝·十三权柄】', ...formatSuiyunAuthoritySeals(player),
+        ...SUIYUN_BRANCH_AUTHORITIES.map(([name, command, effect]) => `${name}｜${command}\n${effect}`)].join('\n\n'));
+    }
     const state = readInnateTreasureState();
     if (!requestedName) {
       const statuses = await Promise.all(INNATE_TREASURE_NAMES.map(name => this.treasureOwnerStatus(state, name)));

@@ -6,7 +6,7 @@ import { getDungeonGongfaReduction } from './gongfaProficiency.js';
 import { hasPercentageStats } from './tianjiaoTaint.js';
 import { isNameablePercentageEquipment } from './equipmentStats.js';
 import { writeJsonAtomically } from '../utils/atomicJson.js';
-import { getSuiyunDream, consumeSuiyunDream, getSuiyunTribulationMultiplier, getSuiyunExplorationDuration } from './suiyunAuthority.js';
+import { getSuiyunDream, consumeSuiyunDream, getSuiyunTribulationMultiplier, getSuiyunExplorationDuration, hasSuiyunAuthority } from './suiyunAuthority.js';
 import {
   DAO_TREASURE_ALL_ATTRIBUTE_BONUS,
   DAO_TREASURE_FIXED_ATTRIBUTES,
@@ -1013,7 +1013,7 @@ export function getSmallWorldYieldMultiplier(player) {
 
 export function getHabitatSlotBonus(player, baseCapacity = 1) {
   const bonus = hasEquippedInnateTreasure(player, '山河社稷图', '被动:1') ? 2 : 0;
-  return Math.max(bonus, player?.当前大道至宝 === '无上天阙枝' ? 24 - baseCapacity : 0);
+  return Math.max(bonus, hasSuiyunAuthority(player, '月宫') ? 24 - baseCapacity : 0);
 }
 
 export function getInnerWorldOpenChance(baseChance, player) {

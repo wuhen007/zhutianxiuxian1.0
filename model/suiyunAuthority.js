@@ -1,12 +1,23 @@
 export const SUIYUN_BRANCH = '无上天阙枝';
 export const SUIYUN_AUTHORITY_DAY = 86_400_000;
+export const SUIYUN_AUTHORITY_SEALS = Object.freeze([
+  { name: '梦幻', command: '#开启梦幻试炼', item: '如梦的加持', itemClass: '丹药', amount: 20 },
+  { name: '真实', command: '#真实勇者试炼', item: '地心红莲', itemClass: '材料', amount: 1 },
+  { name: '理想', command: '#理想勇者试炼', item: '雷帝宝术', itemClass: '功法', amount: 1 },
+  { name: '无极', command: '#见证道之三龙', item: '万物母气', itemClass: '材料', amount: 1 },
+  { name: '大地', command: '#终结大地', item: '仙坟土', itemClass: '材料', amount: 1 },
+  { name: '海洋', command: '#始源之海', item: '仙泉之眼', itemClass: '材料', amount: 1 },
+  { name: '天空', command: '#天空之柱', item: '九彩神金', itemClass: '材料', amount: 1 },
+  { name: '七夜的许愿星', command: '#召唤基拉祈', lifeCost: 600 },
+  { name: '创世', command: '#归一' },
+].map(Object.freeze));
 export const SUIYUN_BRANCH_AUTHORITIES = Object.freeze([
   ['梦幻', '#梦幻 至宝名 权柄名', '借用其他至宝的一项主动或被动权柄一次，包括大道至宝；24小时冷却。'],
   ['真实', '被动', '莱希拉姆认可你的真实，每场战斗攻击时无视敌方50%防御。'],
-  ['理想', '被动', '捷克罗姆认可你的理想，悟道收益+20%、悟道消耗-20%，免于囚禁。'],
-  ['无极', '#无极悟技 技能名', '道之三龙认可真理，讨伐天骄冷却减半；每次消耗一份秘籍，百分百学会指定技能。'],
+  ['理想', '被动', '捷克罗姆认可你的理想，悟道收益+20%、悟道消耗-20%，免于囚禁；讨伐天骄跳过踪迹、位置、境界与血量门槛，冷却照常。'],
+  ['无极', '#无极悟技 技能名', '道之三龙认可真理，讨伐天骄冷却减半；无需持有或消耗秘籍，百分百领悟指定现有功法。'],
   ['大地', '#断崖之剑', '预备下一场首次攻击伤害+200%，24小时冷却。'],
-  ['海洋', '#根源波动 @玩家', '承伤减少20%、每回合恢复20%最大生命；主动修复目标道伤与生命本源、已有仙道潜力+20%，48小时冷却。'],
+  ['海洋', '#根源波动 @玩家', '常驻被动：承伤减少20%、每回合恢复20%最大生命，不受主动冷却影响；主动修复目标道伤与生命本源、已有仙道潜力+20%，48小时冷却。'],
   ['天空', '被动', '每回合速度线性增加开战速度的10%，第二回合裂空座以3倍攻击施展画龙点睛；单次秘境探索缩短60秒、沉迷秘境每轮再减10分钟，洗劫冷却减半。'],
   ['七夜的许愿星', '#祈愿渡劫 @玩家', '消耗自身500生命本源，为目标下一场渡劫减少50%伤害；同类祈愿不叠加。'],
   ['创世', '#创世 防具/装备/法宝 名称', '200界核铸防具、200宇宙核心铸武器，或各100铸法宝；每项属性+50000%。'],
@@ -23,10 +34,58 @@ export function hasSuiyunBranch(player) {
     && !player?._帝骑分身 && !player?._圆神分身 && player?.分身 !== true;
 }
 export function hasSuiyunAuthority(player, authority) {
-  if (hasSuiyunBranch(player)) return true;
-  const dream = player?.岁云梦幻;
-  return dream?.treasureName === SUIYUN_BRANCH && dream?.key === authority
-    && number(dream.expiresAt) > Date.now();
+  if (!hasSuiyunBranch(player)) return false;
+  if (SUIYUN_AUTHORITY_SEALS.some(seal => seal.name === authority)) return isSuiyunAuthorityUnlocked(player, authority);
+  return SUIYUN_BRANCH_AUTHORITIES.some(([name]) => name === authority) && getSuiyunUnsealedCount(player) === 9;
+}
+export function isSuiyunAuthorityUnlocked(player, authority) {
+  const record = player?.天阙权柄?.解封?.[authority];
+  return Boolean(record && typeof record === 'object' && Number.isFinite(record.at) && record.at >= 0);
+}
+export function getSuiyunUnsealedCount(player) {
+  return SUIYUN_AUTHORITY_SEALS.filter(seal => isSuiyunAuthorityUnlocked(player, seal.name)).length;
+}
+export function formatSuiyunAuthoritySeals(player) {
+  const count = getSuiyunUnsealedCount(player);
+  return [
+    `天阙解封：${count}/9｜${count === 9 ? '已完全解封' : '逐项解封，完成一项开放一项'}`,
+    ...SUIYUN_AUTHORITY_SEALS.map(seal => {
+      const requirement = seal.item ? `上交${seal.item}×${seal.amount}`
+        : seal.lifeCost ? `消耗${seal.lifeCost}生命本源，保留正数本源` : '无额外消耗';
+      return `${isSuiyunAuthorityUnlocked(player, seal.name) ? '【已解封】' : '【未解封】'}${seal.name}｜${seal.command}｜${requirement}`;
+    }),
+    '九项齐备后额外开放：无上、月宫、霜华、岁云降世。旧晋阶试炼记录不抵扣解封供物。',
+  ];
+}
+export function unsealSuiyunAuthority(player, bag, command, now = Date.now()) {
+  if (!hasSuiyunBranch(player)) return { ok: false, message: '请先装备认主的无上天阙枝，再行解封。' };
+  const seal = SUIYUN_AUTHORITY_SEALS.find(seal => seal.command === command);
+  if (!seal) return { ok: false, message: '请用 #天阙权柄 查看解封指令。' };
+  if (isSuiyunAuthorityUnlocked(player, seal.name)) return { ok: false, message: `【${seal.name}】已解封，供物与本源保留。` };
+  if (bag?.时间线封锁?.locked) return { ok: false, message: '纳戒当前封锁，请解除后再上交供物。' };
+  let stacks = [];
+  if (seal.item) {
+    stacks = (bag?.[seal.itemClass] || []).filter(item => item.name === seal.item
+      && Number.isSafeInteger(Number(item.数量)) && Number(item.数量) > 0);
+    const total = stacks.reduce((sum, item) => sum + Number(item.数量), 0);
+    if (total < seal.amount) return { ok: false, message: `【${seal.name}】解封需上交${seal.item}×${seal.amount}，纳戒现有${total}。` };
+  }
+  if (seal.lifeCost && (!Number.isFinite(Number(player.生命本源)) || Number(player.生命本源) <= seal.lifeCost)) {
+    return { ok: false, message: `解封需消耗${seal.lifeCost}生命本源，并保留正数本源。` };
+  }
+  let remaining = seal.amount || 0;
+  for (const stack of stacks) {
+    const used = Math.min(remaining, Number(stack.数量));
+    stack.数量 = Number(stack.数量) - used;
+    remaining -= used;
+  }
+  if (seal.lifeCost) player.生命本源 = Number(player.生命本源) - seal.lifeCost;
+  const state = suiyunAuthorityState(player);
+  state.解封 ||= {};
+  state.解封[seal.name] = { at: now, command: seal.command };
+  const count = getSuiyunUnsealedCount(player);
+  return { ok: true, name: seal.name, count, inventoryChanged: Boolean(seal.item),
+    message: `【天阙解封·${seal.name}】${seal.item ? `已上交${seal.item}×${seal.amount}，` : seal.lifeCost ? `已消耗${seal.lifeCost}生命本源，` : ''}权柄已开放（${count}/9）。${count === 9 ? '九项见证齐备，无上天阙枝完全解封；无上、月宫、霜华、岁云降世同时开放。' : ''}` };
 }
 export function suiyunAuthorityState(player) {
   player.天阙权柄 ||= {};
@@ -41,7 +100,7 @@ export function startSuiyunAuthority(player, key, hours = 24, now = Date.now()) 
 }
 export function getSuiyunDream(player, treasureName, key = '', now = Date.now()) {
   const dream = player?.岁云梦幻;
-  if (!hasSuiyunBranch(player) || !dream || dream.treasureName !== treasureName
+  if (!hasSuiyunAuthority(player, '梦幻') || !dream || dream.treasureName !== treasureName
     || number(dream.expiresAt) <= now || (key && dream.key !== key)) return null;
   if (dream.passive && dream.used && player?._梦幻战斗凭证 !== dream.token) return null;
   return dream;
@@ -52,8 +111,9 @@ export async function claimSuiyunBattleAuthority(units, { read, write, lock }) {
     delete unit._天阙断崖;
     delete unit._天阙降世;
     const dream = unit.岁云梦幻;
-    const passive = dream?.passive && !dream.used && dream.expiresAt > Date.now();
-    const prepared = unit.天阙权柄?.断崖之剑待用 || unit.天阙权柄?.岁云降世待用;
+    const passive = hasSuiyunAuthority(unit, '梦幻') && dream?.passive && !dream.used && dream.expiresAt > Date.now();
+    const prepared = (hasSuiyunAuthority(unit, '大地') && unit.天阙权柄?.断崖之剑待用)
+      || (hasSuiyunAuthority(unit, '岁云降世') && unit.天阙权柄?.岁云降世待用);
     if (!unit.id || !hasSuiyunBranch(unit) || (!passive && !prepared)) continue;
     await lock(String(unit.id), async () => {
       const player = await read(String(unit.id));
@@ -61,13 +121,13 @@ export async function claimSuiyunBattleAuthority(units, { read, write, lock }) {
         delete unit.岁云梦幻;
         return;
       }
-      if (passive && player.岁云梦幻?.token === dream.token && !player.岁云梦幻.used) {
+      if (passive && hasSuiyunAuthority(player, '梦幻') && player.岁云梦幻?.token === dream.token && !player.岁云梦幻.used) {
         player.岁云梦幻.used = true;
         dream.used = true;
         unit._梦幻战斗凭证 = dream.token;
       } else if (passive) delete unit.岁云梦幻;
       for (const [field, runtime] of [['断崖之剑待用', '_天阙断崖'], ['岁云降世待用', '_天阙降世']]) {
-        if (player.天阙权柄?.[field]) {
+        if (player.天阙权柄?.[field] && hasSuiyunAuthority(player, field === '断崖之剑待用' ? '大地' : '岁云降世')) {
           unit[runtime] = true;
           delete player.天阙权柄[field];
         }

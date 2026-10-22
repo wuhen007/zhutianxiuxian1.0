@@ -46,7 +46,7 @@ import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { FileRollbackTransaction, writeJsonAtomically } from '../SecretPlace/rebirthTransaction.js';
 import { findYongJiByNameOrQQ, reviveFromYongJi } from '../Boss/YongJiList.js';
 import { getActiveZhutianAvatarName } from '../../model/zhutianMirror.js';
-import { getSuiyunDream, consumeSuiyunDream, SUIYUN_BRANCH_AUTHORITIES } from '../../model/suiyunAuthority.js';
+import { getSuiyunDream, consumeSuiyunDream, SUIYUN_BRANCH_AUTHORITIES, formatSuiyunAuthoritySeals } from '../../model/suiyunAuthority.js';
 
 const APTITUDE_EVALUATIONS = Object.freeze({
   无演无尽: '亘古绝今从未有，演尽诸天万界，已超脱天道束缚',
@@ -391,6 +391,7 @@ export class DaoTreasure extends plugin {
         '改名：#大道至宝改名 新名称（1至10字，仅改器名，不改变权柄与绑定）。',
         ...(item.name === '无上天阙枝'
           ? SUIYUN_BRANCH_AUTHORITIES.map(([name, command, effect]) => `${name}｜${command}：${effect}`) : []),
+        ...(item.name === '无上天阙枝' ? formatSuiyunAuthoritySeals(await Read_player(qq)) : []),
       ].join('\n'));
     }
     const ctx = await this.requireOwner(e);
