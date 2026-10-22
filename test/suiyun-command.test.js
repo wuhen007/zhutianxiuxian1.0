@@ -140,12 +140,17 @@ function fixture() {
 
 test('岁云命令注册完整，改写解析兼容前后艾特且不吞目标名字', () => {
   const f = fixture();
-  for (const command of ['#消耗岁云的残念', '#岁云见证', '#开启梦幻试炼', '#化霜入剑', '#月之见证', '#云月修炼', '#云月之莲', '#月华炼化 灾厄', '#月华救赎', '#岁云更改 命格 道心通明']) {
+  for (const command of ['#消耗岁云的残念', '#岁云见证', '#云月修炼', '#云月之莲', '#月华炼化 灾厄', '#月华救赎', '#岁云更改 命格 道心通明']) {
     assert.ok(f.app.rule.some(rule => new RegExp(rule.reg).test(command)), command);
+  }
+  for (const command of ['#引月入体', '#化霜入剑', '#月之见证', '#以月证剑', '#开启梦幻试炼']) {
+    assert.equal(f.app.rule.some(rule => new RegExp(rule.reg).test(command)), false, command);
   }
   assert.deepEqual(f.parse(f.event('#岁云更改 天资 @123 无演无尽')), { kind: '天资', name: '无演无尽' });
   assert.deepEqual(f.parse(f.event('', { message: [{ type: 'text', text: '#岁云更改 灵根 ' }, { type: 'at', qq: '123' }, { type: 'text', text: ' 火灵根' }] })), { kind: '灵根', name: '火灵根' });
   assert.equal(f.parse(f.event('#岁云更改 名号 猜测项')), null);
+  const Derived = class extends f.app.constructor {};
+  assert.notEqual(new Derived().task?.name, '岁云境界自动晋阶与奖励补领');
 });
 
 test('两次并发云月修炼只结算一次，功法需求不误加到日修炼', async () => {
@@ -488,6 +493,66 @@ test('最终奖励幂等，自动装备无上天阙枝并保留原至宝、重�
   assert.equal(f.grants, 7);
   await f.app.advance(f.event('#岁云见证'));
   assert.equal(f.grants, 7);
+});
+
+test('无须晋阶指令与试炼，自动结算连升至岁云剑尊并只领取一套阶段奖励', async () => {
+  const f = fixture();
+  f.players.owner.mijinglevel_id = 20;
+  f.data.xianchon = JSON.parse(fs.readFileSync(new URL('../resources/data/item/仙宠列表.json', import.meta.url), 'utf8'));
+  const result = await f.app.settleAutomaticStage('owner');
+  assert.equal(result.changed, true);
+  assert.equal(f.players.owner.灵根.name, '岁云剑尊');
+  assert.equal(f.players.owner.法球倍率, 1000);
+  assert.equal(f.players.owner.生命本源, 15000);
+  assert.equal(f.players.owner.岁云.自动晋升待结算, undefined);
+  assert.equal(f.players.owner.岁云.仙宠已领取, true);
+  assert.equal(f.players.owner.岁云.霜月套装已领取, true);
+  assert.equal(f.players.owner.岁云.套装已领取, true);
+  assert.equal(f.inventories.owner.仙宠.filter(item => item.name === '岁云剑灵').length, 1);
+  assert.equal(f.equipment.owner.至宝.name, '无上天阙枝');
+  assert.equal(f.players.owner.天阙权柄?.解封, undefined);
+  const grants = f.grants;
+  f.players.owner.生命本源 = 321;
+  const again = await f.app.settleAutomaticStage('owner');
+  assert.equal(again.changed, false);
+  assert.equal(f.players.owner.生命本源, 321);
+  assert.equal(f.grants, grants);
+});
+
+test('自动晋阶发奖中断保留新阶段和待结算标志，下一次服务只补缺失奖励', async () => {
+  const f = fixture();
+  f.players.owner.mijinglevel_id = 20;
+  f.data.xianchon = JSON.parse(fs.readFileSync(new URL('../resources/data/item/仙宠列表.json', import.meta.url), 'utf8'));
+  f.failEquipment = true;
+  await assert.rejects(f.app.settleAutomaticStage('owner'), /injected-equipment-error/);
+  assert.equal(f.players.owner.灵根.name, '岁云剑尊');
+  assert.equal(f.players.owner.岁云.自动晋升待结算, true);
+  const grants = f.grants;
+  await f.app.settleAutomaticStage('owner');
+  assert.equal(f.grants, grants);
+  assert.equal(f.players.owner.岁云.自动晋升待结算, undefined);
+  assert.equal(f.equipment.owner.至宝.name, '无上天阙枝');
+});
+
+test('后台晋阶服务只处理境界达标或有待结算的岁云角色，不写普通人与未达标者', async () => {
+  const f = fixture(), source = fs.readFileSync(new URL('../apps/User/Suiyun.js', import.meta.url), 'utf8');
+  const from = source.indexOf('  async settleAutomaticStages() {'), to = source.indexOf('  async advance(e) {', from);
+  const calls = [];
+  const snapshots = {
+    'ready.json': { 灵根: core.createSuiyunRoot(1), mijinglevel_id: 20 },
+    'pending.json': { 灵根: core.createSuiyunRoot(5), 岁云: { 自动晋升待结算: true } },
+    'ordinary.json': { 灵根: { name: '凡体' }, mijinglevel_id: 30 },
+    'low.json': { 灵根: core.createSuiyunRoot(1), mijinglevel_id: 1 },
+  };
+  const service = new Function('fs', 'path', '__PATH', 'advanceSuiyunToRealm', 'getSuiyunStage',
+    `return ({${source.slice(from, to)}}).settleAutomaticStages;`)({
+      existsSync: () => true, readdirSync: () => [...Object.keys(snapshots), 'ignore.txt'],
+      readFileSync: file => JSON.stringify(snapshots[path.basename(file)]),
+    }, path, { player_path: '/fixture' }, core.advanceSuiyunToRealm, core.getSuiyunStage);
+  await service.call({ settleAutomaticStage: async id => calls.push(id) });
+  assert.deepEqual(calls, ['ready', 'pending']);
+  assert.ok(f.app.task.cron);
+  assert.equal(typeof f.app.task.fnc, 'function');
 });
 
 test('自动认主换装失败回滚装备与领取标志，奖励保留且重试不重复发放', async () => {

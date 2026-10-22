@@ -6,7 +6,7 @@ import path from 'node:path';
 import {
   SUIYUN_STAGES, SUIYUN_HOUR_MS, SUIYUN_DAY_MS, activateSuiyun, advanceSuiyun,
   getSuiyunStage, getSuiyunEffects, ensureSuiyunState, createSuiyunRoot,
-  buildSuiyunTrialBattle, applySuiyunTrialResult, cultivateSuiyun, refineSuiyun,
+  advanceSuiyunToRealm, cultivateSuiyun, refineSuiyun,
   spendMoonlight, getSuiyunPower, spendSuiyunPower,
   ascendSuiyunPalace, settleSuiyunPalace, getSuiyunLifeMaximum,
 } from '../model/suiyun.js';
@@ -30,24 +30,40 @@ test('觉醒无境界要求，本源按总量200设置，顶级天资名称为�
   assert.equal(getSuiyunEffects({ 灵根: { name: '凡体' }, 岁云: p.岁云 }).lootMultiplier, 1);
 });
 
-test('梦幻单次试炼替代引月十二次，失败可重试，后续十二剑与九见证仍按顺序', () => {
+test('无试炼境界达标自动连升，三体系门槛一致，跌境不回退且不重复补本源', () => {
+  for (const [route, boundaries] of [
+    ['mijinglevel_id', [10, 12, 16, 20]],
+    ['xiangulevel_id', [8, 11, 15, 21]],
+    ['huafenlevel_id', [8, 11, 15, 21]],
+  ]) {
+    const p = player();
+    for (const [index, realm] of boundaries.entries()) {
+      p[route] = realm - 1;
+      assert.equal(advanceSuiyunToRealm(p), false);
+      p[route] = realm;
+      assert.equal(advanceSuiyunToRealm(p, { now: 1000 + index }), true);
+      assert.equal(getSuiyunStage(p), index + 2);
+      assert.equal(p.法球倍率, SUIYUN_STAGES[index + 1].orb);
+      assert.equal(p.生命本源, SUIYUN_STAGES[index + 1].life);
+      assert.equal(p.岁云.自动晋升待结算, true);
+    }
+    p[route] = 1;
+    p.生命本源 = 123;
+    assert.equal(advanceSuiyunToRealm(p), false);
+    assert.equal(p.生命本源, 123);
+    assert.equal(getSuiyunStage(p), 5);
+  }
   const p = player();
-  assert.equal(buildSuiyunTrialBattle(p, 'frost').ok, false);
-  assert.equal(applySuiyunTrialResult(p, 'moon', false, 0, { now: 0 }).ok, true);
-  const trial = buildSuiyunTrialBattle(p, 'moon', { now: 1 });
-  assert.equal(trial.ok, true);
-  assert.equal(trial.index, 0);
-  assert.equal(trial.enemy.名号, '梦幻·月华试炼');
-  assert.equal(applySuiyunTrialResult(p, 'moon', true, 1, { now: 1, expectedIndex: 0 }).ok, true);
-  assert.equal(buildSuiyunTrialBattle(p, 'moon', { now: 99 * SUIYUN_HOUR_MS }).ok, false);
-  assert.equal(buildSuiyunTrialBattle(p, 'witness').ok, false);
-  for (let i = 0; i < 12; i++) assert.equal(applySuiyunTrialResult(p, 'frost', true).ok, true);
-  for (let i = 0; i < 9; i++) assert.equal(applySuiyunTrialResult(p, 'witness', true).ok, true);
-  assert.equal(buildSuiyunTrialBattle(p, 'witness').ok, false);
-  p.mijinglevel_id = 9;
-  assert.equal(advanceSuiyun(p).ok, false);
-  p.mijinglevel_id = 10;
-  assert.equal(advanceSuiyun(p).name, '月华似剑');
+  p.mijinglevel_id = 20;
+  p.岁云.累计炼化月华 = 1234;
+  assert.equal(advanceSuiyunToRealm(p, { now: 123 }), true);
+  assert.equal(getSuiyunStage(p), 5);
+  assert.equal(p.岁云.累计炼化月华, 1234);
+  assert.equal(p.岁云.岁云之力启用时间, 123);
+  assert.deepEqual(p.已领悟法则, ['岁云法则']);
+  const avatar = { ...player(), mijinglevel_id: 20, 诸天镜系统: { 当前化身: '门矢士' } };
+  assert.equal(advanceSuiyunToRealm(avatar), false);
+  assert.equal(getSuiyunStage(avatar), 1);
 });
 
 test('逐阶境界门槛、本源上限、法则及最终奖励只触发一次', () => {

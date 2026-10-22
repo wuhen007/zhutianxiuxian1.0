@@ -25,6 +25,7 @@ const owner = () => ({
   灵根: createSuiyunRoot(5), 生命本源: 15000, 仙道潜力: 100,
   攻击: 100, 防御: 100, 速度: 100, 当前血量: 500, 血量上限: 1000,
   学习的功法: [], mijinglevel_id: 1, xiangulevel_id: 1, huafenlevel_id: 1,
+  天阙权柄: { 解封: Object.fromEntries(authority.SUIYUN_AUTHORITY_SEALS.map(seal => [seal.name, { at: 0 }])) },
 });
 function fixture() {
   const state = {
@@ -42,12 +43,19 @@ function fixture() {
       state.players[id] = clone(value);
     },
     Read_najie: async id => clone(state.bags[id]),
-    Write_najie: async (id, value) => { state.bags[id] = clone(value); },
+    Write_najie: async (id, value) => {
+      if (state.rejectBag) return false;
+      if (state.failBag) { state.failBag = false; throw Error('bag-write-failed'); }
+      state.bags[id] = clone(value);
+    },
     Add_najie_thing: async (id, item) => {
       if (state.failGrant) { state.failGrant = false; throw Error('grant-failed'); }
       state.bags[id].装备.push(clone(item));
     },
-    player_efficiency: async () => {},
+    player_efficiency: async () => {
+      state.attributeRefreshes = (state.attributeRefreshes || 0) + 1;
+      if (state.failRefresh) throw Error('refresh-failed');
+    },
     __PATH: { player_path: '/fixture/players', najie_path: '/fixture/bags' },
     data: { gongfa_list: [{ name: '测试宝术', class: '功法' }] },
     FileRollbackTransaction: class {
@@ -75,11 +83,12 @@ test('天阙权柄仅由真实至宝持有者激活，召唤物和月华受赐�
   assert.equal(innate.getHabitatSlotBonus({}), 0);
 });
 
-test('梦幻试炼一次胜利替代旧引月，旧十二次见证自动迁移且不跳过后两段', () => {
+test('旧晋阶试炼不再影响境界晋升，也不折算成至宝解封', () => {
   const p = {};
   activateSuiyun(p);
   Object.assign(p.岁云, { 引月入体: 12, 化霜入剑: 12, 月之见证: 9 });
-  assert.equal(ensureSuiyunState(p).梦幻试炼, 1);
+  assert.equal(ensureSuiyunState(p).梦幻试炼, undefined);
+  assert.equal(authority.getSuiyunUnsealedCount(p), 0);
   p.mijinglevel_id = 10;
   assert.equal(advanceSuiyun(p).ok, true);
 });
@@ -223,12 +232,64 @@ test('三种创世配方准确扣材，每项+50000%参与百分比结算，发�
   assert.equal(rollback.state.bags.owner.装备.length, 0);
 });
 
-test('无极使用一份秘籍保证学习，重复指令不再扣秘籍', async () => {
+test('无极不持秘籍也能领悟，库存、潜力与功法冷却不扣，重复并发只学一次', async () => {
   const f = fixture();
-  await f.app.learn(f.e('#无极悟技 测试宝术'));
+  f.state.bags.owner.功法 = [];
+  f.state.bags.owner.时间线封锁 = { locked: true };
+  const beforeBag = clone(f.state.bags.owner), before = clone(f.state.players.owner);
+  await Promise.all([f.app.learn(f.e('#无极悟技 测试宝术')), f.app.learn(f.e('#无极悟技 测试宝术'))]);
+  assert.deepEqual(f.state.players.owner.学习的功法, ['测试宝术']);
+  assert.equal(f.state.attributeRefreshes, 1);
+  assert.deepEqual(f.state.bags.owner, beforeBag);
+  assert.deepEqual(f.state.players.owner, { ...before, 学习的功法: ['测试宝术'] });
+  const withScroll = fixture();
+  await withScroll.app.learn(withScroll.e('#无极悟技 测试宝术'));
+  assert.equal(withScroll.state.bags.owner.功法[0].数量, 1);
+});
+
+test('无极校验现有功法与解封状态，保存或属性刷新失败回滚学习且可重试', async () => {
+  const f = fixture();
+  const before = clone(f.state.players);
+  assert.match(await f.app.learn(f.e('#无极悟技 不存在功法')), /现有功法/);
+  assert.deepEqual(f.state.players, before);
+  assert.equal(f.state.attributeRefreshes, undefined);
+  for (const failure of ['failWrite', 'failRefresh']) {
+    f.state[failure] = true;
+    await assert.rejects(f.app.learn(f.e('#无极悟技 测试宝术')), /failed/);
+    assert.deepEqual(f.state.players, before);
+    assert.equal(f.state.bags.owner.功法[0].数量, 1);
+    f.state[failure] = false;
+  }
   await f.app.learn(f.e('#无极悟技 测试宝术'));
   assert.deepEqual(f.state.players.owner.学习的功法, ['测试宝术']);
-  assert.equal(f.state.bags.owner.功法[0].数量, 0);
+});
+
+test('海洋减伤与回血为解封即用被动，不需根源波动且其48小时冷却不影响被动', async () => {
+  const f = fixture(), base = f.state.players.owner;
+  base.天阙权柄 = { 解封: { 海洋: { at: 0 } } };
+  const unprepared = clone(base);
+  assert.equal(combat.reduceSuiyunDamage(unprepared, 100), 40);
+  combat.tickSuiyunAuthorityRound(unprepared, [], 1);
+  assert.equal(unprepared.当前血量, 700);
+  assert.equal(authority.suiyunAuthorityRemaining(unprepared, '海洋'), 0);
+  await f.app.originPulse(f.e('#根源波动', 'target'));
+  const onCooldown = clone(f.state.players.owner);
+  assert.ok(authority.suiyunAuthorityRemaining(onCooldown, '海洋') > 0);
+  const cooldowns = clone(onCooldown.天阙权柄.冷却);
+  assert.equal(combat.reduceSuiyunDamage(onCooldown, 100), 40);
+  combat.tickSuiyunAuthorityRound(onCooldown, [], 1);
+  assert.equal(onCooldown.当前血量, 700);
+  combat.tickSuiyunAuthorityRound(onCooldown, [], 1);
+  assert.equal(onCooldown.当前血量, 700);
+  combat.tickSuiyunAuthorityRound(onCooldown, [], 2);
+  assert.equal(onCooldown.当前血量, 900);
+  combat.tickSuiyunAuthorityRound(onCooldown, [], 3);
+  assert.equal(onCooldown.当前血量, 1000);
+  assert.deepEqual(onCooldown.天阙权柄.冷却, cooldowns);
+  const sealed = { ...clone(base), 天阙权柄: {} };
+  assert.equal(combat.reduceSuiyunDamage(sealed, 100), 50);
+  combat.tickSuiyunAuthorityRound(sealed, [], 1);
+  assert.equal(sealed.当前血量, 500);
 });
 
 test('梦幻借用真实原指令权柄只消费一次，24小时冷却，未获得源至宝永久归属', async () => {
@@ -312,4 +373,128 @@ test('无上在共享古史逻辑拦截高境打击与毁线，原存档不变�
   assert.equal(after.血气, 90);
   assert.equal(after.生命本源, 150);
   assert.equal(after.道伤, 1);
+});
+
+function sealedFixture() {
+  const f = fixture();
+  f.state.players.owner.天阙权柄 = {};
+  for (const seal of authority.SUIYUN_AUTHORITY_SEALS.filter(seal => seal.item)) {
+    f.state.bags.owner[seal.itemClass] ||= [];
+    f.state.bags.owner[seal.itemClass].push({ name: seal.item, 数量: seal.amount + 1 });
+  }
+  return f;
+}
+
+test('九条解封命令精确注册，全部可独立完成，上交数量与600本源一致', async () => {
+  const f = sealedFixture();
+  const oldBag = clone(f.state.bags.owner);
+  const initialLife = f.state.players.owner.生命本源;
+  for (const [index, seal] of [...authority.SUIYUN_AUTHORITY_SEALS].reverse().entries()) {
+    assert.ok(f.app.rule.some(rule => rule.fnc === 'unseal' && new RegExp(rule.reg).test(seal.command)));
+    const reply = await f.app.unseal(f.e(seal.command));
+    const p = f.state.players.owner;
+    assert.equal(authority.getSuiyunUnsealedCount(p), index + 1);
+    assert.equal(authority.hasSuiyunAuthority(p, seal.name), true);
+    assert.match(reply, /权柄已开放/);
+    assert.equal(authority.hasSuiyunAuthority(p, '无上'), index === 8);
+    assert.equal(authority.hasSuiyunAuthority(p, '月宫'), index === 8);
+    assert.equal(authority.hasSuiyunAuthority(p, '霜华'), index === 8);
+    assert.equal(authority.hasSuiyunAuthority(p, '岁云降世'), index === 8);
+  }
+  assert.equal(f.state.players.owner.生命本源, initialLife - 600);
+  for (const seal of authority.SUIYUN_AUTHORITY_SEALS.filter(seal => seal.item)) {
+    const amount = bag => bag[seal.itemClass].filter(item => item.name === seal.item).reduce((sum, item) => sum + item.数量, 0);
+    assert.equal(amount(oldBag) - amount(f.state.bags.owner), seal.amount);
+  }
+  assert.match(await f.app.panel(f.e('#天阙权柄')), /9\/9｜已完全解封/);
+  const before = clone({ players: f.state.players, bags: f.state.bags });
+  for (const seal of authority.SUIYUN_AUTHORITY_SEALS) await f.app.unseal(f.e(seal.command));
+  assert.deepEqual({ players: f.state.players, bags: f.state.bags }, before);
+});
+
+test('封印默认覆盖全部主动被动和旧待用状态，旧试炼记录与已学雷帝不抵扣供物', async () => {
+  const f = sealedFixture(), p = f.state.players.owner;
+  p.岁云 = { 引月入体: 12, 梦幻试炼: 1, 化霜入剑: 12, 月之见证: 9 };
+  p.学习的功法 = ['雷帝宝术'];
+  p.岁云梦幻 = { treasureName: '盘古幡', key: '开天', expiresAt: Date.now() + 60000 };
+  p.天阙权柄.断崖之剑待用 = true;
+  p.天阙权柄.岁云降世待用 = true;
+  for (const [name] of authority.SUIYUN_BRANCH_AUTHORITIES) assert.equal(authority.hasSuiyunAuthority(p, name), false, name);
+  assert.equal(authority.getSuiyunEffectiveDefense(p, { 防御: 100 }), 100);
+  assert.equal(innate.getHabitatSlotBonus(p, 7), 0);
+  assert.equal(authority.getSuiyunWudaoCost(p, 100), 100);
+  assert.equal(authority.getSuiyunExplorationDuration(p, 120000), 120000);
+  assert.equal(innate.hasEquippedInnateTreasure(p, '盘古幡', '开天'), false);
+  await authority.claimSuiyunBattleAuthority([p], {
+    read: f.dependencies.Read_player, write: f.dependencies.Write_player, lock: withPlayerMutationLock,
+  });
+  assert.equal(p._天阙断崖, undefined);
+  assert.equal(p._天阙降世, undefined);
+  const before = clone({ players: f.state.players, bags: f.state.bags });
+  for (const [method, message] of [
+    ['prepare', '#断崖之剑'], ['prepare', '#岁云降世'], ['originPulse', '#根源波动'],
+    ['wish', '#祈愿渡劫'], ['learn', '#无极悟技 测试宝术'], ['genesis', '#创世 防具 测试'],
+    ['dream', '#梦幻 盘古幡 开天'],
+  ]) assert.match(await f.app[method](f.e(message)), /尚未解封/);
+  assert.deepEqual({ players: f.state.players, bags: f.state.bags }, before);
+  f.state.bags.owner.功法 = [];
+  assert.match(await f.app.unseal(f.e('#理想勇者试炼')), /纳戒现有0/);
+  assert.equal(authority.hasSuiyunAuthority(p, '理想'), false);
+});
+
+test('如梦供物可跨同类堆栈精确扣20，重复并发解封不多扣、使用冷却互相独立', async () => {
+  const f = sealedFixture();
+  f.state.bags.owner.丹药 = [{ name: '如梦的加持', 数量: 9 }, { name: '如梦的加持', 数量: 12 }];
+  const replies = await Promise.all([f.app.unseal(f.e('#开启梦幻试炼')), f.app.unseal(f.e('#开启梦幻试炼'))]);
+  assert.equal(f.state.bags.owner.丹药.reduce((sum, item) => sum + item.数量, 0), 1);
+  assert.equal(authority.getSuiyunUnsealedCount(f.state.players.owner), 1);
+  assert.ok(replies.some(text => text.includes('已解封')));
+  assert.equal(authority.suiyunAuthorityRemaining(f.state.players.owner, '梦幻'), 0);
+  assert.match(await f.app.dream(f.e('#梦幻 盘古幡 开天')), /已借来/);
+  assert.ok(authority.suiyunAuthorityRemaining(f.state.players.owner, '梦幻') > 0);
+  assert.equal(authority.hasSuiyunAuthority(f.state.players.owner, '真实'), false);
+  assert.equal(f.state.players.owner.岁云梦幻.used, false);
+});
+
+test('上交或玩家写入失败整体回滚，纳戒封锁和不足时不记解封，归一无额外消耗', async () => {
+  for (const failure of ['failWrite', 'failBag', 'rejectBag']) {
+    const f = sealedFixture(), before = clone({ players: f.state.players, bags: f.state.bags });
+    f.state[failure] = true;
+    await assert.rejects(f.app.unseal(f.e('#开启梦幻试炼')), /failed|封锁/);
+    assert.deepEqual({ players: f.state.players, bags: f.state.bags }, before);
+    f.state[failure] = false;
+    await f.app.unseal(f.e('#开启梦幻试炼'));
+    assert.equal(authority.getSuiyunUnsealedCount(f.state.players.owner), 1);
+  }
+  const f = sealedFixture();
+  f.state.bags.owner.丹药[0].数量 = 19;
+  const before = clone(f.state.bags.owner);
+  assert.match(await f.app.unseal(f.e('#开启梦幻试炼')), /现有19/);
+  assert.deepEqual(f.state.bags.owner, before);
+  f.state.bags.owner.时间线封锁 = { locked: true };
+  assert.match(await f.app.unseal(f.e('#归一')), /封锁/);
+  delete f.state.bags.owner.时间线封锁;
+  const resourceBefore = clone(f.state.bags.owner);
+  await f.app.unseal(f.e('#归一'));
+  assert.equal(authority.hasSuiyunAuthority(f.state.players.owner, '创世'), true);
+  assert.deepEqual(f.state.bags.owner, resourceBefore);
+});
+
+test('召唤基拉祈只付一次600本源并保留正数，解封与原500本源祈愿分别扣费', async () => {
+  const f = sealedFixture();
+  f.state.players.owner.生命本源 = 600;
+  assert.match(await f.app.unseal(f.e('#召唤基拉祈')), /保留正数/);
+  assert.equal(f.state.players.owner.生命本源, 600);
+  f.state.players.owner.生命本源 = 1200;
+  await Promise.all([f.app.unseal(f.e('#召唤基拉祈')), f.app.unseal(f.e('#召唤基拉祈'))]);
+  assert.equal(f.state.players.owner.生命本源, 600);
+  await f.app.wish(f.e('#祈愿渡劫', 'target'));
+  assert.equal(f.state.players.owner.生命本源, 100);
+  assert.equal(f.state.players.target.基拉祈祈愿.remaining, 1);
+  const serialized = JSON.parse(JSON.stringify(f.state.players.owner));
+  assert.equal(authority.hasSuiyunAuthority(serialized, '七夜的许愿星'), true);
+  serialized.当前大道至宝 = '';
+  assert.equal(authority.hasSuiyunAuthority(serialized, '七夜的许愿星'), false);
+  serialized.当前大道至宝 = authority.SUIYUN_BRANCH;
+  assert.equal(authority.hasSuiyunAuthority(serialized, '七夜的许愿星'), true);
 });
