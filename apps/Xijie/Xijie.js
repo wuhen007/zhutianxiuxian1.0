@@ -151,6 +151,7 @@ export class Xijie extends plugin {
       'xiuxian:player:' + usr_qq + ':lastxijie_time'
     );
     lastxijie_time = parseInt(lastxijie_time);
+    let player = await Read_player(usr_qq);
     const xijieCooldown = hasSuiyunAuthority(player, '天空') ? 3600000 : 7200000;
     if (now_time < lastxijie_time + xijieCooldown) {
       // 检查是否有劫光令可重置CD
@@ -248,7 +249,6 @@ export class Xijie extends plugin {
       return false;
     }
     let msg = '';
-    let player = await Read_player(usr_qq);
     let Price = shop[i].price * shop[i].Grade;
     let buff = shop[i].Grade + 1;
     if (player.灵石 < Price) {

@@ -1785,6 +1785,7 @@ export class BOSS4 extends plugin {
     const tianjiaoName = match[1].trim();
     const usr_qq = e.user_id.toString();
       const player = await Read_player(usr_qq);
+      const idealChallenge = hasSuiyunAuthority(player, '理想');
       const panguRewardMultiplier = hasEquippedInnateTreasure(player, '盘古幡', '开天') && player.先天权柄?.盘古开天待用 ? 2 : 1;
       const zhuxianTianjiao = hasEquippedInnateTreasure(player, '诛仙四剑', '被动:1');
       // 岁云常青（岁云灵根自带）在天骄讨伐中与诛仙四剑被动同级：单次至多斩落40%气血，两者并存不叠加。
@@ -1815,8 +1816,8 @@ export class BOSS4 extends plugin {
     const trace = this.getAvailableTianjiaoTrace(player, tianjiaoData);
     const traceReach = getTianjiaoTraceReach(player, trace);
     const scentAccess = getTianjiaoScentAccess(player, tianjiaoName);
-    const usesScent = !traceReach.ok && scentAccess.ok;
-    if (!traceReach.ok && !usesScent) {
+    const usesScent = !idealChallenge && !traceReach.ok && scentAccess.ok;
+    if (!idealChallenge && !traceReach.ok && !usesScent) {
       if (!trace && scentAccess.reason === 'target') {
         e.reply(`万里追息印已锁定${scentAccess.state.target}，剩余${scentAccess.state.remaining}次，无法改追${tianjiaoName}。`);
         return false;
@@ -1892,13 +1893,13 @@ export class BOSS4 extends plugin {
       }
 
       // 检查玩家状态
-      if (A_player.level_id < 32) {
+      if (!idealChallenge && A_player.level_id < 32) {
         e.reply('你的练气境界至少达到法身境才能讨伐天骄');
         WorldBOSSBattleLock = 0;
         return false;
       }
 
-      if (A_player.当前血量 <= A_player.血量上限 * 0.1) {
+      if (!idealChallenge && A_player.当前血量 <= A_player.血量上限 * 0.1) {
         e.reply('还是先疗伤吧，别急着参战了');
         WorldBOSSBattleLock = 0;
         return false;
@@ -1927,7 +1928,7 @@ export class BOSS4 extends plugin {
       const tianjiaoRealmTier = getTianjiaoRealmTier(A_player);
 
       if (tianjiaoData.名号 === "猪咪岁岁") {
-        if (A_player.level_id > 41) {
+        if (!idealChallenge && A_player.level_id > 41) {
           e.reply(`成仙者不得以大欺小，请让后辈弟子来讨伐！`);
           WorldBOSSBattleLock = 0;
           return false;
@@ -1937,7 +1938,7 @@ export class BOSS4 extends plugin {
         }
       } else if (usesIndependentStats) {
         attributeMultiplier = 1;
-        if (tianjiaoRealmTier === 'below') {
+        if (!idealChallenge && tianjiaoRealmTier === 'below') {
           player.道伤 = Math.max(0, Number(player.道伤) || 0) + 1;
           player.当前血量 = 0;
           await Write_player(usr_qq, player);
@@ -1950,7 +1951,7 @@ export class BOSS4 extends plugin {
         if (tianjiaoRealmTier === 'full') {
           attributeMultiplier = 5;
           openingDialogue = `检测到玩家已具备圣人级以上权柄，${tianjiaoName}将不再压制境界，以全部实力应战！`;
-        } else if (tianjiaoRealmTier === 'below') {
+        } else if (!idealChallenge && tianjiaoRealmTier === 'below') {
           player.道伤 = Math.max(0, Number(player.道伤) || 0) + 1;
           player.当前血量 = 0;
           await Write_player(usr_qq, player);
@@ -2014,6 +2015,9 @@ export class BOSS4 extends plugin {
       if (blackEmperorFormation.consumed) await Write_player(usr_qq, player);
       const result = await zd_battle(A_player, B_player, { battleType: 'tianjiao' });
       let msg = result.msg;
+      if (idealChallenge && Array.isArray(msg)) {
+        msg.unshift('【理想】捷克罗姆循真理引路，跨越踪迹、位面、坐标、境界与血量门槛应战；讨伐冷却仍照常结算。');
+      }
       if (scentResult?.ok && Array.isArray(msg)) {
         msg.unshift(`【万里追息】锁定${scentResult.target}气息，本次无需踪迹；追息印剩余${scentResult.remaining}次。`);
       }
