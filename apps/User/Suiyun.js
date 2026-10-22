@@ -9,8 +9,8 @@ import {
   invalidateBattleEquipmentCache, player_efficiency, zd_battle, foundthing, GetPower, bigNumberTransform,
 } from '../../model/xiuxian.js';
 import {
-  activateSuiyun, advanceSuiyun, applySuiyunTrialResult, ascendSuiyunPalace,
-  buildSuiyunTrialBattle, cultivateSuiyun, ensureSuiyunState,
+  activateSuiyun, advanceSuiyunToRealm, ascendSuiyunPalace,
+  cultivateSuiyun, ensureSuiyunState,
   getSuiyunEffects, getSuiyunLifeMaximum, getSuiyunLotusBonus, getSuiyunPower, getSuiyunStage, refineSuiyun,
   settleSuiyunPalace, spendSuiyunPower, spendMoonlight, SUIYUN_PET_NAME, SUIYUN_PET_LEGACY_NAME,
   SUIYUN_PET_STAGE, SUIYUN_PET_FORGING_GROWTH, SUIYUN_PET_ALCHEMY_GROWTH,
@@ -99,9 +99,6 @@ export class Suiyun extends plugin {
       rule: [
         { reg: '^#(?:消耗|使用|服用|炼化)\\s*岁云的?残念(?:\\s*\\*?1)?$', fnc: 'consumeRemnant' },
         { reg: '^#岁云见证$', fnc: 'advance' },
-        { reg: '^#开启梦幻试炼$', fnc: 'moonTrial' },
-        { reg: '^#化霜入剑$', fnc: 'frostTrial' },
-        { reg: '^#月之见证$', fnc: 'witnessTrial' },
         { reg: '^#月华炼化.*$', fnc: 'refine' },
         { reg: '^#月华锁魂$', fnc: 'lockSoul' },
         { reg: '^#云月修炼$', fnc: 'cultivate' },
@@ -118,6 +115,9 @@ export class Suiyun extends plugin {
         { reg: '^#岁云造物.*$', fnc: 'createItem' },
       ],
     });
+    if (new.target === Suiyun) {
+      this.task = { cron: '15 * * * * *', name: '岁云境界自动晋阶与奖励补领', fnc: () => this.settleAutomaticStages() };
+    }
   }
 
   async context(e) {
@@ -446,7 +446,7 @@ export class Suiyun extends plugin {
         `月华映照宗庭，你自动入主【${SUIYUN_PALACE_FACTION}】，位登【${SUIYUN_PALACE_POSITION}】；并得宫主帝经《${SUIYUN_PALACE_TECHNIQUE}》x1。`,
         '宫主权限：#剑宫兑换 物品名（岁云剑宫宝库）；#开启剑宫宝库（每日供奉）。',
         world ? '小世界升华为【月华天宫】，每现实小时产出50点仙道潜力；岁云化身起另产0.5点岁云之力，岁云之力受小世界时间流速加成。' : '开辟小世界后将自动升华为月华天宫，岁云化身起每现实小时产0.5岁云之力×世界时间流速。',
-        '发送 #岁云之力 查看传承；完成 #开启梦幻试炼、#化霜入剑、#月之见证 后，以 #岁云见证 晋升。',
+        '岁云传承按境界自动晋升，无需晋阶试炼；#岁云之力 查看传承，#岁云见证 可补结算阶段奖励。',
       ].join('\n'));
     });
   }
@@ -583,59 +583,61 @@ export class Suiyun extends plugin {
     return true;
   }
 
-  async advance(e) {
-    const ctx = await this.context(e);
-    if (!ctx) return false;
-    return withPlayerMutationLock(ctx.qq, async () => {
-      const player = await Read_player(ctx.qq);
+  async settleAutomaticStage(qq) {
+    return withPlayerMutationLock(qq, async () => {
+      const player = await Read_player(qq);
       const error = this.holderError(player);
-      if (error) return e.reply(error);
-      let petGranted = await this.grantStagePet(ctx.qq, player);
-      let frostGranted = await this.grantFrostEquipment(ctx.qq, player);
-      const result = getSuiyunStage(player) === 5 ? { ok: true, name: '岁云剑尊' } : advanceSuiyun(player);
-      if (!result.ok) return e.reply([
-        result.reason,
-        petGranted ? `已补领仙宠【${SUIYUN_PET_NAME}】x1，发送 #出战仙宠${SUIYUN_PET_NAME} 出战。` : '',
-        frostGranted ? '已补领霜月剑、霜月剑袍、霜月之莲，三件齐备全属性10倍。' : '',
-      ].filter(Boolean).join('\n'));
-      await Write_player(ctx.qq, player);
+      if (error) return { error };
+      const changed = advanceSuiyunToRealm(player);
+      delete ensureSuiyunState(player).自动晋升待结算;
+      await Write_player(qq, player);
+      let petGranted = false, frostGranted = false;
       try {
-        petGranted = await this.grantStagePet(ctx.qq, player) || petGranted;
-        frostGranted = await this.grantFrostEquipment(ctx.qq, player) || frostGranted;
-        await this.grantFinalEquipment(ctx.qq, player);
-      } finally {
-        // 灵根已晋升落盘，奖品发放中断也要按新阶段重算；重试只补缺失装备。
-        await this.refreshAttributes(ctx.qq);
+        try {
+          petGranted = await this.grantStagePet(qq, player);
+          frostGranted = await this.grantFrostEquipment(qq, player);
+          await this.grantFinalEquipment(qq, player);
+        } finally {
+          // 重算结束后才设置重试标记，避免重算内部保存立即递归补领。
+          await this.refreshAttributes(qq);
+        }
+      } catch (error) {
+        const latest = await Read_player(qq);
+        ensureSuiyunState(latest).自动晋升待结算 = true;
+        await Write_player(qq, latest, { skipSuiyunSettlement: true });
+        throw error;
       }
-      return e.reply([
-        `【岁云见证】当前传承：${player.灵根.name}。`,
-        petGranted ? `获得仙宠【${SUIYUN_PET_NAME}】x1；发送 #出战仙宠${SUIYUN_PET_NAME} 出战。` : '',
-        frostGranted ? '霜月剑、霜月剑袍、霜月之莲已入纳戒，穿戴三件时攻、防、生命倍率为10倍。' : '',
-        getSuiyunStage(player) === 5 ? '岁云袍、岁云剑、云月之莲已入纳戒，无上天阙枝自动认主，皆为绑定专属。' : '',
-      ].filter(Boolean).join('\n'));
+      return { changed, player: await Read_player(qq), petGranted, frostGranted };
     });
   }
 
-  moonTrial(e) { return this.trial(e, 'moon'); }
-  frostTrial(e) { return this.trial(e, 'frost'); }
-  witnessTrial(e) { return this.trial(e, 'witness'); }
+  async settleAutomaticStages() {
+    if (!fs.existsSync(__PATH.player_path)) return;
+    for (const filename of fs.readdirSync(__PATH.player_path).filter(name => name.endsWith('.json'))) {
+      try {
+        const snapshot = JSON.parse(fs.readFileSync(path.join(__PATH.player_path, filename), 'utf8'));
+        const stage = getSuiyunStage(snapshot);
+        const missingRewards = stage >= 3 && (!snapshot.岁云?.仙宠已领取 || !snapshot.岁云?.霜月套装已领取
+          || (stage === 5 && !snapshot.岁云?.套装已领取));
+        if (!snapshot.岁云?.自动晋升待结算 && !advanceSuiyunToRealm(snapshot) && !missingRewards) continue;
+        await this.settleAutomaticStage(filename.slice(0, -5));
+      } catch (error) {
+        console.warn('[岁云自动晋阶] 待下轮重试：', filename, error.message);
+      }
+    }
+  }
 
-  async trial(e, route) {
+  async advance(e) {
     const ctx = await this.context(e);
     if (!ctx) return false;
-    return withPlayerMutationLock(ctx.qq, async () => {
-      const player = await Read_player(ctx.qq);
-      const error = this.holderError(player);
-      if (error) return e.reply(error);
-      const trial = buildSuiyunTrialBattle(player, route, { now: Date.now() });
-      if (!trial.ok) return e.reply(trial.reason);
-      const battle = await zd_battle(trial.attacker, trial.enemy, { disableWanhuaHarvest: true });
-      const result = applySuiyunTrialResult(player, route, battle.winner === 'A', battle.A_hp, { now: Date.now(), expectedIndex: trial.index });
-      if (!result.ok) return e.reply(result.reason);
-      await Write_player(ctx.qq, player);
-      await this.sendBattle(e, battle);
-      return e.reply([result.message || (battle.winner === 'A' ? '月华试炼通过。' : '试炼失利，进度保留。'), this.status(player)].join('\n'));
-    });
+    const result = await this.settleAutomaticStage(ctx.qq);
+    if (result.error) return e.reply(result.error);
+    return e.reply([
+      `【岁云见证】当前传承：${result.player.灵根.name}；境界达标自动晋升。`,
+      result.petGranted ? `已领取仙宠【${SUIYUN_PET_NAME}】x1。` : '',
+      result.frostGranted ? '霜月剑、霜月剑袍、霜月之莲已入纳戒。' : '',
+      getSuiyunStage(result.player) === 5 ? '岁云套装已结算，无上天阙枝认主；#天阙权柄 查看逐项解封条件。' : '',
+    ].filter(Boolean).join('\n'));
   }
 
   async cultivate(e) {
@@ -653,8 +655,8 @@ export class Suiyun extends plugin {
   }
 
   status(player) {
-    const state = ensureSuiyunState(player);
-    return `传承：${STAGES[getSuiyunStage(player) - 1]}｜月华值：${player.月华值 || 0}｜生命本源：${player.生命本源}/${getSuiyunLifeMaximum(player)}${player.岁云法则 ? '｜岁云法则：已领悟' : ''}\n梦幻试炼 ${state.梦幻试炼}/1 → 化霜入剑 ${state.化霜入剑}/12 → 月之见证 ${state.月之见证}/9`;
+    ensureSuiyunState(player);
+    return `传承：${STAGES[getSuiyunStage(player) - 1]}｜月华值：${player.月华值 || 0}｜生命本源：${player.生命本源}/${getSuiyunLifeMaximum(player)}${player.岁云法则 ? '｜岁云法则：已领悟' : ''}\n按境界自动晋升，无需引月、化霜或以月证剑试炼；至宝解封见 #天阙权柄`;
   }
 
   async settlePalace(qq, player) {

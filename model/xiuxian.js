@@ -29,8 +29,8 @@ import { FileRollbackTransaction } from '../apps/SecretPlace/rebirthTransaction.
 import { releaseJuelingLifespanForAuthority } from './juelingLifespan.js';
 import { applyClowWishBattleWeakness } from './clowWish.js';
 import { findTalentSynchronizationMatch } from './talentSynchronization.js';
-import { getSuiyunEffects, getSuiyunLotusBonus, hasSuiyunSkills } from './suiyun.js';
-import { claimSuiyunBattleAuthority, getSuiyunEffectiveDefense } from './suiyunAuthority.js';
+import { getSuiyunEffects, getSuiyunLotusBonus, hasSuiyunSkills, advanceSuiyunToRealm } from './suiyun.js';
+import { claimSuiyunBattleAuthority, getSuiyunEffectiveDefense, hasSuiyunAuthority } from './suiyunAuthority.js';
 import { getMemoryStage, normalizeMemoryPlayer } from './memoryPath.js';
 import { getSuiyunPvpSource, prepareSuiyunPvpBattle, restoreSuiyunPvpResult } from './suiyunPvp.js';
 import { computePetStoredBonus, rebuildPlayerLucky, syncSuiyunLuckyBonus } from './petLuckyCalc.js';
@@ -1351,9 +1351,20 @@ export async function Write_player(usr_qq, player, options = {}) {
   releaseJuelingLifespanForAuthority(player);
   syncSuiyunLuckyBonus(player);
   rememberImmortalEmperorHistory(player, previousPlayer);
+  if (player.灵根?.type === '岁云') advanceSuiyunToRealm(player);
   writeJsonAtomically(dir, player);
   markZhutianMirrorSnapshot(player);
   if (heavenSlash) queueHeavenWillSlashNotice(usr_qq, heavenSlash, data, options.event);
+  if (player.岁云?.自动晋升待结算 && !options.skipSuiyunSettlement) {
+    try {
+      const { Suiyun } = await import('../apps/User/Suiyun.js');
+      const result = await new Suiyun().settleAutomaticStage(String(usr_qq));
+      if (result.player) Object.assign(player, result.player);
+    } catch (error) {
+      // 晋阶已保存；奖品沿用原幂等凭证，定时服务继续补领。
+      console.warn('[岁云自动晋阶] 阶段奖励待补领：', usr_qq, error.message);
+    }
+  }
   return;
   });
 }
@@ -7215,10 +7226,10 @@ export async function Go(e, options = {}) {
     // 查询redis中的人物动作
     let action = await redis.get('xiuxian:player:' + usr_qq + ':action');
     action = JSON.parse(action);
-    if (player.当前大道至宝 === '无上天阙枝'
+    if (hasSuiyunAuthority(player, '理想')
       && (action?.heianlaolong || ['天牢', '禁闭', '被囚禁异域', '被关押黑暗牢笼'].includes(action?.action))) {
         await redis.del('xiuxian:player:' + usr_qq + ':action');
-        await e.reply('【无上】天阙权柄压落，囚牢锁链自解，你已脱身。');
+        await e.reply('【理想】捷克罗姆的雷光落下，囚牢锁链自解，你已脱身。');
         return true;
     }
     

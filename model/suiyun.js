@@ -52,12 +52,6 @@ export const SUIYUN_STAGES = Object.freeze([
   { name: '岁云剑尊', realm: 20, realmName: '准仙帝', life: 15000, cap: 15000, enlightenmentBonus: .45, tribulationReduction: .85, lootMultiplier: 10, eff: 30000, orb: 1000, stats: 5000 },
 ].map(Object.freeze));
 
-export const SUIYUN_TRIALS = Object.freeze({
-  moon: Object.freeze({ field: '梦幻试炼', count: 1, command: '#开启梦幻试炼', label: '梦幻的认可' }),
-  frost: Object.freeze({ field: '化霜入剑', count: 12, command: '#化霜入剑', label: '霜华似剑' }),
-  witness: Object.freeze({ field: '月之见证', count: 9, command: '#月之见证', label: '以月证剑' }),
-});
-
 const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const positive = value => Math.max(0, finite(value));
 const roundOrigin = value => Math.round(value * 1000) / 1000;
@@ -133,10 +127,6 @@ export function ensureSuiyunState(player) {
   if (!player.岁云 || typeof player.岁云 !== 'object' || Array.isArray(player.岁云)) player.岁云 = {};
   const state = player.岁云;
   state.version = 1;
-  if (Number(state.引月入体) >= 12 && !Number(state.梦幻试炼)) state.梦幻试炼 = 1;
-  for (const trial of Object.values(SUIYUN_TRIALS)) {
-    state[trial.field] = Math.min(trial.count, Math.trunc(positive(state[trial.field])));
-  }
   state.炼化本源 = positive(state.炼化本源);
   // 旧档没有每次炼化所得的准确月华数，不用混有日修炼收益的余额反推。
   state.累计炼化月华 = Math.min(Number.MAX_SAFE_INTEGER, Math.trunc(positive(state.累计炼化月华)));
@@ -188,15 +178,14 @@ export function advanceSuiyun(player, { now = Date.now() } = {}) {
   const current = getSuiyunStage(player);
   if (!current) return fail('先消耗岁云的残念，唤醒月华之体。');
   if (current === 5) return fail('岁云剑尊已经圆满。');
+  if (getActiveZhutianAvatarName(player)) return fail('请先装载本源，再自动承接岁云传承。');
   const state = ensureSuiyunState(player);
   const next = SUIYUN_STAGES[current];
   if (getRealmAuthorityLevel(player) < next.realm) {
     return fail(`下一阶段需达到仙古·${next.realmName}境界（跨体系等效权柄${next.realm}级）。`);
   }
-  if (current === 1 && Object.values(SUIYUN_TRIALS).some(trial => state[trial.field] < trial.count)) {
-    return fail('先完成 #开启梦幻试炼，再完成化霜入剑12关、月之见证9战。');
-  }
   player.灵根 = createSuiyunRoot(current + 1);
+  player.法球倍率 = next.orb;
   state.炼化本源 = 0;
   player.生命本源 = next.life;
   if (current + 1 === SUIYUN_PALACE_POWER_STAGE) state.岁云之力启用时间 = now;
@@ -208,47 +197,16 @@ export function advanceSuiyun(player, { now = Date.now() } = {}) {
   return { ok: true, stage: current + 1, name: next.name, grantPet: current + 1 === SUIYUN_PET_STAGE, grantEquipment: current + 1 === 5 };
 }
 
-function trialEligibility(player, route, now) {
-  if (getSuiyunStage(player) !== 1) return fail('三重月华试炼属于月华之体的晋升见证。');
-  const config = SUIYUN_TRIALS[route];
-  if (!config) return fail('未知月华试炼。');
-  const state = ensureSuiyunState(player);
-  if (state[config.field] >= config.count) return fail('这重月华试炼已经圆满。');
-  if (route !== 'moon' && state.梦幻试炼 < 1) return fail('请先完成 #开启梦幻试炼。');
-  if (route === 'witness' && state.化霜入剑 < 12) return fail('请先完成十二道化霜入剑试炼。');
-  return { ok: true, state, config, index: state[config.field] };
-}
-
-export function buildSuiyunTrialBattle(player, route, { now = Date.now() } = {}) {
-  const check = trialEligibility(player, route, now);
-  if (!check.ok) return check;
-  const { index, config } = check;
-  const attacker = structuredClone(player);
-  const hp = Math.max(1, finite(player.血量上限, 100));
-  attacker.当前血量 = hp;
-  const scale = (route === 'moon' ? .5 : route === 'frost' ? .65 : .8) + index * .035;
-  const enemy = {
-    名号: route === 'moon' ? '梦幻·月华试炼' : `${config.label}·第${index + 1}道月影`,
-    攻击: Math.max(1, Math.floor(finite(player.攻击, 10) * scale)),
-    防御: Math.max(1, Math.floor(finite(player.防御, 10) * scale)),
-    血量上限: Math.max(1, Math.floor(hp * scale)), 当前血量: Math.max(1, Math.floor(hp * scale)),
-    暴击率: .1, 暴击伤害: 1.5, 速度: Math.max(1, finite(player.速度, 100) * scale),
-    灵根: { name: '月华试炼投影', type: '试炼', 法球倍率: 1 }, 法球倍率: 1,
-    学习的功法: [], 仙宠: null, 分身: [], mijinglevel_id: player.mijinglevel_id || 0,
-    xiangulevel_id: player.xiangulevel_id || 0, huafenlevel_id: player.huafenlevel_id || 0,
-    _万灵魔幡不可炼化: true,
-  };
-  return { ...check, attacker, enemy, route, trialText: `${config.label}：胜利后推进一重，失败保留进度。` };
-}
-
-export function applySuiyunTrialResult(player, route, won, remainingHp = 0, { now = Date.now(), expectedIndex } = {}) {
-  const check = trialEligibility(player, route, now);
-  if (!check.ok) return check;
-  if (expectedIndex !== undefined && expectedIndex !== check.index) return fail('试炼进度已变化，请重新挑战。');
-  if (route === 'moon') check.state.上次引月 = now;
-  if (won) check.state[check.config.field] += 1;
-  const progress = check.state[check.config.field];
-  return { ok: true, won: Boolean(won), progress, total: check.config.count, message: `${check.config.label}：${progress}/${check.config.count}${won ? '，月华见证已铭刻。' : '，本次未破，进度保留。'}` };
+/** 境界达标自动连升，跌境不回退；保存入口负责奖励与属性重建。 */
+export function advanceSuiyunToRealm(player, { now = Date.now() } = {}) {
+  const previous = getSuiyunStage(player);
+  if (!previous || getActiveZhutianAvatarName(player) || player?._tahua_type || player?.分身 === true) return false;
+  while (getSuiyunStage(player) < 5 && getRealmAuthorityLevel(player) >= SUIYUN_STAGES[getSuiyunStage(player)].realm) {
+    if (!advanceSuiyun(player, { now }).ok) break;
+  }
+  const changed = getSuiyunStage(player) !== previous;
+  if (changed) ensureSuiyunState(player).自动晋升待结算 = true;
+  return changed;
 }
 
 export function cultivateSuiyun(player, { now = Date.now(), random = Math.random } = {}) {
