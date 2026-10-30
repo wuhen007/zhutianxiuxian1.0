@@ -12,7 +12,7 @@ export function getSuiyunTimeline(player) {
   return String(player?.时间线ID || player?.世界线ID || 'main');
 }
 
-function claimFile(kind, { timeline = 'main', file = SUIYUN_REGISTRY_FILE } = {}) {
+export function getSuiyunClaimFile(kind, { timeline = 'main', file = SUIYUN_REGISTRY_FILE } = {}) {
   if (!['remnant', 'root', 'treasure'].includes(kind)) throw new TypeError('未知岁云唯一记录类型');
   const scope = kind === 'treasure' ? 'all-worldlines' : String(timeline);
   const hash = createHash('sha256').update(scope).digest('hex').slice(0, 24);
@@ -20,7 +20,7 @@ function claimFile(kind, { timeline = 'main', file = SUIYUN_REGISTRY_FILE } = {}
 }
 
 export function readSuiyunUnique(kind, options = {}) {
-  const file = claimFile(kind, options);
+  const file = getSuiyunClaimFile(kind, options);
   try {
     const claim = JSON.parse(fs.readFileSync(file, 'utf8'));
     if (!claim?.ownerId) throw new Error(`岁云唯一记录缺少归属：${file}`);
@@ -35,7 +35,7 @@ export function readSuiyunUnique(kind, options = {}) {
 export function claimSuiyunUnique(kind, playerId, options = {}) {
   const ownerId = String(playerId || '').trim();
   if (!ownerId) throw new TypeError('岁云唯一记录需要玩家ID');
-  const file = claimFile(kind, options);
+  const file = getSuiyunClaimFile(kind, options);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const claim = { kind, ownerId, timeline: kind === 'treasure' ? '*' : String(options.timeline || 'main'), at: options.now ?? Date.now(), delivered: false };
   try {
@@ -52,12 +52,12 @@ export function claimSuiyunUnique(kind, playerId, options = {}) {
 export function releaseSuiyunUnique(kind, playerId, options = {}) {
   const claim = readSuiyunUnique(kind, options);
   if (!claim || claim.ownerId !== String(playerId) || claim.delivered) return false;
-  fs.unlinkSync(claimFile(kind, options));
+  fs.unlinkSync(getSuiyunClaimFile(kind, options));
   return true;
 }
 
 export async function withSuiyunUniqueClaim(kind, playerId, grant, options = {}) {
-  const file = claimFile(kind, options);
+  const file = getSuiyunClaimFile(kind, options);
   return withPlayerMutationLock(`suiyun-unique:${file}`, async () => {
     const result = claimSuiyunUnique(kind, playerId, options);
     if (!result.ok) return result;
