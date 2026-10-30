@@ -46,7 +46,9 @@ import {
   formatTianjiSearchResult,
   parseTianjiCommand,
   requestNameFrom,
-  searchPlayerGongfa,
+  isTianjiAdmin,
+  readTianjiState,
+  searchPlayerPossessions,
   TIANJI_COSTS,
 } from '../../model/tianjiSearch.js';
 import {
@@ -4998,7 +5000,7 @@ async tuiyanTianji(e) {
     return;
   }
   
-  let usr_qq = e.user_id.toString().replace('qg_', '');
+  let usr_qq = await channel(e.user_id.toString().replace('qg_', ''));
   let ifexistplay = await existplayer(usr_qq);
   if (!ifexistplay) {
     e.reply('玩家不存在，请先创建角色');
@@ -5006,13 +5008,12 @@ async tuiyanTianji(e) {
   }
   
   let player = await Read_player(usr_qq);
-    // 权限检查：只有机器人管理员或修仙管理员可以使用
+  // 管理员免境界要求，资源消耗沿用普通推演。
   const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
   const masterList = xiuxianConfig.Master || [];
-  const userQQ = e.user_id.toString().replace('qg_', '');
   // 检查玩家境界是否足够推演天机
-  if (!e.isMaster && !masterList.includes(userQQ) && !hasRealmAuthority(player, 16)) {
-    e.reply('你境界不足，无法推演天机！');
+  if (!isTianjiAdmin(e, masterList, usr_qq) && !hasRealmAuthority(player, 16)) {
+    e.reply('推演天机需要至尊境或同等境界；机器人主人与修仙管理员免境界要求。');
     return;
   }
   
@@ -5020,7 +5021,9 @@ async tuiyanTianji(e) {
   if (!request) {
     e.reply([
       '【天机推演·指引】',
-      '功法溯源：#推演天机 功法名（消耗2000万修为与2000万血气）',
+      '持有溯源：#推演天机 名称（灵根、已学功法、装备、帝兵、纳戒物品等）',
+      '岁云全阶段：#推演天机 岁云传承（含诸天镜本源与旧觉醒记录）',
+      '每次消耗2000万修为与2000万血气；管理员免境界要求。',
       '天骄位置：#推演天机 位置 天骄名（消耗2000万修为与2000万血气）',
     ].join('\n'));
     return;
@@ -5033,7 +5036,15 @@ async tuiyanTianji(e) {
     }
   }
   const cost = TIANJI_COSTS[request.type === 'tianjiao' ? '天骄位置' : '功法溯源'];
-  if ((player.修为 || 0) < cost.修为 || (player.血气 || 0) < cost.血气) {
+  const paid = await withPlayerMutationLock(usr_qq, async () => {
+    player = await Read_player(usr_qq);
+    if ((player.修为 || 0) < cost.修为 || (player.血气 || 0) < cost.血气) return false;
+    player.修为 -= cost.修为;
+    player.血气 -= cost.血气;
+    await Write_player(usr_qq, player);
+    return true;
+  });
+  if (!paid) {
     e.reply([
       '【天机推演·道基不足】',
       '本次推演需消耗 ' + cost.修为.toLocaleString() + ' 修为与 ' + cost.血气.toLocaleString() + ' 血气。',
@@ -5041,19 +5052,15 @@ async tuiyanTianji(e) {
     ].join('\n'));
     return;
   }
-  player.修为 -= cost.修为;
-  player.血气 -= cost.血气;
-  await Write_player(usr_qq, player);
-
   if (request.type === 'tianjiao') {
     await this.searchTianjiaoPosition(e, player);
     return;
   }
 
   const files = fs.readdirSync(__PATH.player_path).filter(file => file.endsWith('.json'));
-  const results = searchPlayerGongfa(qq => Read_player(qq), files, request.keyword);
-  results.totalChecked = files.length;
-  e.reply(formatTianjiSearchResult({ type: 'gongfa', target: request.keyword, results }));
+  const results = await searchPlayerPossessions(qq => readTianjiState(qq, __PATH), files, request.keyword);
+  const report = formatTianjiSearchResult({ type: 'possession', target: request.keyword, results });
+  return report.length > 3500 ? ForwardMsg(e, report.match(/[\s\S]{1,3000}/g)) : e.reply(report);
 }
 
   async searchTianjiaoPosition(e, player) {
@@ -5077,7 +5084,7 @@ async tuiyanTianji(e) {
       source: '天机推演',
       now: Date.now(),
     });
-    await Write_player(e.user_id.toString().replace('qg_', ''), player);
+    await Write_player(await channel(e.user_id.toString().replace('qg_', '')), player);
     const trace = player.天骄踪迹[tianjiao.名号];
     e.reply([
       '【天机推演·天骄位置】',

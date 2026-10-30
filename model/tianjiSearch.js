@@ -3,6 +3,11 @@
   天骄位置: { 修为: 20_000_000, 血气: 20_000_000 },
 });
 
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { getSuiyunStage } from './suiyun.js';
+import { getSuiyunTimeline } from './suiyunRegistry.js';
+
 const NUMERALS = Object.freeze({
   零: 0,
   一: 1,
@@ -62,7 +67,7 @@ function parseChineseNumber(text) {
 
 export function parseTianjiCommand(message) {
   const text = String(message ?? "").trim();
-  const match = text.match(/^#(?:打听天机|推演天机)\s+(.+)$/);
+  const match = text.match(/^#(?:打听天机|推演天机)\s*(.+)$/);
   if (!match) return null;
   const rest = match[1].trim();
   const locationMatch = rest.match(/^位置\s+(.+)$/);
@@ -83,10 +88,12 @@ export function parseTianjiCommand(message) {
     };
   }
   const tokens = rest.split(/\s+/);
+  const cost = tokens.length > 1 ? parseTianjiCost(tokens.at(-1)) : null;
+  if (cost !== null) tokens.pop();
   return {
-    type: "gongfa",
-    keyword: tokens[0],
-    cost: parseTianjiCost(tokens[1] || ""),
+    type: "possession",
+    keyword: tokens.join(' '),
+    cost,
   };
 }
 
@@ -101,11 +108,11 @@ export function findTianjiaoByName(list, name) {
   return (list || []).find((item) => item?.名号 === target) || null;
 }
 
-export function searchPlayerGongfa(readPlayer, files, gongfa) {
+export async function searchPlayerGongfa(readPlayer, files, gongfa) {
   const results = [];
   for (const file of files) {
     const qq = file.replace(/\.json$/i, "");
-    const playerData = readPlayer(qq);
+    const playerData = await readPlayer(qq);
     if (
       Array.isArray(playerData?.学习的功法) &&
       playerData.学习的功法.includes(gongfa)
@@ -120,6 +127,94 @@ export function searchPlayerGongfa(readPlayer, files, gongfa) {
   return results;
 }
 
+export function isTianjiAdmin(e, masters = [], playerId = '') {
+  const ids = [String(e.user_id).replace(/^qg_/, ''), String(playerId)];
+  return Boolean(e.isMaster || masters.map(String).some(id => ids.includes(id)));
+}
+
+export function isSuiyunInheritanceQuery(keyword) {
+  return ['岁云传承', '岁云一脉'].includes(keyword);
+}
+
+// Only inspect owned slots, not descriptions, reward receipts or historical records.
+export function findPlayerPossessions({ player = {}, najie = {}, equipment = {} }, keyword) {
+  const entries = [];
+  const add = (container, key, kind, category, location) => {
+    const value = container?.[key];
+    const name = typeof value === 'string' ? value : value?.name;
+    if (!name || (value?.数量 != null && !(Number(value.数量) > 0))) return;
+    entries.push({ container, key, kind, category, location, name,
+      quantity: Number(value?.数量) || 1, slot: value?.type });
+  };
+  add(player, '灵根', 'root', '灵根', '当前灵根');
+  add(player, '隐藏灵根', 'root', '灵根', '隐藏灵根');
+  add(player.诸天镜系统, '本源灵根', 'root', '灵根', '诸天镜本源灵根');
+  for (const avatar of player.诸天化身谱 || []) {
+    add(avatar, 'root', 'root', '灵根', `化身·${avatar.name}`);
+  }
+  for (const index of Object.keys(player.学习的功法 || [])) {
+    add(player.学习的功法, index, 'skill', '功法', '已学功法');
+  }
+  add(player, '仙宠', 'item', '仙宠', '出战仙宠');
+  for (const key of ['当前先天至宝', '当前大道至宝']) {
+    add(player, key, 'item', '装备', key);
+  }
+  const visit = (container, category, location) => {
+    for (const [key, value] of Object.entries(container || {})) {
+      if (!value || typeof value !== 'object') continue;
+      if (value.name) add(container, key, 'item', value.class || category, `${location}·${key}`);
+      else visit(value, category, `${location}·${key}`);
+    }
+  };
+  visit(equipment, '装备', '已装备');
+  for (const [category, items] of Object.entries(najie)) {
+    if (Array.isArray(items)) visit(items, category, `纳戒·${category}`);
+  }
+  visit(player.无尽至宝列表, '无尽至宝', '无尽至宝');
+  const suiyun = isSuiyunInheritanceQuery(keyword);
+  const matches = entries.filter(entry => suiyun
+    ? entry.kind === 'root' && getSuiyunStage({ 灵根: entry.container[entry.key] }) > 0
+    : entry.name === keyword);
+  if (suiyun && player.岁云?.已觉醒) {
+    matches.push({ kind: 'suiyun', category: '灵根', location: '岁云觉醒记录', name: '岁云传承', quantity: 1 });
+  }
+  return matches;
+}
+
+export async function readTianjiState(qq, paths) {
+  const read = async (directory, optional) => {
+    try { return JSON.parse(await fs.readFile(path.join(directory, `${qq}.json`), 'utf8')); }
+    catch (error) { if (optional && error.code === 'ENOENT') return {}; throw error; }
+  };
+  const [player, najie, equipment] = await Promise.all([
+    read(paths.player_path), read(paths.najie_path, true), read(paths.equipment_path, true),
+  ]);
+  return { player, najie, equipment };
+}
+
+export async function searchPlayerPossessions(readState, files, keyword, { timeline } = {}) {
+  const results = [];
+  results.errors = [];
+  results.totalChecked = 0;
+  for (const file of files) {
+    const qq = file.replace(/\.json$/i, '');
+    try {
+      const state = await readState(qq);
+      const line = getSuiyunTimeline(state.player);
+      if (timeline != null && line !== String(timeline)) continue;
+      results.totalChecked++;
+      const matches = findPlayerPossessions(state, keyword);
+      if (!matches.length) continue;
+      results.push({ qq, name: state.player.名号 || '未知修士', timeline: line,
+        realm: Number(state.player.mijinglevel_id) || 0,
+        matches: matches.map(({ kind, category, location, name, quantity, slot }) => ({ kind, category, location, name, quantity, slot })) });
+    } catch (error) {
+      results.errors.push({ qq, message: error.message });
+    }
+  }
+  return results;
+}
+
 export function formatTianjiSearchResult({ type, target, results }) {
   if (type === "tianjiao") {
     return [
@@ -127,6 +222,16 @@ export function formatTianjiSearchResult({ type, target, results }) {
       `天机锁定：${target.name}`,
       target.known ? `当前踪迹：${target.trace}` : "仍未寻得可靠踪迹。",
     ].join("\n");
+  }
+  if (type === 'possession') {
+    return [
+      '【天机推演·持有溯源】',
+      `查找【${target}】：检查${results.totalChecked}名修士，命中${results.length}人。`,
+      ...results.map((player, index) =>
+        `${index + 1}. ${player.name}（ID：${player.qq}｜时间线：${player.timeline}）\n` +
+        player.matches.map(item => `  ${item.location}：【${item.name}】×${item.quantity}`).join('\n')),
+      results.errors.length ? `另有${results.errors.length}份存档读取异常：${results.errors.map(item => item.qq).join('、')}` : '',
+    ].filter(Boolean).join('\n');
   }
   if (!results || results.length === 0) {
     return [
