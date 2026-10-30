@@ -241,6 +241,9 @@ export class xiangujinshi extends plugin {
     const weimianLevel = weimianData["诸天位面"] || 10;
     const weimianyazhi = 10 - weimianLevel;
     const targetXianguLevel = Number(player.xiangulevel_id) + 1;
+    if (targetXianguLevel === 25) {
+      return e.reply('祭道之上持有已认主的大道至宝后，发送 #证道 即可冲击唯一道之上。');
+    }
     if (targetXianguLevel === 24) {
       return e.reply('祭道之上须遭始祖彻底永祭，进入没有任何概念的空间泡影，现实时间720分钟后挣脱；冲关不替代此条件。');
     }

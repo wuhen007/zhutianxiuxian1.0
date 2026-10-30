@@ -440,6 +440,9 @@ export class FlowerPollenPath extends plugin {
       if (root.critical) return e.reply('【进化根基濒临崩溃】请先使用 #重塑进化根基，修复花粉根基后再继续进化。');
 
       const targetLevelId = player.huafenlevel_id + 1;
+      if (targetLevelId === 25) {
+        return e.reply('祭道之上持有已认主的大道至宝后，发送 #证道 即可冲击唯一道之上。');
+      }
       if (targetLevelId === 24) {
         return e.reply('祭道之上须遭始祖彻底永祭，进入没有任何概念的空间泡影，现实时间720分钟后挣脱；普通进化不替代此条件。');
       }

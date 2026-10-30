@@ -1,6 +1,7 @@
 import { getSuiyunWudaoCost, hasSuiyunAuthority } from '../../model/suiyunAuthority.js';
 import { plugin, verc, config, data } from '../../api/api.js';
 import fs from 'fs';
+import path from 'node:path';
 import {
   existplayer,
   Write_player,
@@ -11,6 +12,7 @@ import {
   getWeimianLevel,
   Read_player,
   Read_equipment,
+  Read_najie,
   Add_HP,
    zd_battle,
     mortal_tribulation,
@@ -28,13 +30,17 @@ import {
   channel,
   ForwardMsg,
   dj,
-  dj_players
+  dj_players,
+  invalidateBattleEquipmentCache,
 } from '../../model/xiuxian.js';
 import { tryInterceptAscension } from '../../model/TianLuoDiWang.js';
 import { getMinggeEffects, calculateMinggePotentialCost } from '../../model/mingge.js';
 import { getBreakthroughPotentialCost } from './breakthroughPotential.js';
 import { applyQuestionFortuneCost } from '../../model/redDustFortune.js';
 import { getKongtongModifiers } from '../../model/innateTreasure.js';
+import { isDaoTreasureItem } from '../../model/daoTreasure.js';
+import { getActiveZhutianAvatarName } from '../../model/zhutianMirror.js';
+import { FileRollbackTransaction } from '../SecretPlace/rebirthTransaction.js';
 import { getPlayerPlaneName } from '../../model/planeCoords.js';
 import {
   canStartRedDustPath,
@@ -49,12 +55,13 @@ import { getRealmAuthorityLevel, getRealmAuthorityName, getRealmAuthorityPath } 
 import { isAllHeavensLocation, PLACE_LOCATION_MAP } from '../../model/weimianTravel.js';
 import { canGrandUniverseCarryMijingRealm } from '../../model/grandUniverse.js';
 import { applyEternalGuardStatus } from '../../model/dimensionGuard.js';
-import { canEnterQuasiEmperor } from '../../model/worldlineAuthority.js';
+import { canEnterQuasiEmperor, isShapeSpiritDestroyed } from '../../model/worldlineAuthority.js';
 import { FlowerPollenPath } from './FlowerPollenPath.js';
 import {
   FLOWER_DAO_DAILY_LIMIT,
   FLOWER_DAO_RULES,
   getFlowerDaoGateState,
+  getFlowerEvolutionCost,
 } from '../../model/flowerPollenPath.js';
 import { zhetiandujie } from './zhetiandujie.js';
 import {
@@ -220,7 +227,7 @@ export class Level extends plugin {
     });
     const originalZhengdao = this.zhengdao;
     this.zhengdao = async function guardedMijingBreakthrough(e, ...args) {
-      const playerId = String(e.user_id || '').replace('qg_', '');
+      const playerId = String(await channel(String(e.user_id || '').replace('qg_', '')));
       return withPlayerMutationLock(playerId, () => originalZhengdao.call(this, e, ...args));
     };
   }
@@ -624,7 +631,7 @@ async zhengdao(e) {
         return;
     }
     
-    let usr_qq = e.user_id.toString().replace('qg_', '');
+    let usr_qq = String(await channel(e.user_id.toString().replace('qg_', '')));
     let ifexistplay = await existplayer(usr_qq);
     if (!ifexistplay) {
         e.reply('玩家不存在，请先创建角色');
@@ -641,6 +648,9 @@ async zhengdao(e) {
     if (!isNotNull(player.Physique_id)) {
         e.reply("请先#刷新信息");
         return;
+    }
+    if (getRealmAuthorityLevel(player) >= 23) {
+        return this.proveUniqueDao(e, usr_qq, player);
     }
        // 读取位面数据
     let weimianData = {};
@@ -1048,11 +1058,6 @@ if (player.mijinglevel_id + 1 == 21) {
         e.reply('仙帝已然超越诸天极限，一证永证，万道成空，自身胜道，超脱无尽诸天与古史，随意颠覆古今未来，天地万物也难以磨灭其本质，即使自身陨落了只要有人念想，就会化作道标接引再次归来，若想更进一步，须焚烧至高大道，祭掉所有一切，极尽升华，博一线可能！');
         return;
     }
-    // 检查是否正在尝试突破ID24境界
-if (player.mijinglevel_id + 1 === 24) {
-e.reply('唯一道之上，已是诸天尽头，万古空寂。此境超脱一切有形无形，超越道与理，凌驾因果命运之上，自身即是虚无，亦是永恒。然欲更进一步，须斩尽最后一丝‘我’念，焚尽真灵烙印，让‘存在’本身归于寂灭，于‘无’中极尽一跃，方有可能触及那不可言、不可想、不可名状的‘超脱之上’——那是连‘道’都无法定义的领域，是真正意义上的‘无上无下，无前无后，无因无果’，是超越一切概念与逻辑的终极之境。万古以来，纵有祭道者踏足此境，亦终成空幻，因‘超脱之上’本就不存‘得见’之说，唯有‘无我无道，方见真无’……');
-return;
-}
     // 获取当前时代信息
     const set = config.getConfig('xiuxian', 'xiuxian');
     const currentEra = set.Era?.current || { index: 0, years: 0 };
@@ -1640,6 +1645,73 @@ if (player.mijinglevel_id == 18) {
         `证道体系境界：${level}`
     ].join("\n"));
     return;
+}
+
+async proveUniqueDao(e, usr_qq, player) {
+    if (getRealmAuthorityLevel(player) >= 24) return e.reply('你已证道至唯一道之上，无需重复证道。');
+    if (getActiveZhutianAvatarName(player)) return e.reply('请先发送 #装载化身 本源，再证唯一道之上。');
+    if (isShapeSpiritDestroyed(player) || player.修仙状态 === '身灭道消'
+        || player.始祖永祭?.status === 'bubble' || !(Number(player.当前血量) > 0)
+        || player.attempting_level_7 === true) {
+        return e.reply('请先恢复真身与气血、结束当前劫罚，再证唯一道之上。');
+    }
+
+    const fields = { mijing: 'mijinglevel_id', xiangu: 'xiangulevel_id', huafen: 'huafenlevel_id' };
+    const route = [getRealmAuthorityPath(player), 'mijing', 'xiangu', 'huafen']
+        .find(key => Number(player[fields[key]]) === (key === 'mijing' ? 23 : 24));
+    if (!route) return e.reply('证唯一道之上需先达到祭道之上。');
+    const equipment = await Read_equipment(usr_qq);
+    const najie = await Read_najie(usr_qq);
+    const ownsTreasure = item => {
+        const owners = [item?.绑定者, item?.author_name, item?.ownerId]
+            .filter(value => value != null && value !== '').map(String);
+        return isDaoTreasureItem(item) && !item.先天投影截止
+            && Number(item.数量 ?? 1) > 0 && owners.length > 0
+            && owners.every(owner => owner === usr_qq);
+    };
+    if (![equipment?.至宝, ...(najie?.装备 || [])].some(ownsTreasure)) {
+        return e.reply('证唯一道之上需持有已认主的大道至宝本体；装备栏或纳戒中的至宝均可。');
+    }
+
+    const currentLevel = Number(player[fields[route]]);
+    const { costRate, eraName, eraIndex } = this.getEraInfo();
+    // 修为、血气沿用各体系原公式及其原有时代、问道签修正。
+    const baseCost = route === 'huafen' ? getFlowerEvolutionCost(currentLevel) : 2 ** currentLevel * 250000;
+    const cost = route === 'huafen' ? getFlowerEvolutionCost(currentLevel, eraIndex)
+        : applyQuestionFortuneCost(player, Math.ceil(baseCost * (route === 'mijing' ? costRate : 1)));
+    if (!(Number(player.修为) >= cost) || !(Number(player.血气) >= cost)) {
+        return e.reply([
+            '【证道失败·资源不足】',
+            `当前时代：${eraName}｜修为、血气各需：${cost.toLocaleString()}`,
+            `修为差：${Math.max(0, cost - (Number(player.修为) || 0)).toLocaleString()}`,
+            `血气差：${Math.max(0, cost - (Number(player.血气) || 0)).toLocaleString()}`,
+        ].join('\n'));
+    }
+
+    const transaction = new FileRollbackTransaction();
+    for (const directory of [__PATH.player_path, __PATH.equipment_path]) {
+        transaction.capture(path.join(directory, `${usr_qq}.json`));
+    }
+    try {
+        player[fields[route]] = currentLevel + 1;
+        player.修为 -= cost;
+        player.血气 -= cost;
+        player.境界称号 = '唯一道之上';
+        player.道果状态 = '唯一道之上';
+        await Write_player(usr_qq, player);
+        await Write_equipment(usr_qq, equipment);
+        await Add_HP(usr_qq, 99999999);
+        transaction.commit();
+    } catch (error) {
+        try { transaction.rollback(); }
+        finally { invalidateBattleEquipmentCache(usr_qq); }
+        throw error;
+    }
+    return e.reply([
+        '【证道成功·唯一道之上】',
+        `当前时代：${eraName}｜修为、血气各消耗：${cost.toLocaleString()}`,
+        '大道至宝与道果共鸣，你已踏入唯一道之上。',
+    ].join('\n'));
 }
 
 async giveEmperorProtection(e) {
