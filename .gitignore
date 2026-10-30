@@ -62,6 +62,10 @@ worldchat-server/clients.json
 worldchat-server/*.tmp
 apps/worldChat/*.tmp
 
+# 万界灵市的全服行情与 NPC 资产
+data/lingshi-market.json
+data/lingshi-market.json.*.tmp
+
 # Standalone public gateway releases and private runtime identity
 dist/web-gateway/
 gateway-data/
