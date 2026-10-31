@@ -234,7 +234,7 @@ export class PlayerControl extends plugin {
       e.reply('出现错误!状态中不存在闭关状态,请留意最近进行的操作并向管理员反馈')
       return
     }
-    if (action.shutup == 1) return false;
+    if (action.shutup == 1) return e.reply('你当前没有在闭关。');
 
     //结算
     let end_time = action.end_time;
@@ -289,9 +289,9 @@ export class PlayerControl extends plugin {
       JSON.stringify(arr)
     );
     if (e.isGroup) {
-      await this.biguan_jiesuan(usr_qq, time, false, e.group_id); //提前闭关结束不会触发随机事件
+      await this.biguan_jiesuan(usr_qq, time, false, e.group_id, e); //提前闭关结束不会触发随机事件
     } else {
-      await this.biguan_jiesuan(usr_qq, time, false); //提前闭关结束不会触发随机事件
+      await this.biguan_jiesuan(usr_qq, time, false, undefined, e); //提前闭关结束不会触发随机事件
     }
 
 
@@ -312,7 +312,7 @@ export class PlayerControl extends plugin {
       console.log(action)
       return
     }
-    if (action.working == 1) return false;
+    if (action.working == 1) return e.reply('你当前没有在降妖。');
     //结算
     let end_time = action.end_time;
     let start_time = action.start_time || action.end_time - action.time;
@@ -355,9 +355,9 @@ export class PlayerControl extends plugin {
     }
 
     if (e.isGroup) {
-      await this.dagong_jiesuan(usr_qq, time, false, e.group_id); //提前闭关结束不会触发随机事件
+      await this.dagong_jiesuan(usr_qq, time, false, e.group_id, e); //提前闭关结束不会触发随机事件
     } else {
-      await this.dagong_jiesuan(usr_qq, time, false); //提前闭关结束不会触发随机事件
+      await this.dagong_jiesuan(usr_qq, time, false, undefined, e); //提前闭关结束不会触发随机事件
     }
 
     let arr = action;
@@ -382,7 +382,7 @@ export class PlayerControl extends plugin {
    * @param group_id  回复消息的地址，如果为空，则私聊
    * @return  falses {Promise<void>}
    */
-  async biguan_jiesuan(user_id, time, is_random, group_id) {
+  async biguan_jiesuan(user_id, time, is_random, group_id, event = null) {
     let usr_qq = user_id;
     await player_efficiency(usr_qq);
     let player = data.getData('player', usr_qq);
@@ -509,7 +509,11 @@ export class PlayerControl extends plugin {
       await Add_血气(usr_qq, imperialBlood);
       msg.push(`\n人皇气运额外淬炼血气:${imperialBlood}`);
     }
-    if (group_id) {
+    // 指令触发的结算走 e.reply，才能命中「官方代发」（被动回复、不占配额）；
+    // 没有 event 的路径（定时任务）保持 pushInfo 不变。
+    if (event?.reply) {
+      await event.reply(msg);
+    } else if (group_id) {
       await this.pushInfo(group_id, true, msg);
     } else {
       await this.pushInfo(usr_qq, false, msg);
@@ -531,7 +535,7 @@ export class PlayerControl extends plugin {
    * @param group_id  回复消息的地址，如果为空，则私聊
    * @return  falses {Promise<void>}
    */
-  async dagong_jiesuan(user_id, time, is_random, group_id) {
+  async dagong_jiesuan(user_id, time, is_random, group_id, event = null) {
     let usr_qq = user_id;
     let player = data.getData('player', usr_qq);
     let now_level_id;
@@ -576,7 +580,9 @@ export class PlayerControl extends plugin {
       msg.push('\n增加灵石' + get_lingshi);
     }
 
-    if (group_id) {
+    if (event?.reply) {
+      await event.reply(msg);
+    } else if (group_id) {
       await this.pushInfo(group_id, true, msg);
     } else {
       await this.pushInfo(usr_qq, false, msg);

@@ -12,6 +12,7 @@ import {
 } from '../../model/xiuxian.js';
 import { AppName } from '../../app.config.js';
 import { runTaskOnce } from '../../utils/taskGuard.js';
+import { tryOfficialActive } from '../../model/officialReply.js';
 
 export class mojietask extends plugin {
   constructor() {
@@ -256,6 +257,18 @@ export class mojietask extends plugin {
    */
   async pushInfo(id, is_group, msg) {
     if (is_group) {
+      // 定时任务优先走「官方主动消息」：这样群里看到的是官方 Bot 发言，而不是协议号。
+      // 不能依赖 scheduledSender 劫持 Bot.pickGroup —— 那套要靠 isScheduledContext() 判断，
+      // 判据是「实例上没有 this.e」，而事件型插件处理过消息后 this.e 会残留，
+      // 定时任务就识别不出来，于是静默走协议号。这里直接显式调用，不依赖上下文。
+      // 群未配置官方代发、超出每分钟限流、或发送失败时，tryOfficialActive 返回 handled=false，
+      // 自动落到下面的协议号发送。
+      try {
+        const route = await tryOfficialActive(id, msg);
+        if (route?.handled) return;
+      } catch (err) {
+        logger?.warn?.(`[魔界任务] 官方主动消息失败，回退协议号：${err?.message ?? err}`);
+      }
       await Bot.pickGroup(id)
         .sendMsg(msg)
         .catch(err => {

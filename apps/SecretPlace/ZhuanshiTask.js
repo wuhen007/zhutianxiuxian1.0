@@ -158,9 +158,10 @@ const REBIRTH_OUTPUT_MODE_KEY = 'xiuxian:reincarnation_output_mode';
 async function getRebirthOutputMode() {
   try {
     const v = await redis.get(REBIRTH_OUTPUT_MODE_KEY);
-    return v === '简略' ? '简略' : '完整';
+    // 默认简略：轮回只发一句简报，不再刷五段剧情；需要完整版用「#轮回往生输出切换 完整」
+    return v === '完整' ? '完整' : '简略';
   } catch {
-    return '完整';
+    return '简略';
   }
 }
 
@@ -172,13 +173,15 @@ async function setRebirthOutputMode(mode) {
 // 发送消息
 async function sendRebirthMessage(e, message) {
   try {
-    if (e?.reply) {
+    if (typeof e?.reply === 'function') {
       await e.reply(message);
-    } else if (e?.group_id) {
-      await e.reply(message);
-    } else if (e?.user_id) {
-      await common.relpyPrivate(e.user_id, message);
+      return;
     }
+    // 定时任务没有事件上下文：仍然只走群，绝不私聊
+    await notifyReincarnationPlayer(e?.user_id, message, [], {
+      groupId: e?.group_id,
+      onlyGroup: Boolean(e?.group_id),
+    });
   } catch (err) {
     console.error('【轮回】发送消息失败:', err);
   }
@@ -197,7 +200,7 @@ function buildPlayerMentionMessage(playerIds, message) {
   return [...segs, `\n${message}`];
 }
 
-export async function notifyReincarnationPlayer(playerId, message, extraMentions = []) {
+export async function notifyReincarnationPlayer(playerId, message, extraMentions = [], options = {}) {
   try {
     const groupList = await getNotifyGroupList();
     const bot = globalThis.Bot;
@@ -206,14 +209,24 @@ export async function notifyReincarnationPlayer(playerId, message, extraMentions
         .map(id => String(id == null ? '' : id).replace('qg_', ''))
         .filter(id => id !== '')
     )];
-    if (groupList.length > 0 && bot) {
+    // 指定了群就只发那个群（轮回只发玩家群）；onlyGroup 时即使没群也不再退回全服广播
+    const targetGroups = options?.groupId
+      ? [String(options.groupId)]
+      : options?.onlyGroup
+      ? []
+      : groupList;
+    if (targetGroups.length > 0 && bot) {
       const payload = buildPlayerMentionMessage(mentionIds, message);
       const results = await Promise.allSettled(
-        groupList.map(async groupId => bot.pickGroup(groupId).sendMsg(payload))
+        targetGroups.map(async groupId => bot.pickGroup(groupId).sendMsg(payload))
       );
       if (results.some(result => result.status === 'fulfilled')) return;
+      // 群发失败也不私聊：轮回通知只走群
+      console.error(`【轮回】群消息发送失败，玩家 ${playerId} 未收到通知`);
+      return;
     }
-    await common.relpyPrivate(String(playerId), message);
+    // 没有可用的群：只记日志。轮回通知一律不私聊，避免半夜给人发私聊消息
+    console.error(`【轮回】没有可用的群（玩家 ${playerId}），通知未发送`);
   } catch (err) {
     console.error(`【轮回】通知玩家 ${playerId} 失败:`, err);
   }
@@ -1152,7 +1165,7 @@ async function forceRebirthPlayer(
       ].join('\n');
     }
 
-    await notifyReincarnationPlayer(player_id, rebornMsg);
+    await notifyReincarnationPlayer(player_id, rebornMsg, [], { groupId: e?.group_id, onlyGroup: true });
     console.log(`【再入仙途】玩家 ${player_id} 转世完成！`);
     return new_player;
   } catch (err) {
@@ -1619,7 +1632,8 @@ class ZhuanshiTask extends plugin {
                     await notifyReincarnationPlayer(
                       player_id,
                       `【轮回路·等待裁定】\n${task.player_name || player_id}的魂魄已抵达轮回路。当前执掌者：${controller.player_name}，等待其裁定是否往生。`,
-                      [controller.player_id]
+                      [controller.player_id],
+                      { groupId: task.group_id, onlyGroup: true }
                     );
                   }
                   console.log(
@@ -1635,16 +1649,24 @@ class ZhuanshiTask extends plugin {
                 };
                 console.log(`【轮回】玩家 ${player_id} 时间到，开始轮回...`);
 
+                // 轮回剧情只发玩家所在的群（拿不到群信息就私聊本人），不再全服广播
+                const playerGroupId = task.group_id || task.groupId || null;
                 const msgCtx = {
-                  isGroup: false,
-                  group_id: null,
+                  isGroup: Boolean(playerGroupId),
+                  group_id: playerGroupId,
                   user_id: player_id,
                   reply: async (msg) => {
                     try {
-                      // 改为全服公告（复用插件既有 broadcastToAllGroups，无需造轮子）
-                      await broadcastToAllGroups(msg);
+                      if (playerGroupId) {
+                        await globalThis.Bot.pickGroup(playerGroupId).sendMsg(msg);
+                        return;
+                      }
+                      // 拿不到玩家所在的群：退到公共群列表，不私聊本人
+                      for (const gid of await getNotifyGroupList()) {
+                        await globalThis.Bot.pickGroup(gid).sendMsg(msg);
+                      }
                     } catch (err) {
-                      console.error('【轮回】全服公告发送失败:', err);
+                      console.error('【轮回】消息发送失败:', err);
                     }
                   }
                 };

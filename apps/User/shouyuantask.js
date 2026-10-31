@@ -20,12 +20,24 @@ export async function triggerShouyuanRebirth(usr_qq, player) {
     let reincarnation_count = await redis.get(`xiuxian:player:${usr_qq}:reCreate_acount`);
     reincarnation_count = parseInt(reincarnation_count) || 0;
 
+    // 群号：寿元流逝是定时任务，没有事件上下文，但玩家最近的动作记录（采药/旅行/秘境等）
+    // 都会带 group_id，从那里回捞一个，轮回剧情就能发回玩家自己的群而不是公共群。
+    // 捞不到就留 null —— 结算时只会发公共群，绝不私聊。
+    let groupId = null;
+    try {
+      const rawAction = await redis.get(`xiuxian:player:${usr_qq}:action`);
+      const prevAction = rawAction ? JSON.parse(rawAction) : null;
+      groupId = prevAction?.group_id || prevAction?.groupId || null;
+    } catch (err) {
+      console.error(`读取玩家最近群号失败 (${usr_qq}):`, err.message);
+    }
+
     const task = {
       player_qq: usr_qq,
       player_id: usr_qq,
       player_name: player.名号,
       player_data: player,
-      group_id: null,
+      group_id: groupId,
       admin_info: {
         qq: 'system',
         name: '天道',

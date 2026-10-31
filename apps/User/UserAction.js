@@ -61,10 +61,6 @@ export class UserAction extends plugin {
             fnc: 'exploreQingDi'
         },
         {
-            reg: '^#传音给作者\\s*(.*)$',
-            fnc: 'sendMessageToAuthor'
-        },
-        {
             reg: '^#偷取纳戒物品随机\\s+(\\d+)$',
             fnc: 'stealRandomItemFromPlayer',
             event: 'message.private'
@@ -470,104 +466,6 @@ target.神识 = target.神识 || 0;
     return false;
   }
 
-// 传音功能实现
-async sendMessageToAuthor(e) {
-    const content = e.msg.replace('#传音给作者', '').trim();
-    const usr_qq = (await channel(e.user_id.toString().replace('qg_',''))).toString();
-    if (!await existplayer(usr_qq)) return false;
-    const player = await Read_player(usr_qq);
-    if (!content) {
-        return e.reply([
-            `【传音失败】`,
-            `传音内容不能为空！`,
-            `格式：#传音给作者 你想说的话`,
-            `示例：#传音给作者 游戏建议：增加新功能`
-        ].join('\n'));
-    }
-    
-    const authorQQ = "2283096140"; // 作者QQ号
-    const playerName = player.名号; // 发送者昵称
-    const playerQQ = e.user_id; // 发送者QQ
-    
-    // 构建传音消息
-    const message = [
-        `【诸天传音】`,
-        `${playerName}(${playerQQ}) 传音给您：`,
-        `${content}`,
-        `发送时间：${new Date().toLocaleString()}`,
-    ].join('\n');
-    
-    let sent = false;
-    let failReason = '';
-    
-    // === 方案1：私聊通知作者 ===
-    try {
-        await this.pushInfo(authorQQ, false, message);
-        sent = true;
-    } catch (err) {
-        failReason += `私聊失败(${err.message})；`;
-        Bot.logger.warn(`[传音] 私聊作者失败: ${err.message}`);
-    }
-    
-    // === 方案2：失败则尝试在群里@作者 ===
-    if (!sent && e.isGroup) {
-        try {
-            const groupMsg = [buildAt(authorQQ), '\n', message].join('');
-            await e.group.sendMsg(groupMsg);
-            sent = true;
-        } catch (err) {
-            failReason += `群内@失败(${err.message})；`;
-            Bot.logger.warn(`[传音] 群内@作者失败: ${err.message}`);
-        }
-    }
-    
-    // === 方案3：还失败则写入日志文件兜底 ===
-    if (!sent) {
-        try {
-            const logDir = `${__PATH.player_path}/../chuanYin_log`;
-            if (!fs.existsSync(logDir)) {
-                fs.mkdirSync(logDir, { recursive: true });
-            }
-            const logFile = `${logDir}/chuanYin_${new Date().toISOString().slice(0, 10)}.log`;
-            const logEntry = [
-                `[${new Date().toLocaleString()}]`,
-                `发送者: ${playerName}(${playerQQ})`,
-                `内容: ${content}`,
-                `来源群: ${e.isGroup ? (e.group_id || '未知') : '私聊触发'}`,
-                `失败原因: ${failReason}`,
-                `---`
-            ].join('\n');
-            fs.appendFileSync(logFile, logEntry + '\n');
-            sent = true;
-            Bot.logger.mark(`[传音] 已写入日志文件: ${logFile}`);
-        } catch (logErr) {
-            failReason += `日志写入失败(${logErr.message})`;
-            Bot.logger.error(`[传音] 日志写入失败: ${logErr.message}`);
-        }
-    }
-    
-    // === 回复发送者 ===
-    if (sent) {
-        e.reply([
-            `【传音成功】`,
-            `你的传音已跨越诸天万界，送达作者耳中！`,
-            `传音内容：`,
-            `${content}`,
-        ].join('\n'));
-    } else {
-        e.reply([
-            `【传音失败】`,
-            `传音途中遭遇时空乱流，所有通道均未送达！`,
-            ``,
-            `失败原因：`,
-            `${failReason || '未知错误'}`,
-            ``,
-            `建议联系管理员或稍后重试。`,
-        ].join('\n'));
-    }
-    
-    return true;
-}
 //狠人道场探索
 async  exploreHrenDao(e) {
     // ==== 基础校验 ====

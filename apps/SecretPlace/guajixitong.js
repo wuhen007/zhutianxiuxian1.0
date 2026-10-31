@@ -642,7 +642,7 @@ async shenqi_jiesuan(e) {
         const img = await get_log_img(fullMsg);
         
         if (e.isGroup) {
-            await this.pushInfo(e.group_id, true, img);
+            await e.reply(img);
         } else {
             await this.pushInfo(usr_qq, false, img);
         }
@@ -1399,7 +1399,7 @@ async lingshen_jiesuan(e) {
         const img = await get_log_img(result.msg);
         
         if (e.isGroup) {
-            await this.pushInfo(e.group_id, true, img);
+            await e.reply(img);
         } else {
             await this.pushInfo(usr_qq, false, img);
         }

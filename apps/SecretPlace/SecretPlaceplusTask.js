@@ -242,6 +242,8 @@ export class SecretPlaceplusTask extends plugin {
          const totalEndTime = Number(action.start_time) + Number(action.total_time) * 60 * 1000;
         // 检查是否到达结算时间
         if (now_time > settleTime || now_time >= totalEndTime) {
+            // 缺少地点的行动（如灵界裂缝探索）不归秘境结算处理，避免读取 undefined.name 抛错
+            if (action.action === '探索灵界裂缝' || !action.Place_address) return false;
             let weizhi = action.Place_address;
           let xf = action.XF ?? -1;
 

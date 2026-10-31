@@ -2354,7 +2354,7 @@ if (player["player.剑云海庇护"] && player["player.剑云海庇护"].副本�
                 
                 // 发送消息
                 if (action.group_id) {
-                    await Bot.pickGroup(action.group_id).sendMsg([
+                    await e.reply([
                         buildAt(usr_qq),
                         penaltyMsg.join('\n')
                     ]);
@@ -2407,7 +2407,7 @@ if (player.power_place == PLACE_LOCATION_MAP.遮天位面 && Math.random() < 0.0
             
             // 发送消息
             if (action.group_id) {
-                await Bot.pickGroup(action.group_id).sendMsg([
+                await e.reply([
                     buildAt(usr_qq),
                     eventMsg.join('\n')
                 ]);
@@ -2583,7 +2583,7 @@ if (weizhi.name === "紫薇星域") {
         await Write_player(usr_qq, player);
         const finalMsg = eventMsg.join('\n');
         if (action.group_id) {
-            await Bot.pickGroup(action.group_id).sendMsg([buildAt(usr_qq), finalMsg]);
+            await e.reply([buildAt(usr_qq), finalMsg]);
         } else {
             await common.relpyPrivate(usr_qq, finalMsg);
         }
@@ -2855,7 +2855,7 @@ if (weizhi.name === "紫薇星域") {
         // ==== 消息推送 ====
         if (e.isGroup) {
             // 群聊消息
-            await Bot.pickGroup(e.group_id).sendMsg([
+            await e.reply([
                 buildAt(usr_qq),
                 finalMsg
             ]);
@@ -2895,7 +2895,7 @@ if (weizhi.name === "紫薇星域") {
                             await Write_player(usr_qq, player);
                                        // ==== 消息推送 ====
             if (action.group_id) {
-                await Bot.pickGroup(action.group_id).sendMsg([
+                await e.reply([
                     buildAt(usr_qq),
                     shengtimsg
                 ]);
@@ -3107,7 +3107,7 @@ if (weizhi.name === "紫薇星域") {
 
             // ==== 消息推送 ====
             if (action.group_id) {
-                await Bot.pickGroup(action.group_id).sendMsg([
+                await e.reply([
                     buildAt(usr_qq),
                     penaltyMsg
                 ]);
@@ -3152,7 +3152,7 @@ if (weizhi.name === "北斗星紫山") {
             await Write_player(usr_qq, player);
             // ==== 消息推送 ====
             if (action.group_id) {
-                await Bot.pickGroup(action.group_id).sendMsg([
+                await e.reply([
                     buildAt(usr_qq),
                     penaltyMsg
                 ]);
@@ -3197,7 +3197,7 @@ if (weizhi.name === "荒古禁地") {
             await Write_player(usr_qq, player);
             // ==== 消息推送 ====
             if (action.group_id) {
-                await Bot.pickGroup(action.group_id).sendMsg([
+                await e.reply([
                     buildAt(usr_qq),
                     penaltyMsg
                 ]);
@@ -3253,7 +3253,7 @@ if (weizhi.name === "太初古矿") {
             await Write_player(usr_qq, player);
              // ==== 消息推送 ====
             if (action.group_id) {
-                await Bot.pickGroup(action.group_id).sendMsg([
+                await e.reply([
                     buildAt(usr_qq),
                     penaltyMsg
                 ]);
@@ -3322,7 +3322,7 @@ if (weizhi.name === "石国皇都") {
             await Write_player(usr_qq, player);
             // ==== 消息推送 ====
             if (action.group_id) {
-                await Bot.pickGroup(action.group_id).sendMsg([
+                await e.reply([
                     buildAt(usr_qq),
                     penaltyMsg.join('\n')
                 ]);
@@ -3393,7 +3393,7 @@ if (weizhi.name === "西陵界") {
             await Write_player(usr_qq, player);
             // ==== 消息推送 ====
             if (action.group_id) {
-                await Bot.pickGroup(action.group_id).sendMsg([
+                await e.reply([
                     buildAt(usr_qq),
                     penaltyMsg.join('\n')
                 ]);
@@ -4440,7 +4440,7 @@ if (player["player.剑云海庇护"] && player["player.剑云海庇护"].副本�
                 
                 // 发送消息
                 if (action.group_id) {
-                    await Bot.pickGroup(action.group_id).sendMsg([
+                    await e.reply([
                         buildAt(usr_qq),
                         penaltyMsg.join('\n')
                     ]);
@@ -4493,7 +4493,7 @@ if (player.power_place == PLACE_LOCATION_MAP.遮天位面 && Math.random() < 0.0
             
             // 发送消息
             if (action.group_id) {
-                await Bot.pickGroup(action.group_id).sendMsg([
+                await e.reply([
                     buildAt(usr_qq),
                     eventMsg.join('\n')
                 ]);
@@ -4669,7 +4669,7 @@ if (weizhi.name === "紫薇星域") {
         await Write_player(usr_qq, player);
         const finalMsg = eventMsg.join('\n');
         if (action.group_id) {
-            await Bot.pickGroup(action.group_id).sendMsg([buildAt(usr_qq), finalMsg]);
+            await e.reply([buildAt(usr_qq), finalMsg]);
         } else {
             await common.relpyPrivate(usr_qq, finalMsg);
         }
@@ -4812,7 +4812,7 @@ if (weizhi.name === "紫薇星域") {
                             await Write_player(usr_qq, player);
                                        // ==== 消息推送 ====
             if (action.group_id) {
-                await Bot.pickGroup(action.group_id).sendMsg([
+                await e.reply([
                     buildAt(usr_qq),
                     shengtimsg
                 ]);
@@ -5049,7 +5049,7 @@ if (weizhi.name === "紫薇星域") {
               // ==== 消息推送 ====
               if (e.isGroup) {
                   // 群聊消息
-                  await Bot.pickGroup(e.group_id).sendMsg([
+                  await e.reply([
                       buildAt(usr_qq),
                       finalMsg
                   ]);
@@ -5194,7 +5194,7 @@ if (weizhi.name === "紫薇星域") {
 
             // ==== 消息推送 ====
             if (action.group_id) {
-                await Bot.pickGroup(action.group_id).sendMsg([
+                await e.reply([
                     buildAt(usr_qq),
                     penaltyMsg
                 ]);
@@ -5239,7 +5239,7 @@ if (weizhi.name === "北斗星紫山") {
             await Write_player(usr_qq, player);
             // ==== 消息推送 ====
             if (action.group_id) {
-                await Bot.pickGroup(action.group_id).sendMsg([
+                await e.reply([
                     buildAt(usr_qq),
                     penaltyMsg
                 ]);
@@ -5284,7 +5284,7 @@ if (weizhi.name === "荒古禁地") {
             await Write_player(usr_qq, player);
             // ==== 消息推送 ====
             if (action.group_id) {
-                await Bot.pickGroup(action.group_id).sendMsg([
+                await e.reply([
                     buildAt(usr_qq),
                     penaltyMsg
                 ]);
@@ -5340,7 +5340,7 @@ if (weizhi.name === "太初古矿") {
             await Write_player(usr_qq, player);
              // ==== 消息推送 ====
             if (action.group_id) {
-                await Bot.pickGroup(action.group_id).sendMsg([
+                await e.reply([
                     buildAt(usr_qq),
                     penaltyMsg
                 ]);
@@ -5409,7 +5409,7 @@ if (weizhi.name === "石国皇都") {
             await Write_player(usr_qq, player);
             // ==== 消息推送 ====
             if (action.group_id) {
-                await Bot.pickGroup(action.group_id).sendMsg([
+                await e.reply([
                     buildAt(usr_qq),
                     penaltyMsg.join('\n')
                 ]);
@@ -5480,7 +5480,7 @@ if (weizhi.name === "西陵界") {
             await Write_player(usr_qq, player);
             // ==== 消息推送 ====
             if (action.group_id) {
-                await Bot.pickGroup(action.group_id).sendMsg([
+                await e.reply([
                     buildAt(usr_qq),
                     penaltyMsg.join('\n')
                 ]);

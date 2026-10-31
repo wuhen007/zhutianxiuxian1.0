@@ -1,5 +1,6 @@
 import { plugin, verc, data, config } from '../../api/api.js';
 import fs, { write } from 'fs';
+import path from 'path';
 import {
   applyInitialMinggeEffects,
   drawMingge,
@@ -52,6 +53,8 @@ import {
   formatOpeningOmenMessage,
 } from '../../model/openingOmen.js';
 import { reserveDailyAction } from '../../model/dailyAction.js';
+import { getBinding } from '../../model/identityMap.js';
+import { GUIDE_TEXT, renderGuide } from './Guide.js';
 import {
   getExtraCultivationLevelProduct,
   getExtraCultivationLevelSum,
@@ -791,18 +794,59 @@ async daily_lottery(e) {
     e.reply('仙凡有别 渡劫一念天地宽\n仙路漫漫 一见鸡哥道成空\n攻略 docs.qq.com/doc/DY25pbVlEakJaaW1u ')
   }
   //#踏入仙途
+  /**
+   * 官方群里没开「获取群内全部消息」时的引导。
+   * 只发提示，不建档——开了之后玩家再发一次就行。
+   */
+  async replyFullVolumeGuide(e) {
+    const text = [
+      '【需要先开启「获取群内全部消息」】',
+      '本群还没打开这个开关，机器人收不到群里的指令，游戏无法运行。',
+      '请群主按图设置（只需一次）：',
+      '① 点击机器人头像 → 右上角「设置」',
+      '② 消息范围改成「获取群内全部消息」',
+      '③ 打开「机器人在群聊内主动发言」',
+      '设置好后再发一次 #踏入仙途 即可开始。',
+    ].join('\n');
+    // 优先发手机 QQ 的真实设置截图：比示意图直观，群主照着点就行
+    const shot = path.join(__PATH.data_path, '..', 'html', 'guide', 'setup-steps.jpg');
+    try {
+      if (fs.existsSync(shot)) return e.reply([text, segment.image(shot)]);
+    } catch (err) {
+      logger?.warn?.(`[修仙] 设置截图发送失败：${err?.message ?? err}`);
+    }
+    try {
+      const buffer = await renderGuide();
+      if (buffer) return e.reply([text, segment.image(buffer)]);
+    } catch (err) {
+      logger?.warn?.(`[修仙] 引导图渲染失败，退回纯文字：${err?.message ?? err}`);
+    }
+    return e.reply(text);
+  }
+
   async Create_player(e, isInitialEntry = true) {
     if (!verc({ e })) return false;
-    // ===== QQBot 未绑定拦截 =====
-    // 官方QQBot事件：qqbot_user_id 为 openid，绑定后 user_id 会被映射成 QQ 号
-    if (String(e?.qqbot_user_id || '').trim() && e.qqbot_user_id == e.user_id) {
+    // ===== 官方通道（QQBot）前置检查 =====
+    // e.qqbot_user_id 由 qqbot-api 注入，是官方 openid（不是 QQ 号）；
+    // 有值说明这条消息来自官方 Bot 通道。
+    const qqbotOpenid = String(e?.qqbot_user_id || '').trim();
+    if (qqbotOpenid) {
+      // ① 本群没开「获取群内全部消息」：官方 Bot 只能收到 @ 它的消息，
+      //    拿不到群里的其它消息、也配不上 msg_id，游戏跑不起来，先引导群主去开。
+      if (e.qqbot_full_volume === false && e.isGroup) {
+        await this.replyFullVolumeGuide(e);
+        return false;
+      }
+      // ② 强制绑定开关：只有显式配 true 才拦（默认放行，openid 直接当玩家 ID）。
+      //    原来的判据 `qqbot_user_id == user_id` 恒真（e.user_id 从不被改写成 QQ 号），
+      //    等于「官方通道必拦」，所以改成查真实绑定表。
       const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
-      if (xiuxianConfig?.switch?.requireQQBotBind !== false) {
-        e.reply('仙途非儿戏，须先有凡尘身份。\n你尚未绑定 QQ 账号，无法踏入仙途。\n请在私聊或群内发送 #绑定QQ 你的QQ号 完成绑定后再来。');
+      if (xiuxianConfig?.switch?.requireQQBotBind === true && !getBinding(qqbotOpenid)) {
+        e.reply('仙途非儿戏，须先有凡尘身份。\n你尚未绑定 QQ 账号，无法踏入仙途。\n请发送 #修仙绑定 你的QQ号 完成绑定后再来。');
         return false;
       }
     }
-    // ===== QQBot 未绑定拦截 End =====
+    // ===== 官方通道前置检查 End =====
     let usr_qq = e.user_id.toString().replace('qg_','');
     usr_qq = await channel(usr_qq);
     //判断是否为匿名创建存档
@@ -1010,6 +1054,21 @@ async daily_lottery(e) {
     }
     await e.reply(`${formatOpeningOmenMessage(openingOmen, new_player.名号)}\n\n命格尚未显化，请发送 #抽取命格词条。`);
     await this.Show_player(e);
+    // 星阁体系：新玩家建档就把本群拉进来，省得每开一个新群都要主人手动开一次。
+    // 主人用 #取消星阁体系 / #关闭星阁体系 关过的群记在 sgOptOut 里，不会在这里被重新拉起。
+    if (e.isGroup && e.group_id) {
+      const sgGid = String(e.group_id);
+      if (!(await redis.sIsMember('xiuxian:Auction:sgOptOut', sgGid))) {
+        await redis.sAdd('xiuxian:AuctionofficialTask_GroupList', sgGid);
+      }
+    }
+    // 官方通道的新玩家：建议（不强制）绑定 QQ 号。
+    // 绑定只是为了作者核对身份、以及以后换通道继承存档，不绑也能正常玩。
+    if (qqbotOpenid && !getBinding(qqbotOpenid)) {
+      await e.reply(
+        '建议顺带绑定 QQ 号：发送 #修仙绑定 你的QQ号\n不绑定也能正常玩；绑定后换群、找回存档会方便一些。',
+      );
+    }
     return false;
     }));
   }

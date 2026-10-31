@@ -848,7 +848,8 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
       }
     }
     let log_data = {
-      log: str,
+      // 数组会被模板按 JSON 渲染，出现 ["、"] 和一堆引号；先拼成逗号分隔的字符串
+      log: Array.isArray(str) ? str.join(',') : str,
     };
     const data1 = await new Show(e).get_logData(log_data);
     let img = await puppeteer.screenshot('log', {

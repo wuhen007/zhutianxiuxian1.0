@@ -227,38 +227,46 @@ export class Superdimensional extends plugin {
     const files = fs.readdirSync(__PATH.player_path).filter(file => file.endsWith('.json'));
     for (const file of files) {
       const qq = file.slice(0, -5);
-      await withPlayerMutationLock(qq, async () => {
-        const player = await Read_player(qq);
-        const completed = completeShengfaRefinement(player);
-        if (!completed.ok) return;
+      // 遍历与读档之间存在竞态：轮回/删档会删掉存档，Read_player 会抛 ENOENT。
+      // 不拦住的话每 15 秒就会刷一次错误日志，还会中断整轮结算。
+      if (!fs.existsSync(path.join(__PATH.player_path, file))) continue;
+      try {
+        await withPlayerMutationLock(qq, async () => {
+          const player = await Read_player(qq);
+          const completed = completeShengfaRefinement(player);
+          if (!completed.ok) return;
 
-        const world = data.xiaoshijie.find(item => String(item.player_qq) === String(qq));
-        if (world) {
-          ascendSuperdimensionalStarRealm(world);
-          fs.writeFileSync(path.join(data.lib_path, '小世界列表.json'), JSON.stringify(data.xiaoshijie, null, 2));
-        }
-        await Write_player(qq, player);
-        await Write_equipment(qq, await Read_equipment(qq));
-        await player_efficiency(qq);
-        const actionKey = `xiuxian:player:${qq}:action`;
-        const actionRaw = await redis.get(actionKey);
-        if (actionRaw && JSON.parse(actionRaw)?.action === SHENGFA_REFINING) await redis.del(actionKey);
+          const world = data.xiaoshijie.find(item => String(item.player_qq) === String(qq));
+          if (world) {
+            ascendSuperdimensionalStarRealm(world);
+            fs.writeFileSync(path.join(data.lib_path, '小世界列表.json'), JSON.stringify(data.xiaoshijie, null, 2));
+          }
+          await Write_player(qq, player);
+          await Write_equipment(qq, await Read_equipment(qq));
+          await player_efficiency(qq);
+          const actionKey = `xiuxian:player:${qq}:action`;
+          const actionRaw = await redis.get(actionKey);
+          if (actionRaw && JSON.parse(actionRaw)?.action === SHENGFA_REFINING) await redis.del(actionKey);
 
-        const message = [
-          '【超脱至宝·炼化完成】',
-          `${player.名号}明悟【星指维宇崩】【击宇碎维】【维宙星灭诀】！`,
-          '大道至理、维度真理与万界音声如群臣朝贡般涌入识海。',
-          '神魔修炼法与神慧体系解锁，灵根蜕变为【神慧者】，天资化作【无演无尽】。',
-          world ? '小世界升华为【超维星界】。' : '待开辟小世界后，它将自动升华为【超维星界】。',
-        ].join('\n');
-        try {
-          const groupId = player.圣法碎片?.群号;
-          if (groupId) await Bot.pickGroup(groupId).sendMsg(message);
-          else await Bot.pickUser(qq).sendMsg(message);
-        } catch (error) {
-          console.error(`[圣法碎片] 炼化完成通知失败 player=${qq}`, error?.message);
-        }
-      });
+          const message = [
+            '【超脱至宝·炼化完成】',
+            `${player.名号}明悟【星指维宇崩】【击宇碎维】【维宙星灭诀】！`,
+            '大道至理、维度真理与万界音声如群臣朝贡般涌入识海。',
+            '神魔修炼法与神慧体系解锁，灵根蜕变为【神慧者】，天资化作【无演无尽】。',
+            world ? '小世界升华为【超维星界】。' : '待开辟小世界后，它将自动升华为【超维星界】。',
+          ].join('\n');
+          try {
+            const groupId = player.圣法碎片?.群号;
+            if (groupId) await Bot.pickGroup(groupId).sendMsg(message);
+            else await Bot.pickUser(qq).sendMsg(message);
+          } catch (error) {
+            console.error(`[圣法碎片] 炼化完成通知失败 player=${qq}`, error?.message);
+          }
+        });
+      } catch (error) {
+        if (error?.code !== 'ENOENT') console.error(`[圣法碎片] 玩家${qq}炼化结算失败`, error?.message);
+        continue;
+      }
     }
     return true;
   }

@@ -979,14 +979,20 @@ async isAutoTaskEnabled(usr_qq) {
      * 广播消息到所有配置的群组
      */
     async broadcastMessage(msg) {
-        try {
-            const groups = this.set.Era.notifyGroups || [];
-            for (const groupId of groups) {
-                await Bot.sendGroupMsg(groupId, msg);
-                console.log(`[自动任务广播] 群 ${groupId}: ${msg}`);
+        const groups = this.set.Era.notifyGroups || [];
+        for (const groupId of groups) {
+            // 不要用 Bot.sendGroupMsg(群号, 消息)：TRSS 的签名是 (bot_id, group_id, ...)，
+            // 群号不在缓存里时会挂 5 分钟再抛「等待 Bot 上线超时」，并拖住整个定时任务
+            if (!Bot.pickGroup(groupId, true)) {
+                console.error(`[自动任务广播] 跳过群 ${groupId}：Bot 不在该群，或群列表还没同步`);
+                continue;
             }
-        } catch (e) {
-            console.error("广播消息失败:", e);
+            try {
+                await Bot.pickGroup(groupId).sendMsg(msg);
+                console.log(`[自动任务广播] 群 ${groupId}: ${msg}`);
+            } catch (e) {
+                console.error(`[自动任务广播] 群 ${groupId} 发送失败:`, e?.message || e);
+            }
         }
     }
 

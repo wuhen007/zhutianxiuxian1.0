@@ -68,7 +68,8 @@ export class Auction extends plugin {
           fnc: 'xingGE',
         },
         {
-          reg: '^#开启星阁体系$',
+          // 带参数 = 主人批量指定群号开启，例：#开启星阁体系 799048038 835576891
+          reg: '^#开启星阁体系(?:\\s+(.+))?$',
           fnc: 'openAction',
         },
         {
@@ -129,6 +130,26 @@ export class Auction extends plugin {
     // 如果星阁已经开了，将本群加入Redis
     // INFO: 缺省判断是否在进行，GroupList判断哪些群开启了星阁体系
     const redisGlKey = 'xiuxian:AuctionofficialTask_GroupList';
+    // 被主人主动关掉过的群记在这里，新玩家建档时不再自动拉进来
+    const optOutKey = 'xiuxian:Auction:sgOptOut';
+
+    // A. 主人指定群号批量开启：#开启星阁体系 799048038 835576891
+    // 用 indexOf 而不是 ^ 锚定：官方通道的 e.msg 前面可能带 <@openid> 之类的残留
+    const sgIdx = e.msg.indexOf('#开启星阁体系');
+    const rawArg = sgIdx >= 0 ? e.msg.slice(sgIdx + '#开启星阁体系'.length).trim() : '';
+    if (rawArg) {
+      const ids = rawArg.split(/[\s,，]+/).filter(id => /^\d{5,12}$/.test(id));
+      if (!ids.length) return e.reply('群号格式不对，例：#开启星阁体系 799048038 835576891');
+      for (const id of ids) {
+        await redis.sAdd(redisGlKey, id);
+        await redis.sRem(optOutKey, id);
+      }
+      return e.reply(`已把 ${ids.length} 个群加入星阁体系：${ids.join('、')}`);
+    }
+
+    // 手动开启本群：从退出名单里移除，避免下次被"自动加入"逻辑跳过
+    await redis.sRem(optOutKey, String(e.group_id));
+
     const groupList = await redis.sMembers(redisGlKey);
     if (groupList.length > 0) {
       if (await redis.sIsMember(redisGlKey, String(e.group_id))) {
@@ -185,10 +206,12 @@ export class Auction extends plugin {
     // }
 
     const redisGlKey = 'xiuxian:AuctionofficialTask_GroupList';
-    if (!redis.sIsMember(redisGlKey, String(e.group_id))) {
+    if (!(await redis.sIsMember(redisGlKey, String(e.group_id)))) {
       return e.reply('本来就没开取消个冒险');
     }
     await redis.sRem(redisGlKey, String(e.group_id));
+    // 记进退出名单：以后有新玩家建档也不再自动拉起
+    await redis.sAdd('xiuxian:Auction:sgOptOut', String(e.group_id));
 
     return e.reply('星阁体系在本群取消了');
   }
@@ -205,6 +228,9 @@ export class Auction extends plugin {
     // }
 
     const redisGlKey = 'xiuxian:AuctionofficialTask_GroupList';
+    // 关闭全体前，把当前开启的群都记进退出名单，免得新玩家建档又把它们拉起来
+    const closing = await redis.sMembers(redisGlKey);
+    for (const gid of closing) await redis.sAdd('xiuxian:Auction:sgOptOut', gid);
     await redis.del('xiuxian:AuctionofficialTask');
     await redis.del(redisGlKey);
     // await redis.set(

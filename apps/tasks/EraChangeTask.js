@@ -2536,15 +2536,21 @@ if (index === 4) { // 当前是绝灵时代
 
   /** 广播消息到所有配置的群组 */
   async broadcastMessage(msg) {
-    try {
-      const groups = this.set.Era.notifyGroups || [];
-      for (const groupId of groups) {
-        // 这里需要根据您的框架实现消息发送
-        await Bot.sendGroupMsg(groupId, msg);
-        console.log(`[时代广播] 群 ${groupId}: ${msg}`);
+    const groups = this.set.Era.notifyGroups || [];
+    for (const groupId of groups) {
+      // Bot.sendGroupMsg 在 TRSS 里的签名是 (bot_id, group_id, ...)，
+      // 两参调用只有在群已进缓存时才走兼容分支，否则会等 connect.<群号> 5 分钟再报「等待 Bot 上线超时」。
+      // 这里直接用 pickGroup，群不存在立刻跳过，也不会拖住整个任务。
+      if (!Bot.pickGroup(groupId, true)) {
+        console.error(`[时代广播] 跳过群 ${groupId}：Bot 不在该群，或群列表还没同步`);
+        continue;
       }
-    } catch (e) {
-      console.error("广播消息失败:", e);
+      try {
+        await Bot.pickGroup(groupId).sendMsg(msg);
+        console.log(`[时代广播] 群 ${groupId}: ${msg}`);
+      } catch (e) {
+        console.error(`[时代广播] 群 ${groupId} 发送失败:`, e?.message || e);
+      }
     }
   }
   

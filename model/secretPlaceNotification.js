@@ -37,7 +37,10 @@ export function getSecretPlaceSummaryNotificationRoute(entry) {
   }
 
   return {
-    key: JSON.stringify([botId, type, target]),
+    // key 不带 botId：同群同类型的消息合并成一批。
+    // 带 botId 会把「协议号触发」和「官方号触发」拆成两批，同一秒往同一个群发两张图。
+    key: JSON.stringify([type, target]),
+    type,
     target,
     playerId,
     action,
@@ -94,13 +97,32 @@ function resolveBot(botRoot, botId) {
   return botRoot;
 }
 
-async function sendByRoute(bot, route, message) {
-  const contact = route.type === 'group'
-    ? bot?.pickGroup?.(route.target)
-    : bot?.pickUser?.(route.target);
-  if (!contact?.sendMsg) throw new Error(`missing ${route.type} sender for ${route.target}`);
+/**
+ * 条目指定的 bot 是否就是主 bot。
+ * Bot.uin 是数组（带 now 属性），兼容写成字符串的情况。
+ */
+function isMainBot(botRoot, botId) {
+  if (!botId) return false;
+  try {
+    const uins = [String(botRoot?.uin), ...(Array.isArray(botRoot?.uin) ? botRoot.uin.map(String) : [])];
+    return uins.includes(String(botId));
+  } catch {
+    return false;
+  }
+}
 
-  const result = await contact.sendMsg(message);
+async function sendByRoute(botRoot, bot, route, message, botId) {
+  // 群消息且是主 bot 时走主实例：官方代发的接管挂在 Yunzai.prototype.pickGroup 上，
+  // 而 Bot[uin] 拿到的是适配器实例，它没有这层包装，直接用会永远走协议号。
+  const sender =
+    route.type === 'group'
+      ? isMainBot(botRoot, botId)
+        ? botRoot?.pickGroup?.(route.target)
+        : bot?.pickGroup?.(route.target)
+      : bot?.pickUser?.(route.target);
+  if (!sender?.sendMsg) throw new Error(`missing ${route.type} sender for ${route.target}`);
+
+  const result = await sender.sendMsg(message);
   if (isFailedSend(result)) throw new Error(sendFailureMessage(result));
   return true;
 }
@@ -120,7 +142,7 @@ export async function sendSecretPlaceNotification(action, playerId, message, opt
   let lastError;
   for (const attempt of attempts) {
     try {
-      await sendByRoute(bot, attempt, message);
+      await sendByRoute(botRoot, bot, attempt, message, action?.notify_bot_id);
       return true;
     } catch (error) {
       lastError = error;

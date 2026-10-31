@@ -1888,9 +1888,9 @@ async xunyuan2_back(e) {
     
     // 执行结算
     if (e.isGroup) {
-        await this.xunyuan2_jiesuan(usr_qq, validTime, e.group_id);
+        await this.xunyuan2_jiesuan(usr_qq, validTime, e.group_id, e);
     } else {
-        await this.xunyuan2_jiesuan(usr_qq, validTime);
+        await this.xunyuan2_jiesuan(usr_qq, validTime, undefined, e);
     }
 
     // 更新动作状态
@@ -1902,7 +1902,7 @@ async xunyuan2_back(e) {
 }
 
 // 寻脉定源结算
-async xunyuan2_jiesuan(usr_qq, time, group_id) {
+async xunyuan2_jiesuan(usr_qq, time, group_id, e) {
     const player = data.getData("player", usr_qq);
     if (!player.level_id) return;
 
@@ -1960,7 +1960,10 @@ async xunyuan2_jiesuan(usr_qq, time, group_id) {
     msg += `\n超品神源石 × ${end_amount3} + 神源药 × ${end_amount3}`;
     
     // 发送结果
-    if (group_id) {
+    // 有 e 走 e.reply 才会经过官方代发 hook
+    if (e) {
+        await e.reply(msg);
+    } else if (group_id) {
         await this.pushInfo(group_id, true, msg);
     } else {
         await this.pushInfo(usr_qq, false, msg);
@@ -2070,9 +2073,9 @@ async xunyuan_back(e) {
     
     // 执行结算
     if (e.isGroup) {
-        await this.xunyuan_jiesuan(usr_qq, validTime, e.group_id);
+        await this.xunyuan_jiesuan(usr_qq, validTime, e.group_id, e);
     } else {
-        await this.xunyuan_jiesuan(usr_qq, validTime);
+        await this.xunyuan_jiesuan(usr_qq, validTime, undefined, e);
     }
 
     // 更新动作状态
@@ -2083,7 +2086,7 @@ async xunyuan_back(e) {
    await redis.del(`xiuxian:player:${usr_qq}:action`);
 }
 
-async xunyuan_jiesuan(usr_qq, time, group_id) {
+async xunyuan_jiesuan(usr_qq, time, group_id, e) {
     const player = data.getData("player", usr_qq);
     if (!player.level_id) return;
 
@@ -2123,7 +2126,10 @@ async xunyuan_jiesuan(usr_qq, time, group_id) {
     msg += `收获：\n下品源石×${end_amount}\n中品源石×${end_amount}\n上品源石×${end_amount2}\n神源石×${end_amount3}\n凡源药×${end_amount3}`;
     
     // 发送结果
-    if (group_id) {
+    // 有 e 走 e.reply 才会经过官方代发 hook
+    if (e) {
+        await e.reply(msg);
+    } else if (group_id) {
         await this.pushInfo(group_id, true, msg);
     } else {
         await this.pushInfo(usr_qq, false, msg);
@@ -2235,9 +2241,9 @@ async xunyuan3_back(e) {
     
     // 执行结算
     if (e.isGroup) {
-        await this.xunyuan3_jiesuan(usr_qq, validTime, e.group_id);
+        await this.xunyuan3_jiesuan(usr_qq, validTime, e.group_id, e);
     } else {
-        await this.xunyuan3_jiesuan(usr_qq, validTime);
+        await this.xunyuan3_jiesuan(usr_qq, validTime, undefined, e);
     }
 
     // 更新动作状态
@@ -2247,7 +2253,7 @@ async xunyuan3_back(e) {
     delete action.group_id;
     await redis.del(`xiuxian:player:${usr_qq}:action`, JSON.stringify(action));
 }
-async xunyuan3_jiesuan(usr_qq, time, group_id) {
+async xunyuan3_jiesuan(usr_qq, time, group_id, e) {
     const player = data.getData("player", usr_qq);
     if (!player.level_id) return;
 
@@ -2282,7 +2288,10 @@ async xunyuan3_jiesuan(usr_qq, time, group_id) {
     msg += `收获：\n上品源石×${end_amount2}\n神源石×${end_amount2}\n超品源石 × ${end_amount2}\n地源药×${end_amount3}`;
     
     // 发送结果
-    if (group_id) {
+    // 有 e 走 e.reply 才会经过官方代发 hook
+    if (e) {
+        await e.reply(msg);
+    } else if (group_id) {
         await this.pushInfo(group_id, true, msg);
     } else {
         await this.pushInfo(usr_qq, false, msg);
@@ -2581,10 +2590,10 @@ async shoulie_back(e) {
     }
        if (e.isGroup) {
       // 将群号作为第三个参数 group_id 传入
-      await this.shoulie_jiesuan(usr_qq, time, e.group_id); 
+      await this.shoulie_jiesuan(usr_qq, time, e.group_id, e); 
     } else {
       // 私聊时第三个参数为 undefined（或不传，但函数定义有三个参数，所以这里传undefined）
-      await this.shoulie_jiesuan(usr_qq, time, undefined); 
+      await this.shoulie_jiesuan(usr_qq, time, undefined, e); 
     }
     let arr = action;
     arr.is_jiesuan = 1; //结算状态
@@ -2602,7 +2611,7 @@ async shoulie_back(e) {
     );
   }
 
-  async shoulie_jiesuan(user_id, time, group_id) {
+  async shoulie_jiesuan(user_id, time, group_id, e) {
     //time的单位是min
     let usr_qq = user_id;
     let player = data.getData("player", usr_qq);
@@ -2637,7 +2646,10 @@ async shoulie_back(e) {
     }
     await Add_职业经验(usr_qq, exp);
     let img = await get_log_img(msg);
-    if (group_id) {
+    // 同上：有 e 走 e.reply 才会经过官方代发 hook
+    if (e) {
+        await e.reply(img);
+    } else if (group_id) {
         await this.pushInfo(group_id, true, img);
     } else {
         await this.pushInfo(usr_qq, false, img);
@@ -2952,7 +2964,9 @@ async shoulie_back(e) {
     usr_qq = await channel(usr_qq);
     let action = await this.getPlayerAction(usr_qq);
     if (action.plant == 1) {
-      return false;
+      // plant=1 表示「当前没有进行中的采药」（可能已结算或被其它动作覆盖）。
+      // 原来这里是裸 return false，玩家发 #结束采药 会毫无反应，看起来像 bot 挂了。
+      return e.reply('你当前没有在采药。');
     }
     //结算
     let end_time = action.end_time;
@@ -2994,9 +3008,9 @@ async shoulie_back(e) {
       }
     }
     if (e.isGroup) {
-      await this.plant_jiesuan(usr_qq, time, false, e.group_id); //提前闭关结束不会触发随机事件
+      await this.plant_jiesuan(usr_qq, time, false, e.group_id, e); //提前闭关结束不会触发随机事件
     } else {
-      await this.plant_jiesuan(usr_qq, time, false); //提前闭关结束不会触发随机事件
+      await this.plant_jiesuan(usr_qq, time, false, undefined, e); //提前闭关结束不会触发随机事件
     }
     let arr = action;
     arr.is_jiesuan = 1; //结算状态
@@ -3101,7 +3115,7 @@ async shoulie_back(e) {
     let usr_qq=e.user_id.toString().replace('qg_','')
     usr_qq=await channel(usr_qq)
     let action = await this.getPlayerAction(usr_qq);
-    if (action.mine == 1) return false;
+    if (action.mine == 1) return e.reply('你当前没有在采矿。');
     //结算
     let end_time = action.end_time;
     let start_time = action.start_time || action.end_time - action.time;
@@ -3142,9 +3156,9 @@ async shoulie_back(e) {
     }
 
     if (e.isGroup) {
-      await this.mine_jiesuan(usr_qq, time, false, e.group_id); //提前闭关结束不会触发随机事件
+      await this.mine_jiesuan(usr_qq, time, false, e.group_id, e); //提前闭关结束不会触发随机事件
     } else {
-      await this.mine_jiesuan(usr_qq, time, false); //提前闭关结束不会触发随机事件
+      await this.mine_jiesuan(usr_qq, time, false, undefined, e); //提前闭关结束不会触发随机事件
     }
 
     let arr = action;
@@ -3164,7 +3178,7 @@ async shoulie_back(e) {
     );
   }
 
-  async plant_jiesuan(user_id, time, is_random, group_id) {
+  async plant_jiesuan(user_id, time, is_random, group_id, e) {
     let usr_qq = user_id;
     let player = data.getData('player', usr_qq);
     let msg = player.名号;
@@ -3227,7 +3241,13 @@ async shoulie_back(e) {
     }
     await Add_职业经验(usr_qq, exp);
     let img=await get_log_img(msg)
-    if (group_id) {
+    // 有事件上下文就走 e.reply：这样才会经过「官方 Bot 代发」的 hook
+    // （官方优先、配不上 msg_id 再回退协议号）。
+    // 原来这里一律 pushInfo → Bot.pickGroup().sendMsg()，直接绕过 e.reply，
+    // 结果 #结束采药 的结算图永远由协议号发出。
+    if (e) {
+      await e.reply(img);
+    } else if (group_id) {
       await this.pushInfo(group_id, true, img);
     } else {
       await this.pushInfo(usr_qq, false, img);
@@ -3236,7 +3256,7 @@ async shoulie_back(e) {
     return false;
   }
 
-  async mine_jiesuan(user_id, time, is_random, group_id) {
+  async mine_jiesuan(user_id, time, is_random, group_id, e) {
     let usr_qq = user_id;
     let player = data.getData('player', usr_qq);
     let msg =player.名号;
@@ -3297,7 +3317,10 @@ async shoulie_back(e) {
       msg+=`\n命格·地脉亲和：采矿产出 +${Math.round((mineBonus - 1) * 100)}%`;
     }
     let img=await get_log_img(msg)
-    if (group_id) {
+    // 同上：有 e 走 e.reply 才会经过官方代发 hook
+    if (e) {
+      await e.reply(img);
+    } else if (group_id) {
       await this.pushInfo(group_id, true, img);
     } else {
       await this.pushInfo(usr_qq, false, img);
