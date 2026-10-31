@@ -229,229 +229,1460 @@
                 "total": 89,
                 "joinedAt": 1787760001283
             }
-        }
-    ],
-    "lastEventTime": 7000,
-    "lastEventWorldYear": 7000,
-    "activeEvents": [
+        },
         {
-            "type": "coordinateClue",
-            "plane": "太初星墟",
-            "location": "太初矿心",
-            "coordinate": {
-                "x": 476,
-                "y": 475
+            "type": "forbiddenZone",
+            "zone": {
+                "name": "神墟",
+                "locationId": "shenxu",
+                "desc": "太古年前的战场，埋葬无数神魔",
+                "danger": "极高"
             },
-            "sourcePlane": "太初星墟",
-            "targetPlane": "永恒未知之地",
-            "discovererName": "路人甲2号",
-            "claimedQqs": [],
-            "timestamp": 1787724002776,
-            "expiresAt": 1787810402776,
+            "phenomenon": "有古老的祭祀声回荡",
+            "plane": "遮天位面",
+            "location": "神墟",
+            "coordinate": {
+                "x": 133,
+                "y": 411
+            },
+            "timestamp": 1792678501440,
+            "expiresAt": 1792764901436,
             "source": "era",
-            "interaction": "coordinate",
+            "interaction": "generic",
             "participantQqs": [],
             "tianjiaoTrace": {
-                "name": "逍遥子",
-                "plane": "太初星墟",
-                "location": "太初矿心",
+                "name": "鹤无双",
+                "plane": "遮天位面",
+                "location": "神墟",
                 "coordinate": {
-                    "x": 476,
-                    "y": 475
+                    "x": 133,
+                    "y": 411
                 },
                 "source": "位面事件",
                 "reincarnation": 0,
                 "traceVersion": 0,
-                "foundAt": 1787724002775,
-                "expiresAt": 1787810402775
+                "foundAt": 1792678501436,
+                "expiresAt": 1792764901436
             }
+        },
+        {
+            "type": "sectWar",
+            "interaction": "sectWar",
+            "attacker": {
+                "name": "摇光圣地",
+                "desc": "以炼器闻名天下"
+            },
+            "defender": {
+                "name": "五行宫",
+                "desc": "五行本源法则"
+            },
+            "reason": "一名天骄在矿区陨落，遗留证据却同时指向交战双方",
+            "plane": "遮天位面",
+            "location": "太初古矿",
+            "coordinate": {
+                "x": 251,
+                "y": 100
+            },
+            "timestamp": 1792692901457,
+            "sectWar": {
+                "mode": "mine",
+                "status": "settled",
+                "phase": "神源龙脉争夺",
+                "openedAt": 1792692901457,
+                "maxActions": 5,
+                "sides": {
+                    "attacker": {
+                        "name": "摇光圣地",
+                        "desc": "以炼器闻名天下"
+                    },
+                    "defender": {
+                        "name": "五行宫",
+                        "desc": "五行本源法则"
+                    },
+                    "neutral": {
+                        "name": "中立修士"
+                    }
+                },
+                "scores": {
+                    "attacker": 0,
+                    "defender": 0,
+                    "neutral": 0
+                },
+                "meters": {
+                    "military": 0,
+                    "supplies": 0,
+                    "truth": 0,
+                    "seal": 0
+                },
+                "participants": {},
+                "decisionVotes": {},
+                "clues": [],
+                "actionLog": [],
+                "supportLog": [],
+                "rewardedQqs": [],
+                "outcome": {
+                    "type": "draw",
+                    "title": "双方罢兵，矿脉暂归无主",
+                    "summary": "双方伤亡惨重，只得各自退回山门。",
+                    "winnerSide": "draw",
+                    "planeEffect": "神源矿脉归属已经改变",
+                    "decision": "继续争夺"
+                },
+                "settledAt": 1792801500792,
+                "rankings": []
+            },
+            "expiresAt": 1792779301452,
+            "source": "era",
+            "participantQqs": []
+        },
+        {
+            "type": "coordinateClue",
+            "plane": "仙域",
+            "location": "混沌仙池",
+            "coordinate": {
+                "x": 135,
+                "y": 475
+            },
+            "sourcePlane": "仙域",
+            "targetPlane": "厄土高原",
+            "discovererName": "凹凸曼",
+            "claimedQqs": [],
+            "timestamp": 1792703701422,
+            "expiresAt": 1792790101422,
+            "source": "era",
+            "interaction": "coordinate",
+            "participantQqs": [],
+            "tianjiaoTrace": {
+                "name": "猪咪岁岁",
+                "plane": "仙界",
+                "location": "古族大地",
+                "coordinate": {
+                    "x": 428,
+                    "y": 435
+                },
+                "source": "位面事件",
+                "reincarnation": 0,
+                "traceVersion": 0,
+                "foundAt": 1792703701381,
+                "expiresAt": 1792790101381
+            }
+        },
+        {
+            "type": "coordinateClue",
+            "plane": "界海",
+            "location": "黑暗古船",
+            "coordinate": {
+                "x": 614,
+                "y": 575
+            },
+            "sourcePlane": "界海",
+            "targetPlane": "永恒未知之地",
+            "discovererName": "黑手",
+            "claimedQqs": [],
+            "timestamp": 1792811401714,
+            "expiresAt": 1792897801714,
+            "source": "era",
+            "interaction": "coordinate",
+            "participantQqs": []
+        },
+        {
+            "type": "forbiddenZone",
+            "zone": {
+                "name": "不死山",
+                "locationId": "busishan",
+                "desc": "位于北斗南域，传闻其中有石皇沉睡",
+                "danger": "极高"
+            },
+            "phenomenon": "有古老的祭祀声回荡",
+            "plane": "遮天位面",
+            "location": "不死山",
+            "coordinate": {
+                "x": 358,
+                "y": 278
+            },
+            "timestamp": 1792818601154,
+            "expiresAt": 1792905001151,
+            "source": "era",
+            "interaction": "generic",
+            "participantQqs": []
+        },
+        {
+            "type": "mysteriousRuins",
+            "ruins": {
+                "name": "神魔祭坛",
+                "desc": "古老而诡异的祭坛，作用未知"
+            },
+            "plane": "太初星墟",
+            "location": "无光观测站",
+            "coordinate": {
+                "x": 762,
+                "y": 199
+            },
+            "timestamp": 1792833301994,
+            "expiresAt": 1792919701991,
+            "source": "era",
+            "interaction": "generic",
+            "participantQqs": []
+        },
+        {
+            "type": "forbiddenZone",
+            "zone": {
+                "name": "不死山",
+                "locationId": "busishan",
+                "desc": "位于北斗南域，传闻其中有石皇沉睡",
+                "danger": "极高"
+            },
+            "phenomenon": "散发出令人心悸的帝威",
+            "plane": "遮天位面",
+            "location": "不死山",
+            "coordinate": {
+                "x": 323,
+                "y": 287
+            },
+            "timestamp": 1792908006699,
+            "expiresAt": 1792994406696,
+            "source": "era",
+            "interaction": "generic",
+            "participantQqs": []
         },
         {
             "type": "treasureAppear",
             "treasure": {
-                "name": "崆峒印",
-                "desc": "人皇至宝",
+                "name": "盘古幡",
+                "desc": "开天斧所化，威力无穷",
                 "rarity": "至宝",
-                "power": 14
+                "power": 15
             },
-            "plane": "下界八域",
-            "location": "星空古路·下界段",
+            "plane": "九天十地",
+            "location": "边荒战场",
             "coordinate": {
-                "x": 969,
-                "y": 457
+                "x": 696,
+                "y": 359
             },
             "luckyPlayer": {
-                "qq": "2283096140",
-                "name": "路人甲2号"
+                "qq": "546350675",
+                "name": "路人甲103号"
             },
-            "witnessCount": 6,
-            "timestamp": 1787760001282,
-            "expiresAt": 1787846401282,
+            "witnessCount": 5,
+            "timestamp": 1792915204965,
+            "expiresAt": 1793001604965,
             "contest": {
                 "version": 1,
                 "status": "settled",
-                "startedAt": 1787760001282,
+                "startedAt": 1792915204965,
                 "sealProgress": 0,
                 "participants": {
-                    "tianjiao:霸王浑战": {
-                        "qq": "tianjiao:霸王浑战",
-                        "name": "霸王浑战",
-                        "joinedAt": 1787760001283,
+                    "tianjiao:金翅小鹏王": {
+                        "qq": "tianjiao:金翅小鹏王",
+                        "name": "金翅小鹏王",
+                        "joinedAt": 1792915204966,
+                        "trials": {
+                            "battle": {
+                                "tag": "力",
+                                "score": 18,
+                                "detail": "力压守护灵，势如破竹。",
+                                "completedAt": 1792915204966
+                            },
+                            "insight": {
+                                "tag": "悟",
+                                "score": 9,
+                                "detail": "参悟有失，仅得皮毛。",
+                                "completedAt": 1792915204966
+                            },
+                            "fate": {
+                                "tag": "险",
+                                "score": 14,
+                                "detail": "穿越破碎未来，截留道痕。",
+                                "completedAt": 1792915204966
+                            }
+                        },
+                        "trialScore": 41,
+                        "contribution": 4,
+                        "daoHeart": "逍遥天地",
+                        "isTianjiao": true,
+                        "tianjiaoName": "金翅小鹏王"
+                    },
+                    "tianjiao:谪仙": {
+                        "qq": "tianjiao:谪仙",
+                        "name": "谪仙",
+                        "joinedAt": 1792915204966,
                         "trials": {
                             "battle": {
                                 "tag": "力",
                                 "score": 19,
                                 "detail": "力压守护灵，势如破竹。",
-                                "completedAt": 1787760001283
+                                "completedAt": 1792915204967
                             },
                             "insight": {
                                 "tag": "悟",
                                 "score": 18,
                                 "detail": "一眼洞悉禁制真意。",
-                                "completedAt": 1787760001283
+                                "completedAt": 1792915204967
                             },
-                            "support": {
-                                "tag": "德",
-                                "score": 17,
-                                "detail": "以本源护住灵脉，泽被一方。",
-                                "completedAt": 1787760001283
+                            "fate": {
+                                "tag": "险",
+                                "score": 14,
+                                "detail": "穿越破碎未来，截留道痕。",
+                                "completedAt": 1792915204967
                             }
                         },
-                        "trialScore": 54,
-                        "contribution": 7,
-                        "daoHeart": "守护苍生",
+                        "trialScore": 51,
+                        "contribution": 8,
+                        "daoHeart": "参悟大道",
                         "isTianjiao": true,
-                        "tianjiaoName": "霸王浑战"
-                    },
-                    "tianjiao:王腾": {
-                        "qq": "tianjiao:王腾",
-                        "name": "王腾",
-                        "joinedAt": 1787760001283,
-                        "trials": {
-                            "battle": {
-                                "tag": "力",
-                                "score": 18,
-                                "detail": "力压守护灵，势如破竹。",
-                                "completedAt": 1787760001283
-                            },
-                            "insight": {
-                                "tag": "悟",
-                                "score": 18,
-                                "detail": "一眼洞悉禁制真意。",
-                                "completedAt": 1787760001283
-                            },
-                            "support": {
-                                "tag": "德",
-                                "score": 17,
-                                "detail": "以本源护住灵脉，泽被一方。",
-                                "completedAt": 1787760001283
-                            }
-                        },
-                        "trialScore": 53,
-                        "contribution": 6,
-                        "daoHeart": "守护苍生",
-                        "isTianjiao": true,
-                        "tianjiaoName": "王腾"
-                    },
-                    "tianjiao:华云飞": {
-                        "qq": "tianjiao:华云飞",
-                        "name": "华云飞",
-                        "joinedAt": 1787760001283,
-                        "trials": {
-                            "battle": {
-                                "tag": "力",
-                                "score": 18,
-                                "detail": "力压守护灵，势如破竹。",
-                                "completedAt": 1787760001283
-                            },
-                            "insight": {
-                                "tag": "悟",
-                                "score": 18,
-                                "detail": "一眼洞悉禁制真意。",
-                                "completedAt": 1787760001283
-                            },
-                            "support": {
-                                "tag": "德",
-                                "score": 17,
-                                "detail": "以本源护住灵脉，泽被一方。",
-                                "completedAt": 1787760001283
-                            }
-                        },
-                        "trialScore": 53,
-                        "contribution": 6,
-                        "daoHeart": "守护苍生",
-                        "isTianjiao": true,
-                        "tianjiaoName": "华云飞"
+                        "tianjiaoName": "谪仙"
                     }
                 },
                 "rewardedQqs": [
-                    "tianjiao:霸王浑战",
-                    "tianjiao:王腾",
-                    "tianjiao:华云飞"
+                    "tianjiao:金翅小鹏王",
+                    "tianjiao:谪仙"
                 ],
                 "profile": {
-                    "omen": "人道气运如长河汇聚，亿万呼声共同托起古印。"
+                    "omen": "混沌如铁幕压下，唯有一道裂隙贯穿天地。"
                 },
-                "settledAt": 1788163200087,
+                "settledAt": 1793001900333,
                 "rankings": [
                     {
-                        "qq": "tianjiao:霸王浑战",
-                        "name": "霸王浑战",
-                        "trialScore": 54,
-                        "affinity": 25,
-                        "contribution": 7,
+                        "qq": "tianjiao:谪仙",
+                        "name": "谪仙",
+                        "trialScore": 51,
+                        "affinity": 18,
+                        "contribution": 8,
                         "luck": 3,
                         "tianjiBonus": 0,
-                        "total": 89,
-                        "joinedAt": 1787760001283
+                        "total": 80,
+                        "joinedAt": 1792915204966
                     },
                     {
-                        "qq": "tianjiao:王腾",
-                        "name": "王腾",
-                        "trialScore": 53,
-                        "affinity": 25,
-                        "contribution": 6,
-                        "luck": 4,
+                        "qq": "tianjiao:金翅小鹏王",
+                        "name": "金翅小鹏王",
+                        "trialScore": 41,
+                        "affinity": 18,
+                        "contribution": 4,
+                        "luck": 5,
                         "tianjiBonus": 0,
-                        "total": 88,
-                        "joinedAt": 1787760001283
-                    },
-                    {
-                        "qq": "tianjiao:华云飞",
-                        "name": "华云飞",
-                        "trialScore": 53,
-                        "affinity": 25,
-                        "contribution": 6,
-                        "luck": 0,
-                        "tianjiBonus": 0,
-                        "total": 84,
-                        "joinedAt": 1787760001283
+                        "total": 68,
+                        "joinedAt": 1792915204966
                     }
                 ],
                 "winner": {
-                    "qq": "tianjiao:霸王浑战",
-                    "name": "霸王浑战",
-                    "trialScore": 54,
-                    "affinity": 25,
-                    "contribution": 7,
+                    "qq": "tianjiao:谪仙",
+                    "name": "谪仙",
+                    "trialScore": 51,
+                    "affinity": 18,
+                    "contribution": 8,
                     "luck": 3,
                     "tianjiBonus": 0,
-                    "total": 89,
-                    "joinedAt": 1787760001283
+                    "total": 80,
+                    "joinedAt": 1792915204966
                 }
             },
             "tianjiaoEntrants": [
-                "霸王浑战",
-                "王腾",
-                "华云飞"
+                "金翅小鹏王",
+                "谪仙"
             ],
             "source": "era",
             "interaction": "treasure",
             "participantQqs": [
-                "tianjiao:霸王浑战",
-                "tianjiao:王腾",
-                "tianjiao:华云飞"
+                "tianjiao:金翅小鹏王",
+                "tianjiao:谪仙"
+            ],
+            "winner": {
+                "qq": "tianjiao:谪仙",
+                "name": "谪仙",
+                "trialScore": 51,
+                "affinity": 18,
+                "contribution": 8,
+                "luck": 3,
+                "tianjiBonus": 0,
+                "total": 80,
+                "joinedAt": 1792915204966
+            }
+        },
+        {
+            "type": "sectWar",
+            "interaction": "sectWar",
+            "attacker": {
+                "name": "太初圣宗",
+                "desc": "太古传承，底蕴深厚"
+            },
+            "defender": {
+                "name": "九霄圣地",
+                "desc": "九天神霄道统"
+            },
+            "reason": "双方都持有残缺矿图，并宣称神源龙脉是祖上传下的疆界",
+            "plane": "遮天位面",
+            "location": "太初古矿",
+            "coordinate": {
+                "x": 205,
+                "y": 42
+            },
+            "timestamp": 1792922408313,
+            "sectWar": {
+                "mode": "mine",
+                "status": "settled",
+                "phase": "神源龙脉争夺",
+                "openedAt": 1792922408313,
+                "maxActions": 5,
+                "sides": {
+                    "attacker": {
+                        "name": "太初圣宗",
+                        "desc": "太古传承，底蕴深厚"
+                    },
+                    "defender": {
+                        "name": "九霄圣地",
+                        "desc": "九天神霄道统"
+                    },
+                    "neutral": {
+                        "name": "中立修士"
+                    }
+                },
+                "scores": {
+                    "attacker": 0,
+                    "defender": 0,
+                    "neutral": 0
+                },
+                "meters": {
+                    "military": 0,
+                    "supplies": 0,
+                    "truth": 0,
+                    "seal": 0
+                },
+                "participants": {},
+                "decisionVotes": {},
+                "clues": [],
+                "actionLog": [],
+                "supportLog": [],
+                "rewardedQqs": [],
+                "outcome": {
+                    "type": "draw",
+                    "title": "双方罢兵，矿脉暂归无主",
+                    "summary": "双方伤亡惨重，只得各自退回山门。",
+                    "winnerSide": "draw",
+                    "planeEffect": "神源矿脉归属已经改变",
+                    "decision": "继续争夺"
+                },
+                "settledAt": 1793009100452,
+                "rankings": []
+            },
+            "expiresAt": 1793008808309,
+            "source": "era",
+            "participantQqs": []
+        },
+        {
+            "type": "forbiddenZone",
+            "zone": {
+                "name": "神墟",
+                "locationId": "shenxu",
+                "desc": "太古年前的战场，埋葬无数神魔",
+                "danger": "极高"
+            },
+            "phenomenon": "异象笼罩方圆亿万里",
+            "plane": "遮天位面",
+            "location": "神墟",
+            "coordinate": {
+                "x": 81,
+                "y": 425
+            },
+            "timestamp": 1792998008169,
+            "expiresAt": 1793084408164,
+            "source": "era",
+            "interaction": "generic",
+            "participantQqs": []
+        },
+        {
+            "type": "worldChange",
+            "eraIndex": 4,
+            "event": {
+                "title": "天道倾覆",
+                "desc": "天道法则崩乱，大道隐没"
+            },
+            "plane": "界海",
+            "location": "堕落仙王沉眠岛",
+            "coordinate": {
+                "x": 302,
+                "y": 469
+            },
+            "timestamp": 1793016009065,
+            "expiresAt": 1793102409064,
+            "source": "era",
+            "interaction": "generic",
+            "participantQqs": [],
+            "tianjiaoTrace": {
+                "name": "鹤无双",
+                "plane": "界海",
+                "location": "堕落仙王沉眠岛",
+                "coordinate": {
+                    "x": 302,
+                    "y": 469
+                },
+                "source": "位面事件",
+                "reincarnation": 0,
+                "traceVersion": 0,
+                "foundAt": 1793016009064,
+                "expiresAt": 1793102409064
+            }
+        },
+        {
+            "type": "coordinateClue",
+            "plane": "九天十地",
+            "location": "天神山",
+            "coordinate": {
+                "x": 358,
+                "y": 242
+            },
+            "sourcePlane": "九天十地",
+            "targetPlane": "神维丝线海",
+            "discovererName": "江琛",
+            "claimedQqs": [],
+            "timestamp": 1793030410135,
+            "expiresAt": 1793116810135,
+            "source": "era",
+            "interaction": "coordinate",
+            "participantQqs": []
+        },
+        {
+            "type": "forbiddenZone",
+            "zone": {
+                "name": "葬天岛",
+                "locationId": "shangcang",
+                "desc": "漂浮于九天之上，来历成谜",
+                "danger": "高"
+            },
+            "phenomenon": "传出惊天动地的怒吼声",
+            "plane": "遮天位面",
+            "location": "上苍·葬天岛",
+            "coordinate": {
+                "x": 929,
+                "y": 595
+            },
+            "timestamp": 1793106008361,
+            "expiresAt": 1793192408359,
+            "source": "era",
+            "interaction": "generic",
+            "participantQqs": []
+        },
+        {
+            "type": "coordinateClue",
+            "plane": "界海",
+            "location": "上苍之门",
+            "coordinate": {
+                "x": 821,
+                "y": 617
+            },
+            "sourcePlane": "界海",
+            "targetPlane": "仙域",
+            "discovererName": "路人甲10号",
+            "claimedQqs": [],
+            "timestamp": 1793131204720,
+            "expiresAt": 1793217604720,
+            "source": "era",
+            "interaction": "coordinate",
+            "participantQqs": []
+        },
+        {
+            "type": "worldChange",
+            "eraIndex": 3,
+            "event": {
+                "title": "灵气衰退",
+                "desc": "天地灵气急剧减少，修士苦不堪言"
+            },
+            "plane": "仙界",
+            "location": "天渊城",
+            "coordinate": {
+                "x": 194,
+                "y": 477
+            },
+            "timestamp": 1793152805489,
+            "expiresAt": 1793239205488,
+            "source": "era",
+            "interaction": "generic",
+            "participantQqs": [
+                "1553090230",
+                "640292421",
+                "2331561683"
             ]
+        },
+        {
+            "type": "merchantVisit",
+            "merchant": {
+                "name": "矮胖道人",
+                "desc": "圆滚滚的身材，却身手敏捷",
+                "special": "专卖功法秘籍"
+            },
+            "plane": "仙域",
+            "location": "登仙台",
+            "coordinate": {
+                "x": 489,
+                "y": 519
+            },
+            "timestamp": 1793196008903,
+            "expiresAt": 1793282408899,
+            "source": "era",
+            "interaction": "generic",
+            "participantQqs": []
+        },
+        {
+            "type": "coordinateClue",
+            "plane": "仙界",
+            "location": "轮回殿",
+            "coordinate": {
+                "x": 405,
+                "y": 240
+            },
+            "sourcePlane": "仙界",
+            "targetPlane": "界海",
+            "discovererName": "白烨",
+            "claimedQqs": [],
+            "timestamp": 1793232004773,
+            "expiresAt": 1793318404773,
+            "source": "era",
+            "interaction": "coordinate",
+            "participantQqs": []
+        },
+        {
+            "type": "wenxianClue",
+            "plane": "太初星墟",
+            "location": "太初矿心",
+            "coordinate": {
+                "x": 451,
+                "y": 523
+            },
+            "discovererName": "路人甲14号",
+            "claimedQqs": [],
+            "timestamp": 1793246409813,
+            "expiresAt": 1793332809813,
+            "source": "era",
+            "interaction": "wenxian",
+            "participantQqs": []
+        },
+        {
+            "type": "sectWar",
+            "interaction": "sectWar",
+            "attacker": {
+                "name": "太初圣宗",
+                "desc": "太古传承，底蕴深厚"
+            },
+            "defender": {
+                "name": "秦岭万龙巢",
+                "desc": "真龙后裔巢穴"
+            },
+            "reason": "双方都持有残缺矿图，并宣称神源龙脉是祖上传下的疆界",
+            "plane": "遮天位面",
+            "location": "姜家祖地",
+            "coordinate": {
+                "x": 458,
+                "y": 185
+            },
+            "timestamp": 1793289610618,
+            "sectWar": {
+                "mode": "mine",
+                "status": "settled",
+                "phase": "神源龙脉争夺",
+                "openedAt": 1793289610618,
+                "maxActions": 5,
+                "sides": {
+                    "attacker": {
+                        "name": "太初圣宗",
+                        "desc": "太古传承，底蕴深厚"
+                    },
+                    "defender": {
+                        "name": "秦岭万龙巢",
+                        "desc": "真龙后裔巢穴"
+                    },
+                    "neutral": {
+                        "name": "中立修士"
+                    }
+                },
+                "scores": {
+                    "attacker": 0,
+                    "defender": 0,
+                    "neutral": 0
+                },
+                "meters": {
+                    "military": 0,
+                    "supplies": 0,
+                    "truth": 0,
+                    "seal": 0
+                },
+                "participants": {},
+                "decisionVotes": {},
+                "clues": [],
+                "actionLog": [],
+                "supportLog": [],
+                "rewardedQqs": [],
+                "outcome": {
+                    "type": "draw",
+                    "title": "双方罢兵，矿脉暂归无主",
+                    "summary": "双方伤亡惨重，只得各自退回山门。",
+                    "winnerSide": "draw",
+                    "planeEffect": "神源矿脉归属已经改变",
+                    "decision": "继续争夺"
+                },
+                "settledAt": 1793376300842,
+                "rankings": []
+            },
+            "expiresAt": 1793376010615,
+            "source": "era",
+            "participantQqs": []
+        },
+        {
+            "type": "bingziLegacy",
+            "interaction": "bingzi",
+            "plane": "遮天位面",
+            "location": "秦岭·秦门后山",
+            "coordinate": {
+                "x": 637,
+                "y": 93
+            },
+            "timestamp": 1793318404978,
+            "expiresAt": 1793404804978,
+            "bingzi": {
+                "status": "settled",
+                "openedAt": 1793318404978,
+                "targetMountain": 9,
+                "participants": {},
+                "rankings": [],
+                "winner": null,
+                "rewardedQqs": [],
+                "settledAt": 1793405100770
+            },
+            "source": "era",
+            "participantQqs": []
+        },
+        {
+            "type": "wenxianClue",
+            "plane": "仙界",
+            "location": "烛龙道",
+            "coordinate": {
+                "x": 60,
+                "y": 31
+            },
+            "discovererName": "摸一下群主皮燕子",
+            "claimedQqs": [],
+            "timestamp": 1793332813327,
+            "expiresAt": 1793419213327,
+            "source": "era",
+            "interaction": "wenxian",
+            "participantQqs": []
+        },
+        {
+            "type": "forbiddenZone",
+            "zone": {
+                "name": "上苍",
+                "locationId": "shangcang",
+                "desc": "传说中的神秘之地，无人知其具体位置",
+                "danger": "未知"
+            },
+            "phenomenon": "传出惊天动地的怒吼声",
+            "plane": "遮天位面",
+            "location": "上苍·葬天岛",
+            "coordinate": {
+                "x": 880,
+                "y": 576
+            },
+            "timestamp": 1793376013190,
+            "expiresAt": 1793462413186,
+            "source": "era",
+            "interaction": "generic",
+            "participantQqs": [
+                "1553090230"
+            ]
+        },
+        {
+            "type": "worldChange",
+            "eraIndex": 4,
+            "event": {
+                "title": "万物凋零",
+                "desc": "天地万物开始凋零，灵物枯竭"
+            },
+            "plane": "界海",
+            "location": "终极古地",
+            "coordinate": {
+                "x": 848,
+                "y": 250
+            },
+            "timestamp": 1793404806912,
+            "expiresAt": 1793491206910,
+            "source": "era",
+            "interaction": "generic",
+            "participantQqs": [],
+            "tianjiaoTrace": {
+                "name": "金翅小鹏王",
+                "plane": "界海",
+                "location": "终极古地",
+                "coordinate": {
+                    "x": 848,
+                    "y": 250
+                },
+                "source": "位面事件",
+                "reincarnation": 0,
+                "traceVersion": 0,
+                "foundAt": 1793404806910,
+                "expiresAt": 1793491206910
+            }
+        },
+        {
+            "type": "merchantVisit",
+            "merchant": {
+                "name": "白须仙翁",
+                "desc": "白须垂胸，背负一座袖珍仙炉",
+                "special": "专卖游历诸天时炼成的百分比神兵、护具与法宝"
+            },
+            "plane": "太初星墟",
+            "location": "无光观测站",
+            "coordinate": {
+                "x": 790,
+                "y": 160
+            },
+            "timestamp": 1793430008507,
+            "interaction": "merchant",
+            "stock": [
+                {
+                    "id": 1,
+                    "displayName": "凤凰羽剑·三灵共堂",
+                    "type": "武器",
+                    "suffix": "三灵共堂",
+                    "power": 1577,
+                    "materialCost": 35669850000,
+                    "price": 619130000000,
+                    "recipe": [
+                        {
+                            "name": "金色妖丹",
+                            "count": 3
+                        },
+                        {
+                            "name": "蓝色妖丹",
+                            "count": 1
+                        },
+                        {
+                            "name": "绿色妖石",
+                            "count": 2
+                        },
+                        {
+                            "name": "宇宙核心",
+                            "count": 5
+                        }
+                    ],
+                    "equipment": {
+                        "id": 5,
+                        "name": "凤凰羽剑·三灵共堂0085071",
+                        "class": "装备",
+                        "type": "武器",
+                        "atk": 6.681,
+                        "def": 2.116,
+                        "HP": 6.75,
+                        "bao": 0.11,
+                        "出售价": 13520000,
+                        "稀有度": 3,
+                        "pinji": 6,
+                        "来源": "白须仙翁",
+                        "锻造后缀": "三灵共堂",
+                        "锻造配方": [
+                            {
+                                "name": "金色妖丹",
+                                "count": 3
+                            },
+                            {
+                                "name": "蓝色妖丹",
+                                "count": 1
+                            },
+                            {
+                                "name": "绿色妖石",
+                                "count": 2
+                            },
+                            {
+                                "name": "宇宙核心",
+                                "count": 5
+                            }
+                        ]
+                    },
+                    "soldTo": null,
+                    "soldAt": null
+                },
+                {
+                    "id": 2,
+                    "displayName": "玉女灵衣·四圣显化",
+                    "type": "护具",
+                    "suffix": "四圣显化",
+                    "power": 8156,
+                    "materialCost": 214381543000,
+                    "price": 976900000000,
+                    "recipe": [
+                        {
+                            "name": "三千弱水",
+                            "count": 3
+                        },
+                        {
+                            "name": "棕色妖丹",
+                            "count": 2
+                        },
+                        {
+                            "name": "金色妖丹",
+                            "count": 2
+                        },
+                        {
+                            "name": "红色石料",
+                            "count": 3
+                        },
+                        {
+                            "name": "界核",
+                            "count": 22
+                        }
+                    ],
+                    "equipment": {
+                        "id": 1,
+                        "name": "玉女灵衣·四圣显化0085072",
+                        "class": "装备",
+                        "type": "护具",
+                        "atk": 8.061,
+                        "def": 46.723,
+                        "HP": 26.149,
+                        "bao": 0.314,
+                        "出售价": 69175000,
+                        "稀有度": 4,
+                        "pinji": 6,
+                        "来源": "白须仙翁",
+                        "锻造后缀": "四圣显化",
+                        "锻造配方": [
+                            {
+                                "name": "三千弱水",
+                                "count": 3
+                            },
+                            {
+                                "name": "棕色妖丹",
+                                "count": 2
+                            },
+                            {
+                                "name": "金色妖丹",
+                                "count": 2
+                            },
+                            {
+                                "name": "红色石料",
+                                "count": 3
+                            },
+                            {
+                                "name": "界核",
+                                "count": 22
+                            }
+                        ]
+                    },
+                    "soldTo": null,
+                    "soldAt": null
+                },
+                {
+                    "id": 3,
+                    "displayName": "还魂真针·五行杂灵",
+                    "type": "法宝",
+                    "suffix": "五行杂灵",
+                    "power": 789,
+                    "materialCost": 16916255000,
+                    "price": 282280000000,
+                    "recipe": [
+                        {
+                            "name": "金色石料",
+                            "count": 3
+                        },
+                        {
+                            "name": "太乙灵木",
+                            "count": 3
+                        },
+                        {
+                            "name": "棕色妖石",
+                            "count": 3
+                        },
+                        {
+                            "name": "蓝色石料",
+                            "count": 2
+                        },
+                        {
+                            "name": "红色妖丹",
+                            "count": 3
+                        },
+                        {
+                            "name": "宇宙核心",
+                            "count": 1
+                        },
+                        {
+                            "name": "界核",
+                            "count": 1
+                        }
+                    ],
+                    "equipment": {
+                        "id": 5,
+                        "name": "还魂真针·五行杂灵0085073",
+                        "class": "装备",
+                        "type": "法宝",
+                        "atk": 1.962,
+                        "def": 2.772,
+                        "HP": 2.856,
+                        "bao": 0.15,
+                        "出售价": 6325000,
+                        "稀有度": 3,
+                        "pinji": 6,
+                        "来源": "白须仙翁",
+                        "锻造后缀": "五行杂灵",
+                        "锻造配方": [
+                            {
+                                "name": "金色石料",
+                                "count": 3
+                            },
+                            {
+                                "name": "太乙灵木",
+                                "count": 3
+                            },
+                            {
+                                "name": "棕色妖石",
+                                "count": 3
+                            },
+                            {
+                                "name": "蓝色石料",
+                                "count": 2
+                            },
+                            {
+                                "name": "红色妖丹",
+                                "count": 3
+                            },
+                            {
+                                "name": "宇宙核心",
+                                "count": 1
+                            },
+                            {
+                                "name": "界核",
+                                "count": 1
+                            }
+                        ]
+                    },
+                    "soldTo": null,
+                    "soldAt": null
+                },
+                {
+                    "id": 4,
+                    "displayName": "仙华紫伞·神木相生",
+                    "type": "武器",
+                    "suffix": "神木相生",
+                    "power": 6384,
+                    "materialCost": 121214600000,
+                    "price": 965190000000,
+                    "recipe": [
+                        {
+                            "name": "红色妖丹",
+                            "count": 2
+                        },
+                        {
+                            "name": "绿色妖石",
+                            "count": 2
+                        },
+                        {
+                            "name": "太乙灵木",
+                            "count": 1
+                        },
+                        {
+                            "name": "宇宙核心",
+                            "count": 17
+                        }
+                    ],
+                    "equipment": {
+                        "id": 2,
+                        "name": "仙华紫伞·神木相生0085074",
+                        "class": "装备",
+                        "type": "武器",
+                        "atk": 27.467,
+                        "def": 8.427,
+                        "HP": 27.509,
+                        "bao": 0.22,
+                        "出售价": 45289999,
+                        "稀有度": 4,
+                        "pinji": 6,
+                        "来源": "白须仙翁",
+                        "锻造后缀": "神木相生",
+                        "锻造配方": [
+                            {
+                                "name": "红色妖丹",
+                                "count": 2
+                            },
+                            {
+                                "name": "绿色妖石",
+                                "count": 2
+                            },
+                            {
+                                "name": "太乙灵木",
+                                "count": 1
+                            },
+                            {
+                                "name": "宇宙核心",
+                                "count": 17
+                            }
+                        ]
+                    },
+                    "soldTo": null,
+                    "soldAt": null
+                }
+            ],
+            "expiresAt": 1793516408504,
+            "source": "era",
+            "participantQqs": []
+        }
+    ],
+    "lastEventTime": 5000,
+    "lastEventWorldYear": 205000,
+    "activeEvents": [
+        {
+            "type": "forbiddenZone",
+            "zone": {
+                "name": "上苍",
+                "locationId": "shangcang",
+                "desc": "传说中的神秘之地，无人知其具体位置",
+                "danger": "未知"
+            },
+            "phenomenon": "传出惊天动地的怒吼声",
+            "plane": "遮天位面",
+            "location": "上苍·葬天岛",
+            "coordinate": {
+                "x": 880,
+                "y": 576
+            },
+            "timestamp": 1793376013190,
+            "expiresAt": 1793462413186,
+            "source": "era",
+            "interaction": "generic",
+            "participantQqs": [
+                "1553090230"
+            ]
+        },
+        {
+            "type": "worldChange",
+            "eraIndex": 4,
+            "event": {
+                "title": "万物凋零",
+                "desc": "天地万物开始凋零，灵物枯竭"
+            },
+            "plane": "界海",
+            "location": "终极古地",
+            "coordinate": {
+                "x": 848,
+                "y": 250
+            },
+            "timestamp": 1793404806912,
+            "expiresAt": 1793491206910,
+            "source": "era",
+            "interaction": "generic",
+            "participantQqs": [],
+            "tianjiaoTrace": {
+                "name": "金翅小鹏王",
+                "plane": "界海",
+                "location": "终极古地",
+                "coordinate": {
+                    "x": 848,
+                    "y": 250
+                },
+                "source": "位面事件",
+                "reincarnation": 0,
+                "traceVersion": 0,
+                "foundAt": 1793404806910,
+                "expiresAt": 1793491206910
+            }
+        },
+        {
+            "type": "merchantVisit",
+            "merchant": {
+                "name": "白须仙翁",
+                "desc": "白须垂胸，背负一座袖珍仙炉",
+                "special": "专卖游历诸天时炼成的百分比神兵、护具与法宝"
+            },
+            "plane": "太初星墟",
+            "location": "无光观测站",
+            "coordinate": {
+                "x": 790,
+                "y": 160
+            },
+            "timestamp": 1793430008507,
+            "interaction": "merchant",
+            "stock": [
+                {
+                    "id": 1,
+                    "displayName": "凤凰羽剑·三灵共堂",
+                    "type": "武器",
+                    "suffix": "三灵共堂",
+                    "power": 1577,
+                    "materialCost": 35669850000,
+                    "price": 619130000000,
+                    "recipe": [
+                        {
+                            "name": "金色妖丹",
+                            "count": 3
+                        },
+                        {
+                            "name": "蓝色妖丹",
+                            "count": 1
+                        },
+                        {
+                            "name": "绿色妖石",
+                            "count": 2
+                        },
+                        {
+                            "name": "宇宙核心",
+                            "count": 5
+                        }
+                    ],
+                    "equipment": {
+                        "id": 5,
+                        "name": "凤凰羽剑·三灵共堂0085071",
+                        "class": "装备",
+                        "type": "武器",
+                        "atk": 6.681,
+                        "def": 2.116,
+                        "HP": 6.75,
+                        "bao": 0.11,
+                        "出售价": 13520000,
+                        "稀有度": 3,
+                        "pinji": 6,
+                        "来源": "白须仙翁",
+                        "锻造后缀": "三灵共堂",
+                        "锻造配方": [
+                            {
+                                "name": "金色妖丹",
+                                "count": 3
+                            },
+                            {
+                                "name": "蓝色妖丹",
+                                "count": 1
+                            },
+                            {
+                                "name": "绿色妖石",
+                                "count": 2
+                            },
+                            {
+                                "name": "宇宙核心",
+                                "count": 5
+                            }
+                        ]
+                    },
+                    "soldTo": null,
+                    "soldAt": null
+                },
+                {
+                    "id": 2,
+                    "displayName": "玉女灵衣·四圣显化",
+                    "type": "护具",
+                    "suffix": "四圣显化",
+                    "power": 8156,
+                    "materialCost": 214381543000,
+                    "price": 976900000000,
+                    "recipe": [
+                        {
+                            "name": "三千弱水",
+                            "count": 3
+                        },
+                        {
+                            "name": "棕色妖丹",
+                            "count": 2
+                        },
+                        {
+                            "name": "金色妖丹",
+                            "count": 2
+                        },
+                        {
+                            "name": "红色石料",
+                            "count": 3
+                        },
+                        {
+                            "name": "界核",
+                            "count": 22
+                        }
+                    ],
+                    "equipment": {
+                        "id": 1,
+                        "name": "玉女灵衣·四圣显化0085072",
+                        "class": "装备",
+                        "type": "护具",
+                        "atk": 8.061,
+                        "def": 46.723,
+                        "HP": 26.149,
+                        "bao": 0.314,
+                        "出售价": 69175000,
+                        "稀有度": 4,
+                        "pinji": 6,
+                        "来源": "白须仙翁",
+                        "锻造后缀": "四圣显化",
+                        "锻造配方": [
+                            {
+                                "name": "三千弱水",
+                                "count": 3
+                            },
+                            {
+                                "name": "棕色妖丹",
+                                "count": 2
+                            },
+                            {
+                                "name": "金色妖丹",
+                                "count": 2
+                            },
+                            {
+                                "name": "红色石料",
+                                "count": 3
+                            },
+                            {
+                                "name": "界核",
+                                "count": 22
+                            }
+                        ]
+                    },
+                    "soldTo": null,
+                    "soldAt": null
+                },
+                {
+                    "id": 3,
+                    "displayName": "还魂真针·五行杂灵",
+                    "type": "法宝",
+                    "suffix": "五行杂灵",
+                    "power": 789,
+                    "materialCost": 16916255000,
+                    "price": 282280000000,
+                    "recipe": [
+                        {
+                            "name": "金色石料",
+                            "count": 3
+                        },
+                        {
+                            "name": "太乙灵木",
+                            "count": 3
+                        },
+                        {
+                            "name": "棕色妖石",
+                            "count": 3
+                        },
+                        {
+                            "name": "蓝色石料",
+                            "count": 2
+                        },
+                        {
+                            "name": "红色妖丹",
+                            "count": 3
+                        },
+                        {
+                            "name": "宇宙核心",
+                            "count": 1
+                        },
+                        {
+                            "name": "界核",
+                            "count": 1
+                        }
+                    ],
+                    "equipment": {
+                        "id": 5,
+                        "name": "还魂真针·五行杂灵0085073",
+                        "class": "装备",
+                        "type": "法宝",
+                        "atk": 1.962,
+                        "def": 2.772,
+                        "HP": 2.856,
+                        "bao": 0.15,
+                        "出售价": 6325000,
+                        "稀有度": 3,
+                        "pinji": 6,
+                        "来源": "白须仙翁",
+                        "锻造后缀": "五行杂灵",
+                        "锻造配方": [
+                            {
+                                "name": "金色石料",
+                                "count": 3
+                            },
+                            {
+                                "name": "太乙灵木",
+                                "count": 3
+                            },
+                            {
+                                "name": "棕色妖石",
+                                "count": 3
+                            },
+                            {
+                                "name": "蓝色石料",
+                                "count": 2
+                            },
+                            {
+                                "name": "红色妖丹",
+                                "count": 3
+                            },
+                            {
+                                "name": "宇宙核心",
+                                "count": 1
+                            },
+                            {
+                                "name": "界核",
+                                "count": 1
+                            }
+                        ]
+                    },
+                    "soldTo": null,
+                    "soldAt": null
+                },
+                {
+                    "id": 4,
+                    "displayName": "仙华紫伞·神木相生",
+                    "type": "武器",
+                    "suffix": "神木相生",
+                    "power": 6384,
+                    "materialCost": 121214600000,
+                    "price": 965190000000,
+                    "recipe": [
+                        {
+                            "name": "红色妖丹",
+                            "count": 2
+                        },
+                        {
+                            "name": "绿色妖石",
+                            "count": 2
+                        },
+                        {
+                            "name": "太乙灵木",
+                            "count": 1
+                        },
+                        {
+                            "name": "宇宙核心",
+                            "count": 17
+                        }
+                    ],
+                    "equipment": {
+                        "id": 2,
+                        "name": "仙华紫伞·神木相生0085074",
+                        "class": "装备",
+                        "type": "武器",
+                        "atk": 27.467,
+                        "def": 8.427,
+                        "HP": 27.509,
+                        "bao": 0.22,
+                        "出售价": 45289999,
+                        "稀有度": 4,
+                        "pinji": 6,
+                        "来源": "白须仙翁",
+                        "锻造后缀": "神木相生",
+                        "锻造配方": [
+                            {
+                                "name": "红色妖丹",
+                                "count": 2
+                            },
+                            {
+                                "name": "绿色妖石",
+                                "count": 2
+                            },
+                            {
+                                "name": "太乙灵木",
+                                "count": 1
+                            },
+                            {
+                                "name": "宇宙核心",
+                                "count": 17
+                            }
+                        ]
+                    },
+                    "soldTo": null,
+                    "soldAt": null
+                }
+            ],
+            "expiresAt": 1793516408504,
+            "source": "era",
+            "participantQqs": []
         }
     ],
     "eventCooldown": 2000,

@@ -366,18 +366,27 @@ export class SelfDaoDeduction extends plugin {
       const files = fs.readdirSync(__PATH.player_path).filter(file => file.endsWith('.json'));
       for (const file of files) {
         const id = file.slice(0, -5);
+        // 遍历与读档之间存在竞态：轮回/删档会在这两步之间删掉存档，
+        // 直接 Read_player 会抛 ENOENT，导致整轮任务中断并每分钟刷错误日志。
+        if (!fs.existsSync(`${__PATH.player_path}/${file}`)) continue;
         let notification = null;
-        await withPlayerMutationLock(id, async () => {
-          const player = await Read_player(id);
-          const recovery = ensureSelfDaoDeduction(player).recovery;
-          if (recovery?.status !== 'recovering' || Number(recovery.endAt) > Date.now()) return;
-          const result = completeCorpseEmperorRecovery(player);
-          if (!result.ok) return;
-          await Write_player(id, player, { trackDailyTask: false });
-          await redis.set(`xiuxian:player:${id}:game_action`, '1');
-          await redis.del(`xiuxian:player:${id}:action`);
-          notification = { groupId: recovery.groupId, name: player.名号 };
-        });
+        try {
+          await withPlayerMutationLock(id, async () => {
+            const player = await Read_player(id);
+            const recovery = ensureSelfDaoDeduction(player).recovery;
+            if (recovery?.status !== 'recovering' || Number(recovery.endAt) > Date.now()) return;
+            const result = completeCorpseEmperorRecovery(player);
+            if (!result.ok) return;
+            await Write_player(id, player, { trackDailyTask: false });
+            await redis.set(`xiuxian:player:${id}:game_action`, '1');
+            await redis.del(`xiuxian:player:${id}:action`);
+            notification = { groupId: recovery.groupId, name: player.名号 };
+          });
+        } catch (error) {
+          // 单个玩家失败不能拖垮整轮：ENOENT 属正常删除竞态，直接跳过
+          if (error?.code !== 'ENOENT') console.error(`[身灭道消] 玩家${id}结算失败`, error?.message);
+          continue;
+        }
         if (!notification) continue;
         const msg = `【诸世真血·重聚归来】\n${notification.name}自无尽时空收拢所有真血，神胎圆满，凝聚真身，正式踏入路尽级仙帝！`;
         try {

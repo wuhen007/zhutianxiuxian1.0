@@ -34,7 +34,7 @@ switch:
   couple: true
   Xiuianplay_key: true
   StoneMarket: true
-  requireQQBotBind: true
+  requireQQBotBind: false
 StoneMarket:
   stone_levels:
     - name: 普通源石
@@ -103,15 +103,17 @@ Era:
   task: 0 0 */1 * * *
   pushNotice: true
   notifyGroups:
-    - C63D35605BF41FD1313B815E64CB6DFD
+    - 835576891
+    - 799048038
   Master: null
   current:
-    index: 0
-    years: 3000
-    epoch: 1
-    totalYears: 3000
+    index: 1
+    years: 1000
+    epoch: 5
+    totalYears: 211000
   yearlyAdvance: 1000
   weimianRepairInterval: 2000
+  foreignCalamityNaturalYears: 208000
 BotType: onebot
 AutoDailyTask:
   cron: 0 18 18 * * *

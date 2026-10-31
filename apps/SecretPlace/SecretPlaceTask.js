@@ -199,6 +199,8 @@ export class SecretPlaceTask extends plugin {
       //不为空，存在动作
       if (action != null) {
         if (isShangcangAction(action)) return false;
+        // 灵界裂缝等玩法借用 Place_action:'0' 标记，但没有 Place_address，交给各自模块自行结算
+        if (action.action === '探索灵界裂缝' || !action.Place_address) return false;
         //最后发送的消息
         let msg = [];
         //动作结束时间

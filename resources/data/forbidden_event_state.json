@@ -7,51 +7,603 @@
 	"history": [
 		{
 			"type": "dao-sighting-auto-opened",
-			"eventId": "dao-sighting-1787727000054-248637",
+			"eventId": "dao-sighting-1793082868100-559494",
 			"serverId": "global",
-			"at": 1787727000054
+			"at": 1793082868100
 		},
 		{
 			"type": "daoSighting-expired",
-			"eventId": "dao-sighting-1787727000054-248637",
+			"eventId": "dao-sighting-1793082868100-559494",
 			"serverId": "global",
-			"at": 1787728200048
+			"at": 1793082898747
 		},
 		{
 			"type": "dao-sighting-auto-opened",
-			"eventId": "dao-sighting-1787745000040-791470",
+			"eventId": "dao-sighting-1793087400831-330337",
 			"serverId": "global",
-			"at": 1787745000040
+			"at": 1793087400831
 		},
 		{
 			"type": "daoSighting-expired",
-			"eventId": "dao-sighting-1787745000040-791470",
+			"eventId": "dao-sighting-1793087400831-330337",
 			"serverId": "global",
-			"at": 1787746200036
+			"at": 1793088602709
 		},
 		{
 			"type": "dao-sighting-auto-opened",
-			"eventId": "dao-sighting-1787752800034-646162",
+			"eventId": "dao-sighting-1793093400455-609865",
 			"serverId": "global",
-			"at": 1787752800034
+			"at": 1793093400455
 		},
 		{
 			"type": "daoSighting-expired",
-			"eventId": "dao-sighting-1787752800034-646162",
+			"eventId": "dao-sighting-1793093400455-609865",
 			"serverId": "global",
-			"at": 1787753400050
+			"at": 1793095201616
 		},
 		{
 			"type": "dao-sighting-auto-opened",
-			"eventId": "dao-sighting-1787762400047-669489",
+			"eventId": "dao-sighting-1793095201632-840531",
 			"serverId": "global",
-			"at": 1787762400047
+			"at": 1793095201632
 		},
 		{
 			"type": "daoSighting-expired",
-			"eventId": "dao-sighting-1787762400047-669489",
+			"eventId": "dao-sighting-1793095201632-840531",
 			"serverId": "global",
-			"at": 1787764200037
+			"at": 1793095801001
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793098200859-527431",
+			"serverId": "global",
+			"at": 1793098200859
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793098200859-527431",
+			"serverId": "global",
+			"at": 1793099400620
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793100000416-517252",
+			"serverId": "global",
+			"at": 1793100000416
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793100000416-517252",
+			"serverId": "global",
+			"at": 1793101800621
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793103000437-848552",
+			"serverId": "global",
+			"at": 1793103000438
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793103000437-848552",
+			"serverId": "global",
+			"at": 1793104801000
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793107800784-740388",
+			"serverId": "global",
+			"at": 1793107800784
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793107800784-740388",
+			"serverId": "global",
+			"at": 1793110200723
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793123401126-178617",
+			"serverId": "global",
+			"at": 1793123401126
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793123401126-178617",
+			"serverId": "global",
+			"at": 1793124600727
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793124600733-269147",
+			"serverId": "global",
+			"at": 1793124600733
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793124600733-269147",
+			"serverId": "global",
+			"at": 1793126400787
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793129400739-423550",
+			"serverId": "global",
+			"at": 1793129400740
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793129400739-423550",
+			"serverId": "global",
+			"at": 1793131800807
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793150400848-396199",
+			"serverId": "global",
+			"at": 1793150400849
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793150400848-396199",
+			"serverId": "global",
+			"at": 1793152200872
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793152800828-817394",
+			"serverId": "global",
+			"at": 1793152800828
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793152800828-817394",
+			"serverId": "global",
+			"at": 1793153400804
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793154000818-176129",
+			"serverId": "global",
+			"at": 1793154000818
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793154000818-176129",
+			"serverId": "global",
+			"at": 1793156400849
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793163000900-272730",
+			"serverId": "global",
+			"at": 1793163000900
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793163000900-272730",
+			"serverId": "global",
+			"at": 1793164200788
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793176200594-648624",
+			"serverId": "global",
+			"at": 1793176200594
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793176200594-648624",
+			"serverId": "global",
+			"at": 1793178000699
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793197200855-723067",
+			"serverId": "global",
+			"at": 1793197200856
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793197200855-723067",
+			"serverId": "global",
+			"at": 1793199001861
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793211600866-264667",
+			"serverId": "global",
+			"at": 1793211600867
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793211600866-264667",
+			"serverId": "global",
+			"at": 1793213401078
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793214000995-945368",
+			"serverId": "global",
+			"at": 1793214000996
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793214000995-945368",
+			"serverId": "global",
+			"at": 1793214600814
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793223600724-405821",
+			"serverId": "global",
+			"at": 1793223600725
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793223600724-405821",
+			"serverId": "global",
+			"at": 1793225400820
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793239801051-679514",
+			"serverId": "global",
+			"at": 1793239801057
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793239801051-679514",
+			"serverId": "global",
+			"at": 1793242200859
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793245200746-13636",
+			"serverId": "global",
+			"at": 1793245200747
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793245200746-13636",
+			"serverId": "global",
+			"at": 1793247000757
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793248200545-749996",
+			"serverId": "global",
+			"at": 1793248200545
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793248200545-749996",
+			"serverId": "global",
+			"at": 1793250000826
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793259000771-969758",
+			"serverId": "global",
+			"at": 1793259000772
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793259000771-969758",
+			"serverId": "global",
+			"at": 1793260800976
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793277600360-464245",
+			"serverId": "global",
+			"at": 1793277600360
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793277600360-464245",
+			"serverId": "global",
+			"at": 1793279400333
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793287200708-5246",
+			"serverId": "global",
+			"at": 1793287200709
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793287200708-5246",
+			"serverId": "global",
+			"at": 1793289002204
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793289002209-946094",
+			"serverId": "global",
+			"at": 1793289002210
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793289002209-946094",
+			"serverId": "global",
+			"at": 1793290200765
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793290800796-478833",
+			"serverId": "global",
+			"at": 1793290800796
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793290800796-478833",
+			"serverId": "global",
+			"at": 1793292600866
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793294400346-262386",
+			"serverId": "global",
+			"at": 1793294400346
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793294400346-262386",
+			"serverId": "global",
+			"at": 1793296200814
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793296200823-191502",
+			"serverId": "global",
+			"at": 1793296200823
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793296200823-191502",
+			"serverId": "global",
+			"at": 1793297400789
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793302200785-236820",
+			"serverId": "global",
+			"at": 1793302200785
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793302200785-236820",
+			"serverId": "global",
+			"at": 1793304600630
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793313000720-424854",
+			"serverId": "global",
+			"at": 1793313000721
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793313000720-424854",
+			"serverId": "global",
+			"at": 1793314800796
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793315400697-790928",
+			"serverId": "global",
+			"at": 1793315400697
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793315400697-790928",
+			"serverId": "global",
+			"at": 1793317200717
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793318400573-916040",
+			"serverId": "global",
+			"at": 1793318400573
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793318400573-916040",
+			"serverId": "global",
+			"at": 1793319000878
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793343000620-472934",
+			"serverId": "global",
+			"at": 1793343000620
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793343000620-472934",
+			"serverId": "global",
+			"at": 1793344200783
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793344800816-840332",
+			"serverId": "global",
+			"at": 1793344800816
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793344800816-840332",
+			"serverId": "global",
+			"at": 1793347200773
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793348400842-157878",
+			"serverId": "global",
+			"at": 1793348400843
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793348400842-157878",
+			"serverId": "global",
+			"at": 1793350200878
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793353200688-183114",
+			"serverId": "global",
+			"at": 1793353200689
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793353200688-183114",
+			"serverId": "global",
+			"at": 1793355000672
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793356800810-629268",
+			"serverId": "global",
+			"at": 1793356800810
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793356800810-629268",
+			"serverId": "global",
+			"at": 1793358600730
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793358600744-366524",
+			"serverId": "global",
+			"at": 1793358600744
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793358600744-366524",
+			"serverId": "global",
+			"at": 1793361000693
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793363400719-81886",
+			"serverId": "global",
+			"at": 1793363400720
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793363400719-81886",
+			"serverId": "global",
+			"at": 1793365200859
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793383800692-735026",
+			"serverId": "global",
+			"at": 1793383800692
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793383800692-735026",
+			"serverId": "global",
+			"at": 1793386200657
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793390400789-674899",
+			"serverId": "global",
+			"at": 1793390400789
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793390400789-674899",
+			"serverId": "global",
+			"at": 1793391000754
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793391600768-685320",
+			"serverId": "global",
+			"at": 1793391600769
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793391600768-685320",
+			"serverId": "global",
+			"at": 1793393400873
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793404200638-291093",
+			"serverId": "global",
+			"at": 1793404200638
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793404200638-291093",
+			"serverId": "global",
+			"at": 1793405400715
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793406600672-585407",
+			"serverId": "global",
+			"at": 1793406600672
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793406600672-585407",
+			"serverId": "global",
+			"at": 1793408400740
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793418000683-919552",
+			"serverId": "global",
+			"at": 1793418000683
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793418000683-919552",
+			"serverId": "global",
+			"at": 1793419800878
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793431200707-227486",
+			"serverId": "global",
+			"at": 1793431200708
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793431200707-227486",
+			"serverId": "global",
+			"at": 1793433600707
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793436600791-535554",
+			"serverId": "global",
+			"at": 1793436600791
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793436600791-535554",
+			"serverId": "global",
+			"at": 1793437800382
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1793443200302-944341",
+			"serverId": "global",
+			"at": 1793443200302
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1793443200302-944341",
+			"serverId": "global",
+			"at": 1793445000614
 		}
 	],
 	"lastAutoSpawnAt": 0

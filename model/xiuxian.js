@@ -6274,6 +6274,9 @@ export async function get_random_talent() {
 }
 // 在xiuxian.js中添加这个函数
 export function getMonsterByLocation(weizhi, xf = -1) {
+  // 兜底：部分行动（如灵界裂缝探索）借用秘境状态却没有地点，避免读取 undefined.name 直接抛错
+  if (weizhi == null) weizhi = {};
+  else if (typeof weizhi === 'string') weizhi = { name: weizhi };
   let monster_list;
   
   if (

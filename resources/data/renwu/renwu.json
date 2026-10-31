@@ -1,1 +1,67 @@
-[]
+[
+	{
+		"player": "1553090230",
+		"等级": 1,
+		"经验": 4752,
+		"renwu": 2,
+		"wancheng1": 2,
+		"jilu1": 0,
+		"wancheng2": 2,
+		"jilu2": 0,
+		"wancheng3": 2,
+		"jilu3": 0,
+		"jiequ": []
+	},
+	{
+		"player": "640292421",
+		"等级": 1,
+		"经验": 0,
+		"renwu": 0,
+		"wancheng1": 1,
+		"jilu1": 0,
+		"wancheng2": 1,
+		"jilu2": 0,
+		"wancheng3": 1,
+		"jilu3": 0,
+		"jiequ": []
+	},
+	{
+		"player": "718869764",
+		"等级": 1,
+		"经验": 0,
+		"renwu": 0,
+		"wancheng1": 1,
+		"jilu1": 0,
+		"wancheng2": 1,
+		"jilu2": 0,
+		"wancheng3": 1,
+		"jilu3": 1,
+		"jiequ": []
+	},
+	{
+		"player": "2331561683",
+		"等级": 1,
+		"经验": 0,
+		"renwu": 0,
+		"wancheng1": 1,
+		"jilu1": 0,
+		"wancheng2": 1,
+		"jilu2": 0,
+		"wancheng3": 1,
+		"jilu3": 1,
+		"jiequ": []
+	},
+	{
+		"player": "1492560075",
+		"等级": 1,
+		"经验": 4500,
+		"renwu": 2,
+		"wancheng1": 2,
+		"jilu1": 0,
+		"wancheng2": 2,
+		"jilu2": 0,
+		"wancheng3": 2,
+		"jilu3": 0,
+		"jiequ": []
+	}
+]
