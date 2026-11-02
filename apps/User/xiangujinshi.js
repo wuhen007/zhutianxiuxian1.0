@@ -1,3 +1,4 @@
+import {formatXianguProgression} from '../../model/xianguProgression.js';
 import { plugin, verc, config, data } from '../../api/api.js';
 import fs from 'fs';
 import path from 'node:path';
@@ -220,6 +221,10 @@ export class xiangujinshi extends plugin {
          e.reply(messages);
         return;
     }
+    // 高阶晋升已有专用流程，先给出当前前路，避免落入旧占位回复，
+    // 也不再让普通冲关的位面压制、潜力门槛挡住只读指引。
+    const progression = formatXianguProgression(player);
+    if (progression) return e.reply(progression);
     // 读取位面数据
     let weimianData = {};
     try {
@@ -241,15 +246,6 @@ export class xiangujinshi extends plugin {
     const weimianLevel = weimianData["诸天位面"] || 10;
     const weimianyazhi = 10 - weimianLevel;
     const targetXianguLevel = Number(player.xiangulevel_id) + 1;
-    if (targetXianguLevel === 25) {
-      return e.reply('祭道之上持有已认主的大道至宝后，发送 #证道 即可冲击唯一道之上。');
-    }
-    if (targetXianguLevel === 24) {
-      return e.reply('祭道之上须遭始祖彻底永祭，进入没有任何概念的空间泡影，现实时间720分钟后挣脱；冲关不替代此条件。');
-    }
-    if (targetXianguLevel === 23) {
-      return e.reply('仙帝阶段需另行完成10次 #推演己道，再使用 #祭道；冲关与冲关极境不代替祭道门槛。');
-    }
     const grandUniverse = getPlayerGrandUniverse(data.xiaoshijie, player, usr_qq);
     if (!canBreakthroughXianguRealmHere(player, targetXianguLevel, grandUniverse)) {
       const targetName = data.xiangujinshi_list.find(item => item.level_id == targetXianguLevel)?.level || '仙道领域';
@@ -401,7 +397,7 @@ if (player.xiangulevel_id === 4) {
     }
     const commandRoute = resolveXianguBreakthroughCommand(player.xiangulevel_id, isExtreme);
     if (commandRoute) return await this[commandRoute.method](e, usr_qq, player);
-    return e.reply("后续内容还在更新");
+    return e.reply('当前仙古境界尚未匹配到冲关路线，请使用 #修仙状态 核对境界；本次未扣除资源。');
   }
 
   // 普通搬血境突破
