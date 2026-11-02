@@ -802,9 +802,10 @@ export function getLocationThreshold(player, location) {
     code = met ? null : 'shengxu';
     checks = [{ label: '花粉进化路', display: `花粉 ${huafen}/2，且未兼修其他额外体系`, met }];
   } else if (locationName === '大阴间') {
-    const met = authority >= 20 || (isCultivatingExtraPath(player, 'huafen') && huafen >= 12);
+    // 映照诸天已达小阴间法则上限；先入大阴间，再冲击神祇。
+    const met = authority >= 20 || (isCultivatingExtraPath(player, 'huafen') && huafen >= 11);
     code = met ? null : 'dayinjian';
-    checks = [{ label: '花粉·神祇境', display: `花粉 ${huafen}/12`, met }];
+    checks = [{ label: '花粉·映照诸天', display: `主修花粉 ${huafen}/11，可入大阴间冲击神祇`, met }];
   } else if (locationName === '阳间') {
     // 神将（13）即可入阳间，于法则完整之地冲击神王（14）
     const met = authority >= 20 || (isCultivatingExtraPath(player, 'huafen') && huafen >= 13);
@@ -829,9 +830,12 @@ export function getLocationThreshold(player, location) {
       met,
     }];
   } else if (locationName === '仙域') {
-    const met = mijing >= 18 || xiangu >= 16 || huafen >= 18;
+    // 阳间承载至大宇/究极（17）；主修花粉需在宇究之前有合法入域之路。
+    // 原秘境、仙古及已有花粉高境通行条件保持，只补主修花粉的衔接。
+    const flowerEntry = isCultivatingExtraPath(player, 'huafen') && huafen >= 17;
+    const met = mijing >= 18 || xiangu >= 16 || huafen >= 18 || flowerEntry;
     code = met ? null : 'immortal-domain';
-    checks = [{ label: '仙王境界', display: `秘境 ${mijing}/18、仙古 ${xiangu}/16或花粉 ${huafen}/18`, met }];
+    checks = [{ label: '仙域承载', display: `秘境 ${mijing}/18、仙古 ${xiangu}/16、花粉 ${huafen}/18，或主修花粉 ${huafen}/17（大宇／究极）`, met }];
   } else if (locationName === '异域') {
     const met = authority >= 18;
     code = met ? null : 'foreign-realm';

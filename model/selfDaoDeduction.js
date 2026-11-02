@@ -1,4 +1,4 @@
-import { getRealmAuthorityLevel, getRealmAuthorityPath, hasReachedImmortalEmperor, rememberImmortalEmperorHistory } from './realmAuthority.js';
+import { getRealmAuthorityLevel, getCultivationAuthorityLevel, getRealmAuthorityPath, hasReachedImmortalEmperor, rememberImmortalEmperorHistory } from './realmAuthority.js';
 import { synchronizeCausalFacts } from './worldlineAuthority.js';
 import { tryEternalFateRewrite } from './innateTreasure.js';
 import { hasSuiyunCultivationLifespanImmunity } from './suiyun.js';
@@ -137,7 +137,7 @@ export function getSacrificeDaoAttempts(player) {
 
 export function getSelfDaoDeductionCosts(player) {
   const attempts = Math.max(0, Math.trunc(number(player?.己道推演?.attempts)));
-  const costs = getRealmAuthorityLevel(player) >= 21 ? SACRIFICE_DAO_COSTS
+  const costs = getCultivationAuthorityLevel(player) >= 21 ? SACRIFICE_DAO_COSTS
     : attempts < SELF_DAO_REALM_AWAKENING ? SELF_DAO_COSTS
     : Object.fromEntries(Object.entries(SELF_DAO_COSTS).map(([key, cost]) => [
     key,
@@ -150,7 +150,7 @@ export function getSelfDaoDeductionCosts(player) {
 
 export function getSelfDaoDeductionGate(player) {
   const state = ensureSelfDaoDeduction(player);
-  const authority = getRealmAuthorityLevel(player);
+  const authority = getCultivationAuthorityLevel(player);
   const sacrifice = authority === 21;
   if (authority > 21 || (!sacrifice && state.completed)) return { ok: false, reason: 'completed', state };
   if (state.recovery?.status === 'recovering') return { ok: false, reason: 'recovering', state };

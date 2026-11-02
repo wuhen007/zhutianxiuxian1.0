@@ -94,6 +94,11 @@ export function ensureExtraCultivationState(player) {
 
 export function getActiveExtraCultivationPaths(player) {
   ensureExtraCultivationState(player);
+  // Some older flower saves retain another route's realm numbers (including
+  // inherited progress). Honor their explicit, already-started flower route
+  // without deleting those numbers or allowing cultivation of a second route.
+  // Ambiguous saves with no selected route keep the existing conflict checks.
+  if (player?.额外体系 === 'huafen' && player.huafenlevel_id > 1) return ['huafen'];
   const companionTarget = getXianguCompanionMijingTarget(player);
   const hasXianguCompanionMijing = player?.额外体系 === 'xiangu'
     && player.xiangulevel_id > 1
@@ -185,7 +190,8 @@ export function reforgeExtraCultivationState(player) {
     return { changed: false, changedPaths, previousLevels, nextLevels };
   }
 
-  delete player.额外体系;
+  if (selectedPath === 'huafen' && player.huafenlevel_id > 1) player.额外体系 = selectedPath;
+  else delete player.额外体系;
   ensureExtraCultivationState(player);
 
   // 三条路线的极境属于当前根基，回退后必须重新冲击，避免旧极境继续提供加成。

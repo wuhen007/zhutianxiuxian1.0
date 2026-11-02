@@ -3,6 +3,7 @@ import { addGongfaProficiency, getGongfaProficiencyProfile } from './gongfaProfi
 import { reduceTribulationDamageByDefense } from './tribulationDamage.js';
 import { getPassiveTribulationDamageMultiplier } from './innateTreasure.js';
 import { getExtraCultivationLevelProduct } from './extraCultivation.js';
+import {getFlowerPollenProgression} from './flowerPollenProgression.js';
 
 export const FLOWER_POLLEN_MEDIA = Object.freeze({
   普通进化花粉: Object.freeze({ quality: 1, chance: 0.05, risk: 12, accumulation: 10 }),
@@ -985,7 +986,8 @@ export function getFlowerBreakthroughRule(currentLevelId) {
 }
 
 export function resolveFlowerBreakthrough(player, mediumName, random = Math.random, options = {}) {
-  if (Number(player?.huafenlevel_id) === 23) return { ok: false, reason: 'sacrifice-bubble-required' };
+  const progression=getFlowerPollenProgression(player);
+  if(progression)return {ok:false,reason:progression.reason,progression};
   ensureFlowerPollenState(player);
   const rule = getFlowerBreakthroughRule(player.huafenlevel_id);
   if (!rule) return { ok: false, reason: 'not-required' };
@@ -1027,7 +1029,8 @@ export function resolveFlowerBreakthrough(player, mediumName, random = Math.rand
 }
 
 export function resolveFlowerEvolution(player, mediumName, random = Math.random, options = {}) {
-  if (Number(player?.huafenlevel_id) === 23) return { ok: false, reason: 'sacrifice-bubble-required' };
+  const progression=getFlowerPollenProgression(player);
+  if(progression)return {ok:false,reason:progression.reason,progression};
   ensureFlowerPollenState(player);
   const medium = FLOWER_POLLEN_MEDIA[mediumName];
   if (!medium) return { ok: false, reason: 'unknown-medium' };

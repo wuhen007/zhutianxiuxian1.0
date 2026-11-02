@@ -75,7 +75,8 @@ test('高位面门槛采用三种额外体系中的当前体系', () => {
   assert.equal(getLocationThreshold({ xiangulevel_id: 15 }, '太初星墟').ok, false);
   assert.equal(getLocationThreshold({ huafenlevel_id: 21 }, '时间长河').ok, true);
   assert.equal(getLocationThreshold({ huafenlevel_id: 22 }, '永恒未知之地').ok, true);
-  assert.equal(getLocationThreshold({ huafenlevel_id: 17 }, '仙域').ok, false);
+  assert.equal(getLocationThreshold({ huafenlevel_id: 16 }, '仙域').ok, false);
+  assert.equal(getLocationThreshold({ huafenlevel_id: 17 }, '仙域').ok, true);
   assert.equal(getLocationThreshold({ huafenlevel_id: 18 }, '仙域').ok, true);
   assert.equal(getLocationThreshold({ huafenlevel_id: 15 }, '太初星墟').ok, true);
 });
@@ -99,9 +100,10 @@ test('圣墟三级位面按花粉境界分档且准仙帝可跨越内部界壁',
   assert.equal(getLocationThreshold({ mijinglevel_id: 20, xiangulevel_id: 1 }, '小阴间').ok, true);
   assert.equal(getLocationThreshold({ mijinglevel_id: 19, xiangulevel_id: 1 }, '小阴间').ok, false);
   assert.equal(getLocationThreshold({ 额外体系: 'huafen', huafenlevel_id: 1 }, '小阴间').ok, false);
-  // 大阴间需神祇境(12)、阳间需神将境(13)——神将入阳间冲击神王
+  // 映照（11）先入大阴间冲击神祇；神将（13）先入阳间冲击神王。
   assert.equal(getLocationThreshold({ 额外体系: 'huafen', huafenlevel_id: 12 }, '大阴间').ok, true);
-  assert.equal(getLocationThreshold({ 额外体系: 'huafen', huafenlevel_id: 11 }, '大阴间').ok, false);
+  assert.equal(getLocationThreshold({ 额外体系: 'huafen', huafenlevel_id: 11 }, '大阴间').ok, true);
+  assert.equal(getLocationThreshold({ 额外体系: 'huafen', huafenlevel_id: 10 }, '大阴间').ok, false);
   assert.equal(getLocationThreshold({ 额外体系: 'huafen', huafenlevel_id: 14 }, '阳间').ok, true);
   assert.equal(getLocationThreshold({ 额外体系: 'huafen', huafenlevel_id: 13 }, '阳间').ok, true);
   assert.equal(getLocationThreshold({ 额外体系: 'huafen', huafenlevel_id: 12 }, '阳间').ok, false);

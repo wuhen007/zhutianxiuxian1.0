@@ -1,4 +1,4 @@
-import { getRealmAuthorityLevel, getRealmAuthorityPath } from '../../model/realmAuthority.js';
+import { getCultivationAuthorityLevel, getRealmAuthorityPath } from '../../model/realmAuthority.js';
 import { getFlowerDaoGateState } from '../../model/flowerPollenPath.js';
 import { getSuiyunEffects, hasSuiyunCultivationLifespanImmunity } from '../../model/suiyun.js';
 import { getMemoryEffects } from '../../model/memoryPath.js';
@@ -391,7 +391,7 @@ export function createCultivationSystem(player, rawName, now = Date.now()) {
   if (!name || Array.from(name).length > 5 || /[\r\n#]/.test(name)) {
     return { ok: false, reason: 'name' };
   }
-  if (getRealmAuthorityLevel(player) < 19) return { ok: false, reason: 'realm' };
+  if (getCultivationAuthorityLevel(player) < 19) return { ok: false, reason: 'realm' };
 
   const route = getRealmAuthorityPath(player);
   const routeLabel = {
