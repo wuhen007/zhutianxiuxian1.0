@@ -1526,8 +1526,9 @@ async Gojiehaiplace(e) {
         return false;
     }
     
-    // 检查地点境界要求
-    if (didian === "接引古殿" && player.mijinglevel_id < 18) {
+    // 真身与法身使用相同的三体系等效权柄，不以秘境分支代替玩家实境。
+    const playerLevel = getRealmAuthorityLevel(player);
+    if (didian === "接引古殿" && playerLevel < 18) {
         e.reply([
             `【境界不足】`,
             `接引古殿乃界海禁地，凶险异常！`,
@@ -1539,7 +1540,7 @@ async Gojiehaiplace(e) {
         return false;
     }
     
-    if (didian === "终极古地" && player.mijinglevel_id < 21) {
+    if (didian === "终极古地" && playerLevel < 21) {
         e.reply([
             `【境界不足】`,
             `终极古地乃界海最深处，葬着仙帝尸骸！`,
@@ -1621,7 +1622,6 @@ async Gojiehaiplace(e) {
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
     
     // 构建主文案
-    const playerLevel = player.mijinglevel_id;
     let finalMsg = '';
     
     // 准仙帝文案 (境界20)
