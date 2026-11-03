@@ -1,4 +1,5 @@
 import path from 'node:path';
+import {getFlowerBranchState} from '../../model/flowerPollenBranch.js';
 import { plugin, verc, data } from '../../api/api.js';
 import config from '../../model/Config.js';
 import {
@@ -318,6 +319,7 @@ export class FlowerPollenPath extends plugin {
     const wound = getFlowerDaoWoundState(player);
     const daoGate = getFlowerDaoGateState(player, player.huafenlevel_id);
     const branchProfile = getFlowerBranchProfile(player);
+    const branchState = getFlowerBranchState(player);
     const breakthrough = getFlowerBreakthroughRule(player.huafenlevel_id);
     const tribulationGate = getFlowerTribulationGateState(player, player.huafenlevel_id);
     const authorityLevel = getRealmAuthorityLevel(player);
@@ -338,6 +340,7 @@ export class FlowerPollenPath extends plugin {
       `始祖污染：${pollution.pollution}/100${pollution.polluted ? '（污染期·始祖低语）' : ''}${pollution.marked ? '（始祖印记·成功率-20%）' : ''}`,
       `道伤：${wound.wounds}（花粉属性-${Math.round((1 - wound.attrMultiplier) * 100)}%，进化/渡劫-${Math.round(wound.chancePenalty * 100)}%）`,
       `分支倾向：${branchProfile.name}｜${branchProfile.description}`,
+      branchState.formerBranch?`原进化分支：${branchState.formerBranch}`:branchState.needsReview?'原分支记录待核对；不会按后来补修的极境推测大宇或究极。':'',
       daoGate.rule ? `花粉道则${progression?'（额外修持）':''}：${daoGate.rule.name} ${daoGate.exp}/${daoGate.rule.targetExp}（${daoGate.stage.name}，今日悟道${daoDailyCount}/${daoDailyLimit}${daoDailyCount >= daoDailyLimit ? '，可服大衍悟道丹续道' : ''}）` : '花粉道则：当前境界尚未开启',
       `祖种：${ancestorOwned ? (ancestor.breeding ? `孕育中，剩余${Math.ceil(ancestor.breedingRemainMs / 3600000)}小时` : ancestor.dormant ? `沉寂中，剩余${Math.ceil(ancestor.dormantRemainMs / 3600000)}小时` : '可用') : '未认主'}｜祖种悟道${ancestorOwned ? Math.min(FLOWER_ANCESTOR_WUDAO_LIMIT, ancestor.悟道次数) : 0}/${FLOWER_ANCESTOR_WUDAO_LIMIT}`,
       ancestorOwned && ancestor.待领取异果 > 0 ? `待领取：${SUPER_FLOWER_FRUIT_NAME}×${ancestor.待领取异果}` : '',
@@ -1174,7 +1177,7 @@ export class FlowerPollenPath extends plugin {
       const player = await Read_player(userId);
       if (!selectedFlowerPath(player)) return e.reply('你尚未踏上花粉进化路。');
       const result = completeFlowerExtremeTrial(player);
-      if (result.reason === 'no-trial') return e.reply('当前境界没有尚未完成的极尽蜕变。');
+      if (result.reason === 'no-trial') return e.reply('当前境界没有尚未完成的极尽蜕变。'+(getFlowerBranchState(player).needsReview?'原分支记录待核对，专属大宇／究极试炼暂不按后补极境猜测。':''));
       if (result.reason === 'accumulation') return e.reply(`冲击【${result.trial.name}】需要进化积淀${result.trial.accumulation}，当前${player.进化积淀}。`);
       if (result.reason === 'risk') return e.reply(`冲击【${result.trial.name}】要求花粉隐患不高于${result.trial.maxRisk}，当前${player.花粉隐患}。`);
       await Write_player(userId, player);

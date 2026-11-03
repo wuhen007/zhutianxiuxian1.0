@@ -1,3 +1,5 @@
+import { preserveFlowerBranchAfterReforge } from './flowerPollenBranch.js';
+
 const EXTRA_CULTIVATION_PATHS = Object.freeze({
   mijing: Object.freeze({ field: 'mijinglevel_id', name: '人体秘境体系' }),
   xiangu: Object.freeze({ field: 'xiangulevel_id', name: '仙古今世法' }),
@@ -197,8 +199,8 @@ export function reforgeExtraCultivationState(player) {
   // 三条路线的极境属于当前根基，回退后必须重新冲击，避免旧极境继续提供加成。
   player.极境 = [];
   player.花粉极境 = [];
-  delete player.花粉路分支;
-  delete player.花粉路前身分支;
+  // 分支属于已走过的路线；仍在分支境界时保留，重入十七境时才重新择路。
+  preserveFlowerBranchAfterReforge(player, previousLevels.huafen, nextLevels.huafen);
   if (nextLevels.xiangu < 8) {
     delete player.xiangu_shenhuo;
   } else if (player.xiangu_shenhuo && typeof player.xiangu_shenhuo === 'object') {

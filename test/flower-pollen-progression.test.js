@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import * as progression from '../model/flowerPollenProgression.js';
+import * as branch from '../model/flowerPollenBranch.js';
 import {withPlayerMutationLock,getPlayerMutationLockStats} from '../utils/playerMutationLock.js';
 import {FileRollbackTransaction} from '../apps/SecretPlace/rebirthTransaction.js';
 
@@ -12,7 +13,7 @@ import {FileRollbackTransaction} from '../apps/SecretPlace/rebirthTransaction.js
 const modelSource=fs.readFileSync(new URL('../model/flowerPollenPath.js',import.meta.url),'utf8');
 const exports=[...modelSource.matchAll(/^export (?:const|function) (\w+)/gm)].map(match=>match[1]);
 const modelBody=modelSource.replace(/^import .*;\r?\n/gm,'').replace(/^export \{[^\n]+\};?\r?\n?/gm,'').replace(/^export /gm,'');
-const modelDeps={...progression,hasSuiyunAuthority:()=>false,addGongfaProficiency:()=>({gained:0}),getGongfaProficiencyProfile:()=>({exp:0}),reduceTribulationDamageByDefense:damage=>({damage,reduction:0}),getPassiveTribulationDamageMultiplier:()=>1,getExtraCultivationLevelProduct:()=>1};
+const modelDeps={...progression,...branch,hasSuiyunAuthority:()=>false,addGongfaProficiency:()=>({gained:0}),getGongfaProficiencyProfile:()=>({exp:0}),reduceTribulationDamageByDefense:damage=>({damage,reduction:0}),getPassiveTribulationDamageMultiplier:()=>1,getExtraCultivationLevelProduct:()=>1};
 const model=new Function(...Object.keys(modelDeps),modelBody+';return {'+exports.join(',')+'};')(...Object.values(modelDeps));
 const appSource=fs.readFileSync(new URL('../apps/User/FlowerPollenPath.js',import.meta.url),'utf8').replace(/^import[\s\S]*?;\r?\n/gm,'').replace(/^export /gm,'');
 const realms=JSON.parse(fs.readFileSync(new URL('../resources/data/Level/花粉进化路体系.json',import.meta.url),'utf8'));
@@ -32,7 +33,7 @@ function fixture({level=4,medium='普通进化花粉',pollenCount=3,random=()=>0
  const replies=[],flags={busy:false,tribulation:false,fence:false,failBag:false,throwBag:false,failPlayer:false,throwPlayer:false,failRebuild:false,throwRebuild:false,seedOwned,throwReply:false};
  const read=key=>JSON.parse(fs.readFileSync(files[key],'utf8'));
  const save=(key,value)=>fs.writeFileSync(files[key],JSON.stringify(value));
- const deps={...model,...progression,path,__PATH,FileRollbackTransaction,withPlayerMutationLock,plugin:class{constructor(options){Object.assign(this,options);}},verc:()=>true,data:{huafen_list:realms,xiaoshijie:[],minggeList:[]},config:{getConfig:()=>({Era:{current:{index:2}}})},channel:async()=> 'fixture',existplayer:async()=>true,
+ const deps={...model,...progression,...branch,path,__PATH,FileRollbackTransaction,withPlayerMutationLock,plugin:class{constructor(options){Object.assign(this,options);}},verc:()=>true,data:{huafen_list:realms,xiaoshijie:[],minggeList:[]},config:{getConfig:()=>({Era:{current:{index:2}}})},channel:async()=> 'fixture',existplayer:async()=>true,
   Read_player:async()=>read('player_path'),Read_najie:async()=>read('najie_path'),Read_equipment:async()=>read('equipment_path'),
   Write_player:async(_,value)=>{writes++;assert.equal(getPlayerMutationLockStats('fixture').active,true);if(flags.throwPlayer){save('player_path',value);throw Error('fixture interrupted player write');}if(flags.failPlayer)return false;save('player_path',value);return true;},
   Write_equipment:async(_,value)=>{rebuilds++;assert.equal(getPlayerMutationLockStats('fixture').active,true);const next=read('player_path');next.攻击=next.huafenlevel_id*100+7;next.防御=next.huafenlevel_id*100+11;save('player_path',next);save('equipment_path',{...value,fixtureRebuilt:true});if(flags.throwRebuild)throw Error('fixture rebuild interrupted');if(flags.failRebuild)return false;},
