@@ -54,7 +54,7 @@ import {
   PLACE_LOCATION_MAP,
   ZHETIAN_ENTRY_AUTHORITY_LEVEL,
 } from '../../model/weimianTravel.js';
-import { getRealmAuthorityLevel } from '../../model/realmAuthority.js';
+import { getRealmAuthorityLevel, getRealmAuthorityPath } from '../../model/realmAuthority.js';
 import { getPlayerPlaneCoordinate } from '../../model/planeCoords.js';
 import { hasEquippedInnateTreasure } from '../../model/innateTreasure.js';
 import {
@@ -3891,11 +3891,15 @@ async poWangChengDi(e) {
   const equipment = await Read_equipment(usr_qq);
 
   /* ====== 基础校验 ====== */
-  const emperorGate = getBreakKingEmperorGate(player, player.自创修炼体系?.route);
+  const activeRoute = getRealmAuthorityPath(player);
+  const emperorGate = getBreakKingEmperorGate(player, activeRoute);
   if (emperorGate.reason === 'realm' || emperorGate.reason === 'route') {
     return e.reply('需先抵达当前修炼体系的准仙帝前一境，方可破王成帝。');
   }
   if (emperorGate.reason === 'system') {
+    if (player.自创修炼体系?.name && player.自创修炼体系.route && player.自创修炼体系.route !== activeRoute) {
+      return e.reply(`你已转修当前道途，旧道统【${player.自创修炼体系.name}】尚未续接。请先圆满当前主修道则，再发送 #合道 ${player.自创修炼体系.name}；续接后仍须完成本路线帝劫。`);
+    }
     return e.reply('帝路尚缺最后一步：请先圆满本体系道则，再发送 #合道 体系名（不超过五字）。');
   }
   if (emperorGate.reason === 'destroyed') {

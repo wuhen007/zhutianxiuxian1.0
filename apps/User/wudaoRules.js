@@ -1,4 +1,5 @@
 import { getCultivationAuthorityLevel, getRealmAuthorityPath } from '../../model/realmAuthority.js';
+import {prepareCultivationSystemContinuation,recordCultivationSystemContinuation} from '../../model/cultivationSystemContinuation.js';
 import { getFlowerDaoGateState } from '../../model/flowerPollenPath.js';
 import { getSuiyunEffects, hasSuiyunCultivationLifespanImmunity } from '../../model/suiyun.js';
 import { getMemoryEffects } from '../../model/memoryPath.js';
@@ -386,27 +387,32 @@ export function completeDaoByNineLives(player, daoFruit = '', now = Date.now()) 
 
 /** 在仙王巨头圆满诸天道则后，记录玩家独有的修炼体系。 */
 export function createCultivationSystem(player, rawName, now = Date.now()) {
-  if (player?.自创修炼体系) return { ok: false, reason: 'exists', system: player.自创修炼体系 };
+  const route = getRealmAuthorityPath(player);
+  const continuation = prepareCultivationSystemContinuation(player,route,rawName,now);
+  if(!continuation.ok)return continuation;
   const name = String(rawName ?? '').trim();
   if (!name || Array.from(name).length > 5 || /[\r\n#]/.test(name)) {
     return { ok: false, reason: 'name' };
   }
   if (getCultivationAuthorityLevel(player) < 19) return { ok: false, reason: 'realm' };
 
-  const route = getRealmAuthorityPath(player);
+  // Failed continuation must leave old and new route records untouched.
+  const subject = continuation.adapted ? structuredClone(player) : player;
   const routeLabel = {
     mijing: '遮天人体秘境',
     xiangu: '仙古今世法',
     huafen: '花粉进化路',
   }[route];
   const gate = route === 'xiangu'
-    ? getXianguDaoGateState(player, 20)
+    ? getXianguDaoGateState(subject, 20)
     : route === 'huafen'
-      ? getFlowerDaoGateState(player, 19)
-      : getDaoGateState(player, 19);
+      ? getFlowerDaoGateState(subject, 19)
+      : getDaoGateState(subject, 19);
   if (!gate.ok) return { ok: false, reason: 'dao', gate };
 
-  const system = {
+  const system = continuation.adapted ? {
+    ...continuation.previous,route,source:`${routeLabel}道果合流`,stage:'道祖体系',continuedAt:now,
+  } : {
     name,
     founder: player?.名号 || '',
     source: `${routeLabel}道果合流`,
@@ -414,19 +420,28 @@ export function createCultivationSystem(player, rawName, now = Date.now()) {
     createdAt: now,
     stage: '道祖体系',
   };
-  player.自创修炼体系 = system;
+  subject.自创修炼体系 = system;
   const path = route === 'xiangu'
-    ? ensureXianguDaoPath(player).path
+    ? ensureXianguDaoPath(subject).path
     : route === 'huafen'
       ? gate.path
-      : ensureDaoPath(player, { migrateLegacy: false }).path;
+      : ensureDaoPath(subject, { migrateLegacy: false }).path;
+  if(continuation.adapted)recordCultivationSystemContinuation(subject,continuation,gate,path.result);
   path.result = {
     name: `${name}·开道者`,
-    method: '合道',
+    method: continuation.adapted ? '转修续接' : '合道',
     inherited: path.result?.name || '九世圆满大道',
     achievedAt: now,
   };
-  return { ok: true, system, path: path.result };
+  if(continuation.adapted){
+    // Only the chosen system binding and the target route's attainment change.
+    // Every old realm, deduction, item and route-specific emperor trial remains.
+    player.自创修炼体系=subject.自创修炼体系;
+    player.合道续接记录=subject.合道续接记录;
+    const field=route==='huafen'?'花粉道途':route==='xiangu'?'仙古道途':'道途';
+    player[field]=subject[field];
+  }
+  return { ok: true, system, path: path.result, ...(continuation.adapted?{adapted:true,previousRoute:continuation.from}: {}) };
 }
 
 export function getDaoGateState(player, realmId) {
