@@ -1,4 +1,4 @@
-import {formatXianguProgression} from '../../model/xianguProgression.js';
+import {formatXianguProgression,getXianguImmortalAccessGuide} from '../../model/xianguProgression.js';
 import { plugin, verc, config, data } from '../../api/api.js';
 import fs from 'fs';
 import path from 'node:path';
@@ -246,14 +246,19 @@ export class xiangujinshi extends plugin {
     const weimianLevel = weimianData["诸天位面"] || 10;
     const weimianyazhi = 10 - weimianLevel;
     const targetXianguLevel = Number(player.xiangulevel_id) + 1;
-    const grandUniverse = getPlayerGrandUniverse(data.xiaoshijie, player, usr_qq);
+    // Visitors cultivate under the laws of the universe they actually entered.
+    // A missing visited host must not silently fall back to an owned universe.
+    const universeOwner = player.大宇宙位置?.界主 || usr_qq;
+    const grandUniverse = getPlayerGrandUniverse(data.xiaoshijie, player, universeOwner);
     if (!canBreakthroughXianguRealmHere(player, targetXianguLevel, grandUniverse)) {
       const targetName = data.xiangujinshi_list.find(item => item.level_id == targetXianguLevel)?.level || '仙道领域';
       return e.reply([
         '【仙域法则未至·仙道难成】',
         `${player.名号}欲冲击${targetName}，当前所在之地尚不足以承载此道果。`,
         '真仙至帝光仙王须身处仙域，或身处法则足够完整的玩家大宇宙。',
-      ].join('\n'));
+        player.大宇宙位置?.界主 ? '当前访问宇宙尚未具备本次目标境界的承载条件，请核对界主的法则进度。' : '',
+        ...getXianguImmortalAccessGuide(player),
+      ].filter(Boolean).join('\n'));
     }
     const targetingQuasiEmperor = targetXianguLevel === 21;
     const quasiEmperorGate = targetingQuasiEmperor

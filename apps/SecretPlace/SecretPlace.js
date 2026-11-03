@@ -119,6 +119,7 @@ import {
     getRedDustFortuneType,
 } from '../../model/redDustFortune.js';
 import { getRealmAuthorityLevel } from '../../model/realmAuthority.js';
+import {getXianguImmortalAccessGuide} from '../../model/xianguProgression.js';
 import { BINGZI_FRAGMENT, BINGZI_TECHNIQUE } from '../../model/bingziLegacy.js';
 import {
     findSectWarProduct,
@@ -3974,6 +3975,8 @@ async checkLocationThreshold(player, location) {
                 `- 仙域界壁流淌着原始真解之力`,
                 `- 人体秘境18级、仙古今世法16级，或花粉18级可依原规则叩关`,
                 `- 主修花粉达到大宇／究极（17级）即可先入仙域，再冲击宇究`,
+                `当前角色：人体秘境${Number(player.mijinglevel_id)||1}级｜仙古今世法${Number(player.xiangulevel_id)||1}级｜花粉${Number(player.huafenlevel_id)||1}级`,
+                ...getXianguImmortalAccessGuide(player),
                 ``,
                 `「先承仙域法则，再续自身道途。」`,
                 `界壁后传来冷漠的道音`

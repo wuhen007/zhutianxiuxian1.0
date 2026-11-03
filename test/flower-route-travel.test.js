@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {getLocationThreshold,getLocationName,getBaseTravelThreshold,getBodyTravelQuote,hasCoordinate,purchaseCoordinateClue,COORDINATE_CLUE_COST,PLACE_LOCATION_MAP} from '../model/weimianTravel.js';
 import {checkPlaneRealmLaw,PLANE_REALM_LAW} from '../model/planeRealmLaw.js';
+import {getXianguImmortalAccessGuide} from '../model/xianguProgression.js';
 
 const flower=(level,extra={})=>({额外体系:'huafen',huafenlevel_id:level,mijinglevel_id:1,xiangulevel_id:1,level_id:42,Physique_id:42,power_place:0,记忆坐标:['凡间'],...extra});
 const source=fs.readFileSync(new URL('../apps/SecretPlace/SecretPlace.js',import.meta.url),'utf8');
 const start=source.indexOf('async checkLocationThreshold(player, location) {'),end=source.indexOf('// 查询玩家是否处于传送/秘境等动作中',start);
 assert.ok(start>=0&&end>start);
-const actualEntrance=new Function('getLocationName','getLocationThreshold','return ({'+source.slice(start,end)+'}).checkLocationThreshold;')(getLocationName,getLocationThreshold);
+const actualEntrance=new Function('getLocationName','getLocationThreshold','getXianguImmortalAccessGuide','return ({'+source.slice(start,end)+'}).checkLocationThreshold;')(getLocationName,getLocationThreshold,getXianguImmortalAccessGuide);
 
 test('natural pollen frontier matrix reaches the next legal map before each realm-cap transition',async()=>{
  const cases=[{level:11,from:'小阴间',to:'大阴间',target:12},{level:13,from:'大阴间',to:'阳间',target:14},{level:17,from:'阳间',to:'仙域',target:18}];

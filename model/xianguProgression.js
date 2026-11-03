@@ -1,4 +1,19 @@
 const amount=x=>Number.isFinite(Number(x))?Math.max(0,Math.trunc(Number(x))):0;
+/** Existing alternatives for a supreme cultivator who has not reached the
+ * ordinary true-immortal travel threshold. This only explains the routes. */
+export function getXianguImmortalAccessGuide(player){
+ const xiangu=amount(player?.xiangulevel_id);
+ const selected=player?.额外体系==='xiangu'||(!player?.额外体系&&xiangu===15&&amount(player?.huafenlevel_id)<=1);
+ if(!selected||xiangu!==15)return [];
+ const lives=Math.min(9,Math.max(0,amount(player?.nihuo_count)-1));
+ const lines=['【仙古至尊·成仙通路】',
+  '普通穿梭仙域的真仙门槛仍适用；至尊冲真仙还可沿以下原有通路前行：',
+  '借界冲关：#大宇宙列表 → #进入大宇宙 宇宙名（或@界主）→ #冲关。须实际进入对外开放、法则能承载真仙的宇宙；诸天位面、道途与资粮条件照常核验。',
+  '红尘仙路：当前九世逆活已完成'+lives+'/9世。'];
+ if(lives<9)lines.push('可先 #打听天机 红尘仙，再按 #推演红尘仙、#立下世愿 化凡/争渡/逆天 与 #逆活九世 的原条件修行。');
+ lines.push('完成红尘仙路后，在遮天位面且帝尊已灭、成仙路开启时，可用 #轰击成仙路 入仙域；到达后再 #冲关。是否开路以所在服务器世界状态为准。');
+ return lines;
+}
 /** Pure guidance for the existing high-realm systems. No grant, resource
  * consumption, trial normalization or realm advancement happens here. */
 export function formatXianguProgression(player){

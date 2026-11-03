@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {formatXianguProgression} from '../model/xianguProgression.js';
+import {formatXianguProgression,getXianguImmortalAccessGuide} from '../model/xianguProgression.js';
 import {canCultivateExtraPath,getActiveExtraCultivationPaths,getExtraCultivationPathName} from '../model/extraCultivation.js';
 const source=fs.readFileSync(new URL('../apps/User/xiangujinshi.js',import.meta.url),'utf8'),start=source.indexOf('  async chongguan(e) {'),end=source.indexOf('  // 普通搬血境突破',start);
 assert.ok(start>=0&&end>start);
@@ -10,7 +10,7 @@ const resolve=new Function(settlement.slice(rs,re).replace(/^export /gm,'')+';re
 const rootFixture=level=>({id:'mapped',额外体系:'xiangu',xiangulevel_id:level,mijinglevel_id:1,huafenlevel_id:1,level_id:42,Physique_id:42,仙道潜力:1000,修为:1e12,血气:1e12,当前血量:1e10,极境:[]});
 function harness(level,extra={}){
  const player={...rootFixture(level),...extra},responses=[],calls=[];let reads=0;
- const deps={formatXianguProgression,canCultivateExtraPath,getActiveExtraCultivationPaths,getExtraCultivationPathName,channel:async id=>{assert.equal(id,'channel-fixture');return 'mapped';},existplayer:async id=>id==='mapped',Read_player:async()=>structuredClone(player),redis:{get:async()=>null},isNotNull:x=>x!==undefined&&x!==null,
+ const deps={formatXianguProgression,getXianguImmortalAccessGuide,canCultivateExtraPath,getActiveExtraCultivationPaths,getExtraCultivationPathName,channel:async id=>{assert.equal(id,'channel-fixture');return 'mapped';},existplayer:async id=>id==='mapped',Read_player:async()=>structuredClone(player),redis:{get:async()=>null},isNotNull:x=>x!==undefined&&x!==null,
  fs:{existsSync:()=>{reads++;return true;},readFileSync:()=>JSON.stringify({诸天位面:20})},data:{filePathMap:{weimianList:'fixture'},xiaoshijie:[],xiangujinshi_list:Array.from({length:25},(_,i)=>({level_id:i+1,level:'原境'+(i+1)}))},getPlayerGrandUniverse:()=>null,canBreakthroughXianguRealmHere:()=>true,canEnterQuasiEmperor:()=>({ok:true}),applyQuestionFortuneCost:(_,n)=>n,normalizeXianguExtremeRealms:p=>{p.极境||=[];},resolveXianguBreakthroughCommand:resolve};
  const fn=new Function(...Object.keys(deps),'return ({'+source.slice(start,end)+'}).chongguan;')(...Object.values(deps));
  const target=new Proxy({},{get:(_,key)=>(...args)=>{calls.push({method:key,args});return 'dispatched';}});
