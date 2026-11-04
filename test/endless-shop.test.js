@@ -18,6 +18,8 @@ import {
   calculateEquippedStats,
   calculateEquipmentSetBonuses,
 } from '../model/equipmentStats.js';
+import { createSuiyunRoot, getSuiyunLotusBonus } from '../model/suiyun.js';
+import { hasSuiyunSovereignTravelSet } from '../model/weimianTravel.js';
 
 const itemDir = fileURLToPath(new URL('../resources/data/item/', import.meta.url));
 const shopData = JSON.parse(
@@ -101,6 +103,37 @@ test('万象归一消耗材料并保留套装数值和百分比属性', () => {
   assert.ok(Math.abs(result.equipment.武器.bao - 0.3) < 1e-12);
   assert.equal(result.najie.装备.length, 0);
   assert.equal(result.najie.道具.length, 0);
+});
+
+test('岁云套与霜月套六件均可万象归一，保留认主、固定值、套装、通行和莲成长', () => {
+  const catalog = JSON.parse(fs.readFileSync(`${itemDir}/特殊装备列表.json`, 'utf8'));
+  for (const [set, root, multiplier] of [
+    ['岁云剑尊套', createSuiyunRoot(5), 19],
+    ['霜月剑尊套', createSuiyunRoot(3), 9],
+  ]) {
+    let equipment = Object.fromEntries(catalog.filter(item => item.套装 === set).map(item =>
+      [item.type, { ...structuredClone(item), 绑定者: 'owner', author_name: 'owner' }]));
+    const player = { id: 'owner', 灵根: root, 岁云: { 累计炼化月华: 10 } };
+    const oldLotus = getSuiyunLotusBonus(player, equipment);
+    for (const slot of ['武器', '护具', '法宝']) {
+      const original = structuredClone(equipment[slot]);
+      const najie = { 装备: [{ name: '百分比材料', type: slot, atk: 2, def: 1, HP: 3, 数量: 1 }],
+        道具: [{ name: FUSION_ITEM, 数量: 1 }] };
+      const merged = mergeSetEquipment(equipment, najie, slot, '百分比材料');
+      assert.deepEqual(equipment[slot], original, '原输入不被修改');
+      equipment = merged.equipment;
+      for (const field of ['id', 'name', '套装', 'atk', 'def', 'HP', '绑定者', 'author_name']) {
+        assert.deepEqual(equipment[slot][field], original[field], field);
+      }
+      assert.deepEqual(equipment[slot].归一属性.百分比, { atk: 2, def: 1, HP: 3 });
+      assert.equal(merged.najie.装备.length, 0);
+      assert.equal(merged.najie.道具.length, 0);
+      assert.throws(() => mergeSetEquipment(equipment, najie, slot, '百分比材料'), /已经完成/);
+    }
+    assert.deepEqual(calculateEquipmentSetBonuses(player, equipment), { 攻: multiplier, 防: multiplier, 血: multiplier });
+    assert.deepEqual(getSuiyunLotusBonus(player, equipment), oldLotus);
+    if (set === '岁云剑尊套') assert.equal(hasSuiyunSovereignTravelSet(player, equipment), true);
+  }
 });
 
 test('万象归一后的固定值、百分比与原套装效果共同进入面板', () => {

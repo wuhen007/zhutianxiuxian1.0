@@ -430,6 +430,48 @@ test('月华救赎可从大牢捞人：消耗200点、清空关押态、气血�
   assert.equal(f.players.other.救赎记录.at(-1).类型, '岁云剑宫月华救赎·解放');
 });
 
+test('救赎道伤对自己及他人均为100月华，清除修复进度且保留本源、修为和成长', async () => {
+  const f = fixture();
+  Object.assign(f.players.owner, { 月华值: 500, 道伤: 9.5, 道伤修复度: 1000, 生命本源: 30, 岁云之力: 7 });
+  f.players.owner.岁云.累计炼化月华 = 1234;
+  assert.match(await f.app.redeem(f.event('#月华救赎 道伤')), /道伤已完全修复/);
+  assert.equal(f.players.owner.道伤, 0);
+  assert.equal(f.players.owner.道伤修复度, undefined);
+  assert.equal(f.players.owner.月华值, 400);
+  assert.equal(f.players.owner.生命本源, 30);
+  assert.equal(f.players.owner.岁云之力, 7);
+  assert.equal(f.players.owner.岁云.累计炼化月华, 1234);
+  f.players.other = { 名号: '伤者', 灵根: { name: '凡体' }, 道伤: 2, 生命本源: 20, 修为: 1000 };
+  f.values.set('xiuxian:player:other:action', JSON.stringify({ heianlaolong: true }));
+  assert.match(await f.app.redeem(f.event('#月华救赎', { at: 'other', message: [
+    { type: 'text', text: '#月华救赎 ' }, { type: 'at', qq: 'other' }, { type: 'text', text: '修复道伤' },
+  ] })), /伤者的道伤已完全修复/);
+  assert.equal(f.players.other.道伤, 0);
+  assert.equal(f.players.other.生命本源, 20);
+  assert.equal(f.players.other.修为, 1000);
+  assert.equal(f.players.owner.月华值, 300);
+  assert.equal(f.values.has('xiuxian:player:other:action'), true);
+});
+
+test('修复道伤余额不足、无伤、写入失败和并发操作均不产生重复扣费或半完成状态', async () => {
+  const f = fixture();
+  Object.assign(f.players.owner, { 月华值: 99, 道伤: 2, 道伤修复度: 100 });
+  assert.match(await f.app.redeem(f.event('#月华救赎道伤')), /修复全部道伤需要100点/);
+  assert.equal(f.players.owner.道伤, 2);
+  assert.equal(f.players.owner.月华值, 99);
+  f.players.owner.月华值 = 100;
+  f.failWrite = true;
+  await assert.rejects(f.app.redeem(f.event('#月华救赎 道伤')), /injected-write-error/);
+  assert.equal(f.players.owner.道伤, 2);
+  assert.equal(f.players.owner.道伤修复度, 100);
+  assert.equal(f.players.owner.月华值, 100);
+  const replies = await Promise.all([f.app.redeem(f.event('#月华救赎 道伤')), f.app.redeem(f.event('#月华救赎 道伤'))]);
+  assert.equal(replies.filter(reply => reply.includes('道伤已完全修复')).length, 1);
+  assert.equal(f.players.owner.道伤, 0);
+  assert.equal(f.players.owner.月华值, 0);
+  assert.match(await f.app.redeem(f.event('#月华救赎 其他')), /用法/);
+});
+
 test('月华救赎余额不足拒绝且零扣费，写入失败不扣月华', async () => {
   const f = fixture();
   f.players.owner.月华值 = 99;
