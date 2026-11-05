@@ -1,16 +1,31 @@
 <div align="center">
 <br>
 <h1>诸天万界修仙V1.0「遮天三部曲」
-<img src='https://gitee.com/mo-wuming/zhutianxiuxian1.0/badge/star.svg?theme=dark'  alt='star'></img>
+<img src='https://img.shields.io/github/stars/wuhen007/zhutianxiuxian1.0?style=social' alt='star'></img>
 </h1>
 </br>
 </div> 
        
+## 仓库来源与致谢
+
+> 本仓库是 **Gitee 原仓库 `mo-wuming/zhutianxiuxian1.0` 的继承（个人维护分支）**，并非原作者的官方仓库。
+
+| 项目 | 信息 |
+| --- | --- |
+| 原仓库 | <https://gitee.com/mo-wuming/zhutianxiuxian1.0> |
+| 原作者 | **莫无铭**（Gitee [@mo-wuming](https://gitee.com/mo-wuming)） |
+| 原项目 | 诸天万界修仙 V1.0「遮天三部曲」；基于云崽机器人运行、绝云间修仙框架魔改 |
+| 开源协议 | **GPL-2.0**（沿用原仓库许可） |
+| 更早的源头 | [绝云间修仙 V1.3.0](https://gitee.com/hutao222/DDZS-XIUXIAN-V1.3.0)，原作者 [@DD斩首](https://gitee.com/hutao222) |
+| 本仓库 | <https://github.com/wuhen007/zhutianxiuxian1.0>（wuhen007 个人维护） |
+
+本分支在原版基础上做了部署与功能层面的本地化修改：QQ 官方机器人通道接入与代发、玩法管理权限下放群主、区服名与跨服频道、轮回转世掉落保护期与播报、以及若干玩法与文案调整。**玩法主体、素材与原始设计版权归原作者及社区贡献者所有**，此处仅作个人使用与维护记录，感谢原作者的开源工作。
+
 ## 安装      
 
 > Miao-Yunzai/Yunzai-Bot/目录下执行  
 ```
-git clone https://gitee.com/mo-wuming/zhutianxiuxian1.0.git ./plugins/zhutianxiuxian1.0/
+git clone https://github.com/wuhen007/zhutianxiuxian1.0.git ./plugins/zhutianxiuxian1.0/
 
 
 ```   
