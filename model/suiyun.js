@@ -22,13 +22,13 @@ export const SUIYUN_PALACE_POTENTIAL_PER_HOUR = 50;
 export const SUIYUN_PALACE_POWER_STAGE = 4;
 export const SUIYUN_PALACE_POWER_PER_HOUR = .5;
 export const SUIYUN_EXCLUSIVE_SKILLS = Object.freeze(['霜剑入月', '岁云归一', '白云苍狗']);
-export const SUIYUN_GIFT_LIMIT = 3;
+export const SUIYUN_GIFT_LIMIT = 5;
 export const SUIYUN_PALACE_DUNGEON = '岁云殿堂';
 // 第6条：觉醒残念即自动入主「岁云剑宫」，宫主专属帝经与势力商店。
 export const SUIYUN_PALACE_FACTION = '岁云剑宫';
 export const SUIYUN_PALACE_POSITION = '宫主';
 export const SUIYUN_PALACE_TECHNIQUE = '岁云化月';
-// 第2条：月华救赎——100点月华恢复满生命本源（可对他人），200点从大牢捞人。
+// 月华救赎：修复本源或道伤均为100点月华，可对他人；从大牢捞人为200点。
 export const SUIYUN_REDEEM_LIFE_COST = 100;
 export const SUIYUN_REDEEM_RESCUE_COST = 200;
 // 第7条：如月长存为岁云灵根自带的渡劫复活被动，亦可由他人双修习得。

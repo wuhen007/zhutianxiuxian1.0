@@ -1207,8 +1207,8 @@ async changeAptitude(e) {
         return;
     }
     
-    // 祭道成功率与失败处理
-    const successRate = 0.5; // 50%成功率
+    // 岁云五阶段通过原有门槛后祭道必成，其他灵根保留50%成功率。
+    const successRate = getSuiyunStage(player) ? 1 : 0.5;
     const randomValue = Math.random();
     
     if (randomValue > successRate) {
@@ -1326,7 +1326,7 @@ async changeAptitude(e) {
             await Write_player(usr_qq, player);
         }
     } else {
-        // 40%概率成功
+        // 祭道成功
         player.修为 = 0;
         player.血气 = 0;
         promotePlayerToSacrifice(player);

@@ -14,6 +14,7 @@ import {
   formatRealmEventTravel,
 } from './realmEventLocation.js';
 import { hasRealmAuthority } from './realmAuthority.js';
+import { SUIYUN_EQUIPMENT, SUIYUN_FROST_EQUIPMENT } from './suiyun.js';
 
 const shopPath = fileURLToPath(
   new URL('../resources/data/无尽商店.json', import.meta.url)
@@ -29,6 +30,7 @@ export const ENDLESS_SHOP = Object.freeze(
 );
 
 const SET_PIECES = new Set([
+  ...SUIYUN_EQUIPMENT, ...SUIYUN_FROST_EQUIPMENT,
   '灭仙剑', '灭仙符', '灭仙衣',
   '诛仙枪', '诛仙花', '诛仙甲',
   '光明剑', '光明符', '光明衣',

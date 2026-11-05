@@ -32,7 +32,7 @@ function readSlot(file, slot) {
     return claim;
   } catch (error) {
     if (error.code === 'ENOENT') return null;
-    // 损坏记录继续占位，避免将同一名额另发给第四位修士。
+    // 损坏记录继续占位，避免重复发放同一名额。
     throw error;
   }
 }
@@ -57,7 +57,7 @@ export async function withSuiyunGiftClaim(ownerId, recipientId, recipientName, g
       for (let slot = 1; slot <= SUIYUN_GIFT_LIMIT; slot++) {
         const candidate = { ownerId, recipientId, recipientName: String(recipientName || recipientId), slot, at: now, delivered: false };
         try {
-          // 全服三份独占记录：即使多个进程同时赐予，也最多保留三个受赐者。
+          // 全服五份独占记录：多个进程同时赐予也受席位上限约束。
           createSlot(file, candidate);
           claim = candidate;
           break;
@@ -68,7 +68,7 @@ export async function withSuiyunGiftClaim(ownerId, recipientId, recipientName, g
         }
       }
     }
-    if (!claim) return { ok: false, reason: '月华传承的三个名额已用尽。' };
+    if (!claim) return { ok: false, reason: `月华传承的${SUIYUN_GIFT_LIMIT}个名额已用尽，请先 #收回月华 @目标 释放原席。` };
     if (claim.delivered) return { ok: true, alreadyGranted: true, claim };
     if (claim.ownerId !== ownerId) return { ok: false, reason: '这位修士已有待完成的月华传承，请由原授予者继续赐予。', claim };
     // 先占位后落玩家存档；不确定的写入失败保留该席，原目标重试补齐，不换人重发。
@@ -76,5 +76,26 @@ export async function withSuiyunGiftClaim(ownerId, recipientId, recipientName, g
     const completed = { ...claim, delivered: true };
     writeJsonAtomically(slotFile(file, claim.slot), completed);
     return { ok: true, alreadyGranted: false, claim: completed };
+  });
+}
+
+export async function revokeSuiyunGift(ownerId, recipientId, revoke, { file = SUIYUN_GIFT_FILE } = {}) {
+  ownerId = String(ownerId || '').trim();
+  recipientId = String(recipientId || '').trim();
+  if (!ownerId || !recipientId || ownerId === recipientId || typeof revoke !== 'function') {
+    throw new TypeError('收回月华需要授予者、受赐者与收回步骤');
+  }
+  return withPlayerMutationLock(`suiyun-gift:${file}`, async () => {
+    const claim = readSuiyunGifts({ file }).find(entry => entry.recipientId === recipientId);
+    if (!claim) return { ok: false, reason: '这位修士未占用月华传承名额。' };
+    if (claim.ownerId !== ownerId) return { ok: false, reason: '请由原授予者收回这份月华传承。' };
+    // 先移除玩家战技再释放席位；中断时原席仍在，可向同一目标重试收回。
+    if (await revoke(claim) === false) return { ok: false, reason: '月华传承尚未收回，请向同一目标重试。' };
+    const current = readSlot(file, claim.slot);
+    if (!current || JSON.stringify(current) !== JSON.stringify(claim)) {
+      throw new Error('月华席位已变化，请重新查看名额。');
+    }
+    fs.unlinkSync(slotFile(file, claim.slot));
+    return { ok: true, claim };
   });
 }

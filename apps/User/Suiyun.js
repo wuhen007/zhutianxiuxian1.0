@@ -19,7 +19,7 @@ import {
   SUIYUN_REDEEM_LIFE_COST, SUIYUN_REDEEM_RESCUE_COST,
 } from '../../model/suiyun.js';
 import { claimSuiyunUnique, releaseSuiyunUnique } from '../../model/suiyunRegistry.js';
-import { readSuiyunGifts, withSuiyunGiftClaim, SUIYUN_GIFT_LIMIT } from '../../model/suiyunGift.js';
+import { readSuiyunGifts, withSuiyunGiftClaim, revokeSuiyunGift, SUIYUN_GIFT_LIMIT } from '../../model/suiyunGift.js';
 import { SUIYUN_EXCLUSIVE_SKILLS } from '../../model/suiyun.js';
 import { getLifeSourceRepairMaximum } from '../../model/lifeSourceRepair.js';
 import { recordFactionJoin } from '../../model/factionSystem.js';
@@ -109,6 +109,7 @@ export class Suiyun extends plugin {
         { reg: '^#(?:岁云剑宫商店|剑宫商店)$', fnc: 'showPalaceShop' },
         { reg: '^#云月之莲$', fnc: 'showLotus' },
         { reg: '^#赐予月华.*$', fnc: 'gift' },
+        { reg: '^#收回月华.*$', fnc: 'gift' },
         { reg: '^#岁云之力$', fnc: 'power' },
         { reg: '^#月华救赎.*$', fnc: 'redeem' },
         { reg: '^#岁云更改.*$', fnc: 'rewrite' },
@@ -326,12 +327,13 @@ export class Suiyun extends plugin {
   async gift(e) {
     const ctx = await this.context(e);
     if (!ctx) return false;
+    const revoke = /^#收回月华/.test(e.msg || '');
     if (e.at === 'all' || e.message?.some(item => item.type === 'at' && item.qq === 'all')) {
       return e.reply('请单独@一位修士承接月华传承。');
     }
     const mentions = new Set((e.message || []).filter(item => item.type === 'at').map(item => String(item.qq)));
     if (e.at) mentions.add(String(e.at));
-    if (mentions.size > 1) return e.reply('一次只能@一位修士，避免把永久名额授予错误目标。');
+    if (mentions.size > 1) return e.reply('一次只能@一位修士，请核对传承目标。');
     const at = getSuperdimensionalRewriteTarget(e, '');
     const targetQQ = at ? String(await channel(at)) : '';
     return withPlayerLocks(targetQQ ? [ctx.qq, targetQQ] : [ctx.qq], async () => {
@@ -346,11 +348,27 @@ export class Suiyun extends plugin {
             const claim = claims.find(entry => entry.slot === index + 1);
             return `${index + 1}：${claim ? `${claim.recipientName}（${claim.delivered ? '已传授' : '待原目标重试完成'}）` : '空缺'}`;
           }),
-          `用法：#赐予月华 @目标，一次传授${SUIYUN_EXCLUSIVE_SKILLS.join('、')}；每位目标占一个永久名额。`,
+          `用法：#赐予月华 @目标，一次传授${SUIYUN_EXCLUSIVE_SKILLS.join('、')}；每位目标占一个名额。`,
+          '#收回月华 @目标：原授予者收回三技并释放名额，可再次赐予其他修士。',
         ].join('\n'));
       }
       if (targetQQ === ctx.qq) return e.reply('你已掌握月华三技，请选择另一位修士。');
-      if (!await existplayer(targetQQ)) return e.reply('目标尚未踏入修行。');
+      const targetExists = await existplayer(targetQQ);
+      if (revoke) {
+        const result = await revokeSuiyunGift(ctx.qq, targetQQ, async claim => {
+          if (!targetExists) return true;
+          const target = await Read_player(targetQQ);
+          if (target.月华传承 && (String(target.月华传承.授予者) !== claim.ownerId
+            || String(target.月华传承.受赐者) !== claim.recipientId)) {
+            throw new Error('目标的月华传承归属与席位不符，请核对存档。');
+          }
+          delete target.月华传承;
+          return await Write_player(targetQQ, target);
+        });
+        if (!result.ok) return e.reply(result.reason);
+        return e.reply(`【收回月华】已收回${result.claim.recipientName || targetQQ}的月华三技，第${result.claim.slot}席已空出，可重新赐予。`);
+      }
+      if (!targetExists) return e.reply('目标尚未踏入修行。');
       const target = await Read_player(targetQQ);
       if (getSuiyunStage(target) || getSuiyunStage({ 灵根: target.诸天镜系统?.本源灵根 })) {
         return e.reply('目标已持有岁云灵根，自带月华三技，无需占用传承名额。');
@@ -714,14 +732,15 @@ export class Suiyun extends plugin {
         'PVP同境裁决：对手额外体系等效境界高于自己时，本场强制压到同境；PVE不生效，双方存档境界不变。',
         '#岁岁年年 祈愿 临字秘/九秘：指定九秘之一或随机一本；祈愿 真龙宝术/十凶宝术 可取十凶一族宝术；与原奖励共用一小时冷却。',
         '#岁岁年年 祈愿 封灵符/心神丹：定向领取1件，与仙金、潜力丹和功法祈愿共用一小时冷却。',
-        '#月华救赎：100点月华恢复满生命本源，可对他人；目标被关押时200点即可从大牢捞人。',
+        '#月华救赎：100点月华恢复满生命本源；#月华救赎 道伤：同价修复全部道伤，均可@他人；目标被关押时默认200点从大牢捞人。',
         '#月华锁魂：搜魂已镇压的天骄，必定成功；无需搜魂大法，不受神魂自爆反噬。',
         '转职炼器师获月华仙炉与大空火种；#一键完美开炉 每次消耗1000点月华值。',
         '#月华垂钓：群内消耗3点岁云之力，必出鱼王并自动成为垂钓者；无需鱼钩或饵料。',
         '#朝花夕拾*1：沉迷岁云殿堂，每组10轮，可填1～12组，免入场资源消耗。',
         '月华天宫每现实小时产出50点仙道潜力；岁云化身起另产0.5岁云之力×小世界时间流速（1:8时每小时4点）。#剑宫兑换 查看商店图片。',
         '月华值只用于月华救赎，不再兑换潜力。',
-        '#赐予月华 @目标：传授三项专属战技，全服限定三名；不带@查看名额。',
+        '#赐予月华 @目标：传授三项专属战技，全服限定5名；#收回月华 @目标 收回并释放名额，不带@查看名额。',
+        '岁云五阶段满足原有门槛后祭道必定成功；霜月套与岁云套均可 #万象归一。',
         `#岁云造物 物品名：霜月剑尊起开放，每次10点岁云之力造1件，稀有度不限，唯一归属规则保留。`,
         '#岁云更改（霜月剑尊起开放）时代 时代名：5点；#岁云更改 至宝线索：10点。',
         '#岁云更改 命格/天资/灵根 名称：20点，可@目标。唯一灵根不参与改写。',
@@ -730,10 +749,16 @@ export class Suiyun extends plugin {
     });
   }
 
-  /** 月华救赎：100点月华兑满生命本源，可指向他人；目标被关押时200点从大牢捞人。 */
+  /** 月华救赎：本源、道伤修复各100点；默认对被关押目标使用200点解放。 */
   async redeem(e) {
     const ctx = await this.context(e);
     if (!ctx) return false;
+    const text = e.message?.filter(item => item.type === 'text').map(item => item.text || '').join(' ') || e.msg || '';
+    const mode = text.replace(/^#月华救赎\s*/, '').replace(/\[CQ:at,[^\]]*\]|@\S+/g, '').trim();
+    if (mode && !/^(?:修复)?(?:道伤|本源|生命本源)$/.test(mode)) {
+      return e.reply('用法：#月华救赎 [本源/道伤] [@目标]；两类修复均为100点月华，不填类型对被关押者使用200点解放。');
+    }
+    const repairDaoWound = mode.endsWith('道伤');
     const targetQQ = String(await channel(getSuperdimensionalRewriteTarget(e, ctx.qq)));
     if (!await existplayer(targetQQ)) return e.reply('目标尚未踏入修行。');
     return withPlayerLocks(targetQQ === ctx.qq ? [ctx.qq] : [ctx.qq, targetQQ], async () => {
@@ -745,9 +770,11 @@ export class Suiyun extends plugin {
       const name = target.名号 || targetQQ;
       await this.settlePalace(ctx.qq, player);
       const prison = await this.readPrisonState(targetQQ);
+      if (mode) prison.jailed = false;
+      if (repairDaoWound && !(Number(target.道伤) > 0)) return e.reply(`【月华救赎】${name}暂无道伤，无需修复。`);
       const cost = prison.jailed ? SUIYUN_REDEEM_RESCUE_COST : SUIYUN_REDEEM_LIFE_COST;
       if (Number(player.月华值 || 0) < cost) {
-        return e.reply(`【月华救赎】${prison.jailed ? '从大牢捞人' : '恢复满生命本源'}需要${cost}点月华值，当前仅有${Math.floor(Number(player.月华值) || 0)}点。`);
+        return e.reply(`【月华救赎】${prison.jailed ? '从大牢捞人' : repairDaoWound ? '修复全部道伤' : '恢复满生命本源'}需要${cost}点月华值，当前仅有${Math.floor(Number(player.月华值) || 0)}点。`);
       }
       const transaction = transactionFor(isSelf ? [ctx.qq] : [ctx.qq, targetQQ]);
       try {
@@ -759,6 +786,9 @@ export class Suiyun extends plugin {
           target.修为 = Math.floor((Number(target.修为) || 0) * 0.85);
           target.救赎记录 = Array.isArray(target.救赎记录) ? target.救赎记录 : [];
           target.救赎记录.push({ 类型: `${SUIYUN_PALACE_FACTION}月华救赎·解放`, 时间: new Date().toLocaleString('zh-CN') });
+        } else if (repairDaoWound) {
+          target.道伤 = 0;
+          delete target.道伤修复度;
         } else {
           const maximum = getLifeSourceRepairMaximum(target);
           target.生命本源 = maximum;
@@ -776,6 +806,10 @@ export class Suiyun extends plugin {
           `剩余月华值：${Math.floor(Number(player.月华值) || 0)}点。`,
         ].join('\n'));
       }
+      if (repairDaoWound) return e.reply([
+        `【月华救赎·道伤】${name}的道伤已完全修复，道伤归零。`,
+        `消耗${cost}点月华值，剩余月华值：${Math.floor(Number(player.月华值) || 0)}点。`,
+      ].join('\n'));
       return e.reply([
         `【月华救赎·本源】月华化作柔和光雨，${isSelf ? '你的' : `${name}的`}生命本源重归圆满。`,
         `消耗${cost}点月华值，生命本源恢复至${target.生命本源}。`,

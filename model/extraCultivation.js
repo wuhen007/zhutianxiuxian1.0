@@ -1,3 +1,5 @@
+import { preserveFlowerBranchAfterReforge } from './flowerPollenBranch.js';
+
 const EXTRA_CULTIVATION_PATHS = Object.freeze({
   mijing: Object.freeze({ field: 'mijinglevel_id', name: '人体秘境体系' }),
   xiangu: Object.freeze({ field: 'xiangulevel_id', name: '仙古今世法' }),
@@ -94,6 +96,11 @@ export function ensureExtraCultivationState(player) {
 
 export function getActiveExtraCultivationPaths(player) {
   ensureExtraCultivationState(player);
+  // Some older flower saves retain another route's realm numbers (including
+  // inherited progress). Honor their explicit, already-started flower route
+  // without deleting those numbers or allowing cultivation of a second route.
+  // Ambiguous saves with no selected route keep the existing conflict checks.
+  if (player?.额外体系 === 'huafen' && player.huafenlevel_id > 1) return ['huafen'];
   const companionTarget = getXianguCompanionMijingTarget(player);
   const hasXianguCompanionMijing = player?.额外体系 === 'xiangu'
     && player.xiangulevel_id > 1
@@ -185,14 +192,15 @@ export function reforgeExtraCultivationState(player) {
     return { changed: false, changedPaths, previousLevels, nextLevels };
   }
 
-  delete player.额外体系;
+  if (selectedPath === 'huafen' && player.huafenlevel_id > 1) player.额外体系 = selectedPath;
+  else delete player.额外体系;
   ensureExtraCultivationState(player);
 
   // 三条路线的极境属于当前根基，回退后必须重新冲击，避免旧极境继续提供加成。
   player.极境 = [];
   player.花粉极境 = [];
-  delete player.花粉路分支;
-  delete player.花粉路前身分支;
+  // 分支属于已走过的路线；仍在分支境界时保留，重入十七境时才重新择路。
+  preserveFlowerBranchAfterReforge(player, previousLevels.huafen, nextLevels.huafen);
   if (nextLevels.xiangu < 8) {
     delete player.xiangu_shenhuo;
   } else if (player.xiangu_shenhuo && typeof player.xiangu_shenhuo === 'object') {

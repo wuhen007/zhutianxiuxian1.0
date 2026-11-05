@@ -80,7 +80,8 @@ test('完整破王成帝战斗接入三体系共用结算且没有重复随机�
   const battleSource = fs.readFileSync(new URL('../apps/User/zhetiandujie.js', import.meta.url), 'utf8');
   const authoritySource = fs.readFileSync(new URL('../apps/User/WorldlineAuthority.js', import.meta.url), 'utf8');
   assert.equal(battleSource.includes("reg: '^#破王成帝(?:劫)?"), true);
-  assert.equal(battleSource.includes('getBreakKingEmperorGate(player, player.自创修炼体系?.route)'), true);
+  assert.equal(battleSource.includes('const activeRoute = getRealmAuthorityPath(player)'), true);
+  assert.equal(battleSource.includes('getBreakKingEmperorGate(player, activeRoute)'), true);
   assert.equal(battleSource.includes('resolveBreakKingEmperorFailure(player, emperorGate.route)'), true);
   assert.equal(battleSource.includes('player[passed.gate.config.field] = passed.gate.config.targetRealmId'), true);
   assert.equal(battleSource.includes('界海历练次数'), true);

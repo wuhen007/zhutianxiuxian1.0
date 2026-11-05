@@ -1,6 +1,7 @@
 import { getDaoHeartStage } from './daoHeart.js';
 import {
   getRealmAuthorityLevel,
+  getCultivationAuthorityLevel,
   getRealmAuthorityPath,
 } from './realmAuthority.js';
 import { destroyWorldline } from './worldlineAuthority.js';
@@ -482,7 +483,7 @@ export const SACRIFICE_BUBBLE_GUIDANCE =
 
 export function enterSacrificeBubble(player, now = Date.now()) {
   if (player.始祖永祭?.status === 'bubble') return player.始祖永祭;
-  if (getRealmAuthorityLevel(player) !== 22) return null;
+  if (getCultivationAuthorityLevel(player) !== 22) return null;
   player.始祖永祭 = {
     status: 'bubble',
     source: '始祖彻底永祭',
@@ -530,8 +531,12 @@ export function assertSacrificeBubbleWrite(previous, next, now = Date.now()) {
     && next.始祖永祭.startedAt === bubble.startedAt
     && number(next.始祖永祭.completedAt) >= Math.max(number(bubble.readyAt), bubble.startedAt + STRANGE_SACRIFICE.bubbleDurationMs)
     && number(next.始祖永祭.completedAt) <= now
-    && getRealmAuthorityLevel(next) === 23;
-  if (getRealmAuthorityLevel(previous) < 23 && getRealmAuthorityLevel(next) >= 23 && !completed) {
+    && getCultivationAuthorityLevel(next) === 23;
+  const flowerAdvanced = previous?.额外体系 === 'huafen'
+    && integer(previous.huafenlevel_id) > 1 && integer(previous.huafenlevel_id) < 24
+    && integer(next.huafenlevel_id) >= 24;
+  const maximumAdvanced = getRealmAuthorityLevel(previous) < 23 && getRealmAuthorityLevel(next) >= 23;
+  if ((flowerAdvanced || maximumAdvanced) && !completed) {
     const error = new Error(SACRIFICE_BUBBLE_GUIDANCE);
     error.code = 'SACRIFICE_BUBBLE_REQUIRED';
     throw error;
@@ -585,7 +590,7 @@ export function getStrangeSacrificeInteractionLock(player, now = Date.now()) {
 }
 
 export function getSacrificePromotionGate(player) {
-  const authority = getRealmAuthorityLevel(player);
+  const authority = getCultivationAuthorityLevel(player);
   const kills = integer(player?.厄土仙帝击杀数);
   const daoHeart = getDaoHeartStage(player);
   const selfDaoStage = integer(player?.自身之道阶段);

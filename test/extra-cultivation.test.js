@@ -53,6 +53,45 @@ test('conflicting legacy saves cannot progress another path', () => {
   assert.equal(canCultivateExtraPath(player, 'huafen'), false);
 });
 
+test('selected established flower saves retain every historical realm while resuming only the selected path', () => {
+  const player = { 额外体系: 'huafen', mijinglevel_id: 23, xiangulevel_id: 1, huafenlevel_id: 5,
+    花粉极境: ['本源觉醒'], 极境: ['旧道'], 灵石: 123, 学习的功法: ['形意呼吸法'] };
+  const before = structuredClone(player);
+  assert.deepEqual(getActiveExtraCultivationPaths(player), ['huafen']);
+  assert.equal(isCultivatingExtraPath(player, 'huafen'), true);
+  assert.equal(canCultivateExtraPath(player, 'huafen'), true);
+  for (const route of ['mijing', 'xiangu']) {
+    assert.equal(isCultivatingExtraPath(player, route), false);
+    assert.equal(selectExtraCultivationPath(player, route).ok, false);
+  }
+  assert.equal(getExtraCultivationLevelProduct(player), 115);
+  assert.equal(getExtraCultivationLevelSum(player), 28);
+  assert.equal(getRealmAuthorityPath(player), 'huafen');
+  assert.deepEqual(player, before);
+});
+
+test('a flower selection without any flower progress does not hide an existing other route', () => {
+  const player = { 额外体系: 'huafen', mijinglevel_id: 23, xiangulevel_id: 1, huafenlevel_id: 1 };
+  assert.deepEqual(getActiveExtraCultivationPaths(player), ['mijing', 'huafen']);
+  assert.equal(canCultivateExtraPath(player, 'huafen'), false);
+});
+
+test('unselected mixed flower saves remain ambiguous and queries do not invent a route', () => {
+  const player = { mijinglevel_id: 23, xiangulevel_id: 1, huafenlevel_id: 5 };
+  assert.deepEqual(getActiveExtraCultivationPaths(player), ['mijing', 'huafen']);
+  assert.equal(canCultivateExtraPath(player, 'huafen'), false);
+  assert.equal(player.额外体系, undefined);
+});
+
+test('an explicit player-requested reforge preserves the selected flower path while applying original level losses', () => {
+  const player = { 额外体系: 'huafen', mijinglevel_id: 23, xiangulevel_id: 1, huafenlevel_id: 5 };
+  const result = reforgeExtraCultivationState(player);
+  assert.equal(result.changed, true);
+  assert.deepEqual([player.mijinglevel_id,player.xiangulevel_id,player.huafenlevel_id], [22,1,4]);
+  assert.deepEqual(getActiveExtraCultivationPaths(player), ['huafen']);
+  assert.equal(canCultivateExtraPath(player, 'mijing'), false);
+});
+
 test('仙古上位境界只升不降地同步轮海至化龙秘境', () => {
   const player = {
     额外体系: 'xiangu',

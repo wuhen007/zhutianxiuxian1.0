@@ -33,6 +33,7 @@ import {
   dj_players,
   invalidateBattleEquipmentCache,
 } from '../../model/xiuxian.js';
+import { isTribulationLocked } from '../../model/tribulationLock.js';
 import { tryInterceptAscension } from '../../model/TianLuoDiWang.js';
 import { getMinggeEffects, calculateMinggePotentialCost } from '../../model/mingge.js';
 import { getBreakthroughPotentialCost } from './breakthroughPotential.js';
@@ -2197,25 +2198,50 @@ async hudao(e) {
 
   async hedao(e) {
     if (!e.isGroup) return e.reply('修仙游戏请在群聊中游玩');
-    const usr_qq = e.user_id.toString().replace('qg_', '');
+    const usr_qq = String(await channel(e.user_id.toString().replace('qg_', '')));
     if (!(await existplayer(usr_qq))) return e.reply('玩家不存在，请先创建角色');
     const rawName = e.msg.match(/^#合道\s+(.+)$/)?.[1]?.trim();
     return withPlayerMutationLock(usr_qq, async () => {
+      if (await redis.get(`xiuxian:player:${usr_qq}:game_action`) == 0) {
+        return e.reply('当前历练或修炼尚未结算，请结束后再合道，原道统保留。');
+      }
+      if (await isTribulationLocked(usr_qq)) {
+        return e.reply('当前渡劫正在进行，请等待结算完成后再合道，原道统保留。');
+      }
       const player = await Read_player(usr_qq);
       const result = createCultivationSystem(player, rawName);
       if (!result.ok) {
         if (result.reason === 'exists') return e.reply(`你已经开创了【${result.system.name}】，不可重复合道。`);
+        if (result.reason === 'route_name') return e.reply(`转修后请沿用原道统名，发送 #合道 ${result.system.name} 续接当前主修；原开创记录保留。`);
+        if (result.reason === 'route_unknown') return e.reply('旧道统的修炼路线记录不完整，需先核对来源；本次未续接，原道统保留。');
+        if (result.reason === 'route_progress') return e.reply('旧道统仍有高阶推演进度，需先核对转修记录；本次未续接，原道统与进度保留。');
         if (result.reason === 'name') return e.reply('体系名需为一至五个字，不能包含换行或#。');
-        if (result.reason === 'realm') return e.reply('主修体系达到仙王巨头级权柄后，方可合道开创体系。');
+        if (result.reason === 'realm') return e.reply('当前主修须达到准仙帝前一境并圆满本路线道则，方可合道；其他路线的旧境界不抵扣此条件。');
         if (result.reason === 'dao') return e.reply([
           `【${result.gate.rule.name}未圆·合道受阻】`,
           `当前进度：${result.gate.exp}/${result.gate.rule.targetExp}（${result.gate.stage.name}）`,
-          `请先发送 #悟道 圆满${result.gate.rule.name}。`,
+          `请先发送 ${getRealmAuthorityPath(player) === 'huafen' ? '#花粉悟道' : '#悟道'} 圆满${result.gate.rule.name}。`,
         ].join('\n'));
+        return e.reply('本次合道条件尚未满足，原道统与进度保留。');
       }
-      if (!Array.isArray(player.成就)) player.成就 = [];
-      if (!player.成就.includes('23')) player.成就.push('23');
-      await Write_player(usr_qq, player);
+      if (!result.adapted) {
+        if (!Array.isArray(player.成就)) player.成就 = [];
+        if (!player.成就.includes('23')) player.成就.push('23');
+      }
+      try {
+        if (await Write_player(usr_qq, player) === false) {
+          return e.reply('合道记录保存失败，本次尚未确认成功，请稍后重试。');
+        }
+      } catch (error) {
+        console.error('[合道] 保存失败:', error);
+        return e.reply('合道记录保存失败，本次尚未确认成功，请稍后重试。');
+      }
+      if (result.adapted) return e.reply([
+        '【道统续接】',
+        `原道统：【${result.system.name}】`,
+        `${player.名号}以${result.system.source}，将原道统续接至当前主修。`,
+        '原开创记录与旧路线帝劫记录保留；仍须完成本路线的 #破王成帝劫。',
+      ].join('\n'));
       return e.reply([
         '【合道成功·体系开创】',
         `${player.名号}以${result.system.source}，熔炼出独属于自己的修炼体系。`,

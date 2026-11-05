@@ -350,5 +350,8 @@ test('指令层接入推演、六境、尸骸战与三体系旁路', () => {
   assert.match(battle, /trySelfDaoDivineEmbryoRevival/);
   assert.match(battle, /enforceSelfDaoBuffSuppression/);
   assert.match(level, /准仙帝绝巅·己道未尽/);
-  assert.match(flower, /道祖绝巅·己道未尽/);
+  assert.match(flower, /getFlowerPollenProgression\(player\)/);
+  const progression = fs.readFileSync(new URL('../model/flowerPollenProgression.js', import.meta.url), 'utf8');
+  assert.match(progression, /道祖绝巅·推演己道/);
+  assert.match(progression, /command:'#推演己道'/);
 });

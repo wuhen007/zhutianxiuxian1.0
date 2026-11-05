@@ -61,6 +61,15 @@ export function getRealmAuthorityLevel(player) {
   );
 }
 
+/** Promotion-only authority: selected flower cultivation follows its own
+ * achieved realm even when an older archive retains a stronger other route.
+ * Combat, travel and all existing maximum-authority consumers stay unchanged. */
+export function getCultivationAuthorityLevel(player) {
+  return player?.额外体系 === 'huafen' && levelId(player?.huafenlevel_id) > 1
+    ? getFlowerPollenAuthorityLevel(player.huafenlevel_id)
+    : getRealmAuthorityLevel(player);
+}
+
 /** 只认可实境或已完成道果记录；半步仙帝、神胎与推演次数不代表曾经成帝。 */
 export function hasReachedImmortalEmperor(player) {
   if (!player || player.诸天镜系统?.当前化身) return false;

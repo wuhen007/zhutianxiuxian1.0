@@ -1,4 +1,5 @@
 import path from 'node:path';
+import {getFlowerBranchState} from '../../model/flowerPollenBranch.js';
 import { plugin, verc, data } from '../../api/api.js';
 import config from '../../model/Config.js';
 import {
@@ -6,6 +7,7 @@ import {
   Add_najie_thing,
   Read_equipment,
   Read_player,
+  Read_najie,
   Write_equipment,
   Write_player,
   bigNumberTransform,
@@ -79,7 +81,8 @@ import { getRealmAuthorityLevel } from '../../model/realmAuthority.js';
 import { canEnterQuasiEmperor } from '../../model/worldlineAuthority.js';
 import { getShanghaiDateKey } from '../../model/weimianTravel.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
-import { TRIBULATION_LOCK_BUSY, withTribulationLock } from '../../model/tribulationLock.js';
+import { TRIBULATION_LOCK_BUSY, withTribulationLock, isTribulationLocked, withTribulationWriteTransaction } from '../../model/tribulationLock.js';
+import {getFlowerPollenProgression,formatFlowerPollenProgression,FLOWER_OPTIONAL_HIGH_CULTIVATION} from '../../model/flowerPollenProgression.js';
 import { wrapTribulationEvent } from '../../model/tribulationMessages.js';
 import { calculateMinggePotentialCost, getMinggeEffects } from '../../model/mingge.js';
 import { applyQuestionFortuneCost } from '../../model/redDustFortune.js';
@@ -130,7 +133,7 @@ async function resolveUserId(e) {
 
 async function refreshAttributes(userId) {
   const equipment = await Read_equipment(userId);
-  await Write_equipment(userId, equipment);
+  return Write_equipment(userId, equipment);
 }
 
 async function hasOwnedFlowerAncestorSeed(userId) {
@@ -308,6 +311,7 @@ export class FlowerPollenPath extends plugin {
     }
 
     const nextRealm = data.huafen_list.find(item => Number(item.level_id) === player.huafenlevel_id + 1);
+    const progression=getFlowerPollenProgression(player);
     const [breathing] = getBestBreathingMethod(player);
     const trial = getNextFlowerExtremeTrial(player);
     const era = getFlowerEraProfile(getCurrentEraIndex());
@@ -315,6 +319,7 @@ export class FlowerPollenPath extends plugin {
     const wound = getFlowerDaoWoundState(player);
     const daoGate = getFlowerDaoGateState(player, player.huafenlevel_id);
     const branchProfile = getFlowerBranchProfile(player);
+    const branchState = getFlowerBranchState(player);
     const breakthrough = getFlowerBreakthroughRule(player.huafenlevel_id);
     const tribulationGate = getFlowerTribulationGateState(player, player.huafenlevel_id);
     const authorityLevel = getRealmAuthorityLevel(player);
@@ -335,15 +340,17 @@ export class FlowerPollenPath extends plugin {
       `始祖污染：${pollution.pollution}/100${pollution.polluted ? '（污染期·始祖低语）' : ''}${pollution.marked ? '（始祖印记·成功率-20%）' : ''}`,
       `道伤：${wound.wounds}（花粉属性-${Math.round((1 - wound.attrMultiplier) * 100)}%，进化/渡劫-${Math.round(wound.chancePenalty * 100)}%）`,
       `分支倾向：${branchProfile.name}｜${branchProfile.description}`,
-      daoGate.rule ? `花粉道则：${daoGate.rule.name} ${daoGate.exp}/${daoGate.rule.targetExp}（${daoGate.stage.name}，今日悟道${daoDailyCount}/${daoDailyLimit}${daoDailyCount >= daoDailyLimit ? '，可服大衍悟道丹续道' : ''}）` : '花粉道则：当前境界尚未开启',
+      branchState.formerBranch?`原进化分支：${branchState.formerBranch}`:branchState.needsReview?'原分支记录待核对；不会按后来补修的极境推测大宇或究极。':'',
+      daoGate.rule ? `花粉道则${progression?'（额外修持）':''}：${daoGate.rule.name} ${daoGate.exp}/${daoGate.rule.targetExp}（${daoGate.stage.name}，今日悟道${daoDailyCount}/${daoDailyLimit}${daoDailyCount >= daoDailyLimit ? '，可服大衍悟道丹续道' : ''}）` : '花粉道则：当前境界尚未开启',
       `祖种：${ancestorOwned ? (ancestor.breeding ? `孕育中，剩余${Math.ceil(ancestor.breedingRemainMs / 3600000)}小时` : ancestor.dormant ? `沉寂中，剩余${Math.ceil(ancestor.dormantRemainMs / 3600000)}小时` : '可用') : '未认主'}｜祖种悟道${ancestorOwned ? Math.min(FLOWER_ANCESTOR_WUDAO_LIMIT, ancestor.悟道次数) : 0}/${FLOWER_ANCESTOR_WUDAO_LIMIT}`,
       ancestorOwned && ancestor.待领取异果 > 0 ? `待领取：${SUPER_FLOWER_FRUIT_NAME}×${ancestor.待领取异果}` : '',
-      tribulationGate.rule ? `专属渡劫：${tribulationGate.rule.name}（${tribulationGate.completed ? '已渡过' : `待渡，失败${tribulationGate.failures}次`}）` : '专属渡劫：当前境界无需渡劫',
+      tribulationGate.rule ? `专属渡劫${progression?'（额外修持）':''}：${tribulationGate.rule.name}（${tribulationGate.completed ? '已渡过' : `未渡过，失败${tribulationGate.failures}次`}）` : '专属渡劫：当前境界无需渡劫',
       `呼吸法：${breathing || '尚未掌握'}`,
       `极境：${player.花粉极境.length ? player.花粉极境.join('、') : '无'}`,
       `时代：${era.name}（成本×${era.costRate}，成功率${era.chanceShift >= 0 ? '+' : ''}${Math.round(era.chanceShift * 100)}%）`,
     ];
-    if (nextRealm) {
+    if(progression){lines.push(formatFlowerPollenProgression(player,{optional:true}));}
+    else if (nextRealm) {
       const required = getRequiredPollenQuality(nextRealm.level_id);
       const gate = checkGongfaGate(player, nextRealm.level_id);
       const planeLaw = checkPlaneRealmLaw(player, nextRealm.level_id, grandUniverse);
@@ -354,14 +361,14 @@ export class FlowerPollenPath extends plugin {
       lines.push('你已走到当前花粉进化路的尽头。');
     }
     if (trial) lines.push(`待挑战极境：${realmName(trial.realmLevel)}·${trial.name}（需积淀${trial.accumulation}${trial.maxRisk === undefined ? '' : `，隐患不高于${trial.maxRisk}`}）`);
-    if (breakthrough) lines.push(`下一次高阶突破：${breakthrough.name}（${breakthrough.stages.join(' → ')}）`);
+    if (breakthrough&&!progression) lines.push(`下一次高阶突破：${breakthrough.name}（${breakthrough.stages.join(' → ')}）`);
     return e.reply(lines.join('\n'));
   }
 
   async realms(e) {
     if (!verc({ e })) return false;
     const lines = data.huafen_list.map(item => `${item.level_id}. ${item.level}`);
-    return e.reply(['【花粉进化路境界】', ...lines].join('\n'));
+    return e.reply(['【花粉进化路境界】', ...lines,'高阶晋升：道祖后 #推演己道 → 路尽后 #祭道 → 始祖永祭后 #挣脱空间泡影 → 祭道之上 #证道。','花粉路祖种是可选机缘，普通进化不替代以上专用晋升流程。'].join('\n'));
   }
 
   async enterPath(e) {
@@ -435,26 +442,14 @@ export class FlowerPollenPath extends plugin {
       const player = await Read_player(userId);
       if (!selectedFlowerPath(player)) return e.reply('你尚未踏上花粉进化路。');
       if (await redis.get(`xiuxian:player:${userId}:game_action`) == 0) return e.reply('修仙：游戏进行中...');
+      if (await isTribulationLocked(userId)) return e.reply('当前渡劫正在进行，结束后再继续进化；原进度保留。');
+      const progression=getFlowerPollenProgression(player);
+      if(progression)return e.reply(formatFlowerPollenProgression(player,{optional:true}));
       if (player.huafenlevel_id >= data.huafen_list.length) return e.reply('你已走到当前花粉进化路的尽头。');
       const root = getFlowerRootState(player);
       if (root.critical) return e.reply('【进化根基濒临崩溃】请先使用 #重塑进化根基，修复花粉根基后再继续进化。');
 
       const targetLevelId = player.huafenlevel_id + 1;
-      if (targetLevelId === 25) {
-        return e.reply('祭道之上持有已认主的大道至宝后，发送 #证道 即可冲击唯一道之上。');
-      }
-      if (targetLevelId === 24) {
-        return e.reply('祭道之上须遭始祖彻底永祭，进入没有任何概念的空间泡影，现实时间720分钟后挣脱；普通进化不替代此条件。');
-      }
-      if (targetLevelId === 23) {
-        return e.reply('仙帝阶段需另行完成10次 #推演己道，再使用 #祭道；普通进化不代替祭道门槛。');
-      }
-      if (targetLevelId === 22) {
-        return e.reply([
-          '【道祖绝巅·己道未尽】',
-          '路尽级仙帝并非依靠普通进化踏入。请将自身之道修至当前上限，再发送 #推演己道。',
-        ].join('\n'));
-      }
       if (targetLevelId === 21) {
         const emperorGate = canEnterQuasiEmperor(player, 'huafen');
         if (!emperorGate.ok) {
@@ -511,6 +506,7 @@ export class FlowerPollenPath extends plugin {
       if (!mediumName || Number(await exist_najie_thing(userId, mediumName, '道具')) <= 0) {
         return e.reply(`缺少${requiredQuality}阶以上进化媒介，可先发送 #感应异变。`);
       }
+      if(FLOWER_POLLEN_MEDIA[mediumName].quality<requiredQuality)return e.reply(`该媒介品阶不足，此次进化至少需要${requiredQuality}阶花粉。`);
 
       const cost = getFlowerEvolutionCost(player.huafenlevel_id, eraIndex);
       if (Number(player.修为) < cost || Number(player.血气) < cost) {
@@ -520,25 +516,37 @@ export class FlowerPollenPath extends plugin {
       const chance = getFlowerEvolutionChance(player, mediumName, { ancestorSeed, eraIndex });
       const beforeRealm = realmName(player.huafenlevel_id);
       const breakthrough = getFlowerBreakthroughRule(player.huafenlevel_id);
-      const result = breakthrough
-        ? resolveFlowerBreakthrough(player, mediumName, Math.random, { ancestorSeed, eraIndex })
-        : resolveFlowerEvolution(player, mediumName, Math.random, { ancestorSeed, eraIndex });
-      if (result.reason === 'quality') return e.reply(`该媒介品阶不足，此次进化至少需要${result.requiredQuality}阶花粉。`);
-
-      player.修为 -= cost;
-      player.血气 -= cost;
-      await Add_najie_thing(userId, mediumName, '道具', -1);
-
-      // 失败惩罚结算：常规失败扣 30% 当前修为血气；异变若污染度满则触发始祖接引
+      const najieSnapshot=await Read_najie(userId);
+      let result;
       let ancestorCall = null;
-      if (!result.ok && result.reason === 'failed') {
-        player.修为 = Math.max(0, Math.floor(Number(player.修为) * 0.7));
-        player.血气 = Math.max(0, Math.floor(Number(player.血气) * 0.7));
-      } else if (!result.ok && result.reason === 'mutated' && player.始祖污染度 >= 100) {
-        ancestorCall = applyAncestorCall(player);
-      }
-      await Write_player(userId, player);
-      await refreshAttributes(userId);
+      await withTribulationWriteTransaction(userId,[player,najieSnapshot],async()=>{
+        const transaction=new FileRollbackTransaction();
+        for(const directory of [__PATH.player_path,__PATH.najie_path,__PATH.equipment_path])transaction.capture(path.join(directory,`${userId}.json`));
+        try{
+          result=breakthrough
+            ? resolveFlowerBreakthrough(player,mediumName,Math.random,{ancestorSeed,eraIndex})
+            : resolveFlowerEvolution(player,mediumName,Math.random,{ancestorSeed,eraIndex});
+          // Rejected entry/medium is not a paid attempt. A real losing roll
+          // retains the original costs and punishment inside this transaction.
+          if(!result.ok&&!['failed','mutated','breakthrough-failed'].includes(result.reason))return;
+          player.修为-=cost;player.血气-=cost;
+          if(await Add_najie_thing(userId,mediumName,'道具',-1)===false)throw Error('进化媒介保存未完成');
+          if(!result.ok&&result.reason==='failed'){
+            player.修为=Math.max(0,Math.floor(Number(player.修为)*.7));
+            player.血气=Math.max(0,Math.floor(Number(player.血气)*.7));
+          }else if(!result.ok&&result.reason==='mutated'&&player.始祖污染度>=100){ancestorCall=applyAncestorCall(player);}
+          if(await Write_player(userId,player)===false)throw Error('花粉进化存档保存未完成');
+          if(await refreshAttributes(userId)===false)throw Error('花粉进化属性重算保存未完成');
+          transaction.commit();
+        }catch(error){
+          try{transaction.rollback();error.flowerRolledBack=true;}
+          catch(rollbackError){throw Object.assign(new AggregateError([error,rollbackError],'花粉进化恢复记录待核对'),{code:'FLOWER_EVOLUTION_ROLLBACK_FAILED'});}
+          throw error;
+        }
+      });
+      if(result?.progression)return e.reply(formatFlowerPollenProgression(player,{optional:true}));
+      if(result?.reason==='quality')return e.reply(`该媒介品阶不足，此次进化至少需要${result.requiredQuality}阶花粉。`);
+      if(!result||!result.ok&&!['failed','mutated','breakthrough-failed'].includes(result.reason))return e.reply('本次进化条件尚未满足，原材料与境界保留。');
 
       if (!result.ok && result.reason === 'mutated') {
         const lines = [
@@ -582,6 +590,13 @@ export class FlowerPollenPath extends plugin {
         ancestorSeed ? '花粉路祖种与你共鸣，进化稳定性提高。' : '',
         getNextFlowerExtremeTrial(player) ? '当前境界存在极境，可发送 #极尽蜕变 查看并尝试。' : '你的生命层次完成了一次跃迁。',
       ].filter(Boolean).join('\n'));
+    }).catch(error=>{
+      globalThis.logger?.warn?.('[花粉进化] '+String(error?.code||error?.name||'异常'));
+      return e.reply(error?.flowerRolledBack
+        ? '本次进化尚未完成保存，扣除的媒介、玩家进度与装备存档已恢复，稍后可重试。'
+        : error?.code==='FLOWER_EVOLUTION_ROLLBACK_FAILED'
+          ? '本次进化保存与恢复记录需要核对，请先查看玩家、纳戒与装备原存档。'
+          : '本次操作返回异常，请用 #花粉路 核对已保存进度后继续。');
     });
   }
 
@@ -592,12 +607,14 @@ export class FlowerPollenPath extends plugin {
     return withPlayerMutationLock(userId, async () => {
       const player = await Read_player(userId);
       if (!selectedFlowerPath(player)) return e.reply('你尚未踏上花粉进化路。');
+      if(await redis.get(`xiuxian:player:${userId}:game_action`)==0||await isTribulationLocked(userId))return e.reply('当前行动或渡劫正在进行，结束后再进行祖种悟道。');
+      const progression=getFlowerPollenProgression(player);
       const ancestorSettlement = await this.settleAncestorForUser(userId, player);
-      if (ancestorSettlement.ownerDenied) return e.reply(`缺少已认主的${FLOWER_ANCESTOR_SEED_NAME}，可在圣墟副本中寻得。`);
+      if (ancestorSettlement.ownerDenied) return e.reply([`祖种悟道需要已认主的${FLOWER_ANCESTOR_SEED_NAME}；普通花粉悟道与境界晋升无需持有祖种。`,progression?formatFlowerPollenProgression(player,{optional:true}):'可使用 #花粉悟道 按原道则修持。'].join('\n'));
       const realmId = Number(player.huafenlevel_id) || 1;
       const gate = getFlowerDaoGateState(player, realmId);
-      if (!gate.rule) return e.reply('当前花粉境界尚未开启花粉道则，继续进化即可。');
-      if (gate.ok) return e.reply(`【花粉道则已圆满】${gate.rule.name}已经完成。`);
+      if (!gate.rule) return e.reply(progression?formatFlowerPollenProgression(player,{optional:true}):'当前花粉境界尚未开启花粉道则，继续进化即可。');
+      if (gate.ok) return e.reply([`【花粉道则已圆满】${gate.rule.name}已经完成。`,progression?formatFlowerPollenProgression(player,{optional:true}):''].filter(Boolean).join('\n'));
       const state = getFlowerAncestorSeedState(player);
       if (state.breeding) return e.reply(`祖种正在孕育中，剩余${Math.ceil(state.breedingRemainMs / 3600000)}小时。`);
       if (state.dormant) return e.reply(`祖种处于沉寂期，剩余${Math.ceil(state.dormantRemainMs / 3600000)}小时。`);
@@ -622,6 +639,7 @@ export class FlowerPollenPath extends plugin {
         || availableLifespan <= cost.lifespan) {
         return e.reply([
           '【祖种悟道·资源不足】',
+          progression?FLOWER_OPTIONAL_HIGH_CULTIVATION:'',
           `潜力需${cost.potential.toLocaleString()}｜修为需${bigNumberTransform(cost.cultivation)}｜血气需${bigNumberTransform(cost.blood)}`,
           `寿元需${cost.lifespan.toLocaleString()}年｜元神需${bigNumberTransform(cost.spirit)}`,
         ].join('\n'));
@@ -656,11 +674,13 @@ export class FlowerPollenPath extends plugin {
       await refreshAttributes(userId);
       return e.reply([
         `【祖种悟道·${result.gate.rule.name}】`,
+        progression?FLOWER_OPTIONAL_HIGH_CULTIVATION:'',
         `祖种共鸣三倍道韵，本次悟得${result.gain}点（原始${result.rawGain}点）。`,
         `道则进度：${result.after}/${result.gate.rule.targetExp}${result.completed ? '（已圆满）' : ''}`,
         `本轮次数：${result.state.悟道次数}/${FLOWER_ANCESTOR_WUDAO_LIMIT}`,
         `消耗：潜力${cost.potential.toLocaleString()}｜修为${bigNumberTransform(cost.cultivation)}｜血气${bigNumberTransform(cost.blood)}｜寿元${cost.lifespan}年｜元神${bigNumberTransform(cost.spirit)}`,
-      ].join('\n'));
+        progression?formatFlowerPollenProgression(player):'',
+      ].filter(Boolean).join('\n'));
     });
   }
 
@@ -752,10 +772,12 @@ export class FlowerPollenPath extends plugin {
     return withPlayerMutationLock(userId, async () => {
       const player = await Read_player(userId);
       if (!selectedFlowerPath(player)) return e.reply('你尚未踏上花粉进化路。');
+      if(await redis.get(`xiuxian:player:${userId}:game_action`)==0||await isTribulationLocked(userId))return e.reply('当前行动或渡劫正在进行，结束后再花粉悟道；已有道则保留。');
+      const progression=getFlowerPollenProgression(player);
       const realmId = Number(player.huafenlevel_id) || 1;
       const gate = getFlowerDaoGateState(player, realmId);
-      if (!gate.rule) return e.reply('当前境界尚未开启花粉道则，继续进化即可。');
-      if (gate.ok) return e.reply(`【花粉道则已圆满】${gate.rule.name}已经完成，可继续冲击${gate.rule.nextRealm}。`);
+      if (!gate.rule) return e.reply(progression?formatFlowerPollenProgression(player,{optional:true}):'当前境界尚未开启花粉道则，继续进化即可。');
+      if (gate.ok) return e.reply(progression?`【花粉道则已圆满】${gate.rule.name}已经完成。\n`+formatFlowerPollenProgression(player,{optional:true}):`【花粉道则已圆满】${gate.rule.name}已经完成，可继续冲击${gate.rule.nextRealm}。`);
       const dateKey = getShanghaiDateKey();
       const ancestorSeed = await hasOwnedFlowerAncestorSeed(userId);
       const baseDailyLimit = FLOWER_DAO_DAILY_LIMIT + (ancestorSeed ? 1 : 0);
@@ -764,7 +786,7 @@ export class FlowerPollenPath extends plugin {
       if (gate.path.daily.date === dateKey && gate.path.daily.count >= dailyLimit) {
         if (!(await exist_najie_thing(userId, '大衍悟道丹', '丹药'))) {
           return e.reply(
-            `今日花粉悟道次数已用尽（${gate.path.daily.count}/${dailyLimit}），可服【大衍悟道丹】延续道途，再参一次大道。`,
+            `今日花粉悟道次数已用尽（${gate.path.daily.count}/${dailyLimit}），可服【大衍悟道丹】延续道途，再参一次大道。`+(progression?'\n'+formatFlowerPollenProgression(player,{optional:true}):''),
           );
         }
         usedWudaoDan = true;
@@ -817,6 +839,7 @@ export class FlowerPollenPath extends plugin {
         await Write_player(userId, player);
         return e.reply([
           '【资源不足·花粉悟道中止】',
+          progression?FLOWER_OPTIONAL_HIGH_CULTIVATION:'',
           `仙道潜力：需${cost.potential.toLocaleString()}｜现有${current.potential.toLocaleString()}`,
           `修为：需${bigNumberTransform(cost.cultivation)}｜现有${bigNumberTransform(current.cultivation)}`,
           `血气：需${bigNumberTransform(cost.blood)}｜现有${bigNumberTransform(current.blood)}`,
@@ -867,6 +890,7 @@ export class FlowerPollenPath extends plugin {
         .join('、');
       return e.reply([
         `【花粉悟道·${gain.rule.name}】`,
+        progression?FLOWER_OPTIONAL_HIGH_CULTIVATION:'',
         `你在花粉潮汐中观照自身，悟得${result.gain}点道韵。`,
         `道则进度：${result.after}/${gain.rule.targetExp}（${result.gate.stage.name}）`,
         `消耗：潜力${cost.potential.toLocaleString()}｜修为${bigNumberTransform(cost.cultivation)}｜血气${bigNumberTransform(cost.blood)}`,
@@ -877,7 +901,7 @@ export class FlowerPollenPath extends plugin {
           : `今日次数：${result.gate.path.daily.count}/${baseDailyLimit}`,
         breathingPractice.gained ? breathingPractice.name + '熟练度 +' + breathingPractice.gained + '（' + breathingPractice.profile.name + '）' : '呼吸法熟练度已达今日上限',
         proficiencyLine,
-        result.completed ? `【道则圆满】下一步可冲击${gain.rule.nextRealm}。` : '道则尚未圆满，可继续 #花粉悟道。',
+        progression?formatFlowerPollenProgression(player):result.completed ? `【道则圆满】下一步可冲击${gain.rule.nextRealm}。` : '道则尚未圆满，可继续 #花粉悟道。',
         usedWudaoDan ? '「服下大衍悟道丹，道途再续一程，今日可多参一道」' : '',
       ].filter(Boolean).join('\n'));
     });
@@ -972,16 +996,18 @@ export class FlowerPollenPath extends plugin {
     if (!(await existplayer(userId))) return e.reply('玩家不存在，请先创建角色。');
     const player = await Read_player(userId);
     if (!selectedFlowerPath(player)) return e.reply('你尚未踏上花粉进化路。');
+    const progression=getFlowerPollenProgression(player);
     const gate = getFlowerTribulationGateState(player, player.huafenlevel_id);
-    if (!gate.rule) return e.reply('当前花粉境界没有专属渡劫节点。');
+    if (!gate.rule) return e.reply(progression?formatFlowerPollenProgression(player,{optional:true}):'当前花粉境界没有专属渡劫节点。');
     const daoGate = getFlowerDaoGateState(player, player.huafenlevel_id);
     return e.reply([
       `【花粉专属渡劫】`,
       `劫名：${gate.rule.name}`,
       `阶段：${gate.rule.stages.join(' → ')}`,
-      `状态：${gate.completed ? '已渡过，可继续进化' : `未完成，失败${gate.failures}次`}`,
+      `状态：${gate.completed ? progression?'已渡过，修持印记保留':'已渡过，可继续进化' : `未完成，失败${gate.failures}次`}`,
       daoGate.rule && !daoGate.ok ? `前置道则：${daoGate.rule.name}尚未圆满，需先 #花粉悟道` : '前置道则：已满足',
       !gate.completed ? '发送 #花粉渡劫 引动花粉潮汐。' : '',
+      progression?formatFlowerPollenProgression(player,{optional:true}):'',
     ].filter(Boolean).join('\n'));
   }
 
@@ -995,11 +1021,12 @@ export class FlowerPollenPath extends plugin {
       if (!selectedFlowerPath(player)) return e.reply('你尚未踏上花粉进化路。');
       if (await redis.get(`xiuxian:player:${userId}:game_action`) == 0) return e.reply('修仙：游戏进行中...');
       const realmId = Number(player.huafenlevel_id) || 1;
+      const progression=getFlowerPollenProgression(player);
       const gate = getFlowerTribulationGateState(player, realmId);
-      if (!gate.rule) return e.reply('当前花粉境界没有专属渡劫节点。');
-      if (gate.completed) return e.reply(`【专属渡劫已完成】${gate.rule.name}已经渡过，可继续发送 #进化。`);
+      if (!gate.rule) return e.reply(progression?formatFlowerPollenProgression(player,{optional:true}):'当前花粉境界没有专属渡劫节点。');
+      if (gate.completed) return e.reply(progression?`【专属渡劫已完成】${gate.rule.name}修持印记保留。\n`+formatFlowerPollenProgression(player,{optional:true}):`【专属渡劫已完成】${gate.rule.name}已经渡过，可继续发送 #进化。`);
       const daoGate = getFlowerDaoGateState(player, realmId);
-      if (!daoGate.ok) return e.reply(`【道则未圆】请先完成${daoGate.rule.name}（发送 #花粉悟道），再引动${gate.rule.name}。`);
+      if (!daoGate.ok) return e.reply(`【道则未圆】${progression?'若继续这项额外渡劫，':''}请先完成${daoGate.rule.name}（发送 #花粉悟道），再引动${gate.rule.name}。`+(progression?'\n'+formatFlowerPollenProgression(player,{optional:true}):''));
       const eraIndex = getCurrentEraIndex();
       const cost = getFlowerTribulationCost(realmId, eraIndex);
       if (Number(player.修为) < cost.cultivation || Number(player.血气) < cost.blood) {
@@ -1038,6 +1065,7 @@ export class FlowerPollenPath extends plugin {
 
       await e.reply([
         `【${gate.rule.name}·引劫】`,
+        progression?FLOWER_OPTIONAL_HIGH_CULTIVATION:'',
         `雷劫基准攻击：${bigNumberTransform(baseAtk)}（四体系境界，天道不认外物）`,
         `时代难度：${getFlowerEraProfile(eraIndex).name}×${FLOWER_TRIBULATION_ERA_DIFFICULTY[eraIndex] ?? 1}`,
         `雷劫总数：${gate.rule.stages.length * FLOWER_TRIBULATION_WAVES_PER_STAGE} 道（每阶段 ${FLOWER_TRIBULATION_WAVES_PER_STAGE} 道）`,
@@ -1130,10 +1158,10 @@ export class FlowerPollenPath extends plugin {
       }
       return e.reply([
         `【${gate.rule.name}·渡劫成功】`,
-        `你扛过全部 ${gate.rule.stages.length * FLOWER_TRIBULATION_WAVES_PER_STAGE} 道雷劫，生命层次完成跃迁！`,
+        `你扛过全部 ${gate.rule.stages.length * FLOWER_TRIBULATION_WAVES_PER_STAGE} 道雷劫，留下完整修持印记。`,
         `剩余血量：${bigNumberTransform(player.当前血量)}/${bigNumberTransform(player.血量上限)}`,
         `进化积淀 +${settlement.rewardAccumulation}｜隐患 -${settlement.riskRelief}｜始祖污染 -${settlement.pollutionRelief}`,
-        '专属渡劫印记已留下，发送 #进化 继续冲击下一境。',
+        progression?formatFlowerPollenProgression(player,{optional:true}):'专属渡劫印记已留下，发送 #进化 继续冲击下一境。',
       ].join('\n'));
     });
     const result = await withTribulationLock(userId, run, { kind: '花粉渡劫' });
@@ -1149,7 +1177,7 @@ export class FlowerPollenPath extends plugin {
       const player = await Read_player(userId);
       if (!selectedFlowerPath(player)) return e.reply('你尚未踏上花粉进化路。');
       const result = completeFlowerExtremeTrial(player);
-      if (result.reason === 'no-trial') return e.reply('当前境界没有尚未完成的极尽蜕变。');
+      if (result.reason === 'no-trial') return e.reply('当前境界没有尚未完成的极尽蜕变。'+(getFlowerBranchState(player).needsReview?'原分支记录待核对，专属大宇／究极试炼暂不按后补极境猜测。':''));
       if (result.reason === 'accumulation') return e.reply(`冲击【${result.trial.name}】需要进化积淀${result.trial.accumulation}，当前${player.进化积淀}。`);
       if (result.reason === 'risk') return e.reply(`冲击【${result.trial.name}】要求花粉隐患不高于${result.trial.maxRisk}，当前${player.花粉隐患}。`);
       await Write_player(userId, player);

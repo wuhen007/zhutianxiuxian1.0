@@ -119,6 +119,7 @@ import {
     getRedDustFortuneType,
 } from '../../model/redDustFortune.js';
 import { getRealmAuthorityLevel } from '../../model/realmAuthority.js';
+import {getXianguImmortalAccessGuide} from '../../model/xianguProgression.js';
 import { BINGZI_FRAGMENT, BINGZI_TECHNIQUE } from '../../model/bingziLegacy.js';
 import {
     findSectWarProduct,
@@ -1526,8 +1527,9 @@ async Gojiehaiplace(e) {
         return false;
     }
     
-    // 检查地点境界要求
-    if (didian === "接引古殿" && player.mijinglevel_id < 18) {
+    // 真身与法身使用相同的三体系等效权柄，不以秘境分支代替玩家实境。
+    const playerLevel = getRealmAuthorityLevel(player);
+    if (didian === "接引古殿" && playerLevel < 18) {
         e.reply([
             `【境界不足】`,
             `接引古殿乃界海禁地，凶险异常！`,
@@ -1539,7 +1541,7 @@ async Gojiehaiplace(e) {
         return false;
     }
     
-    if (didian === "终极古地" && player.mijinglevel_id < 21) {
+    if (didian === "终极古地" && playerLevel < 21) {
         e.reply([
             `【境界不足】`,
             `终极古地乃界海最深处，葬着仙帝尸骸！`,
@@ -1621,7 +1623,6 @@ async Gojiehaiplace(e) {
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
     
     // 构建主文案
-    const playerLevel = player.mijinglevel_id;
     let finalMsg = '';
     
     // 准仙帝文案 (境界20)
@@ -3903,8 +3904,8 @@ async checkLocationThreshold(player, location) {
     if (locationName === '大阴间' && threshold.code === 'dayinjian') {
         return { ok: false, msgs: [
             `【大阴间·境界不足】`,
-            `大阴间的堕落气息会侵蚀未至神祇境的生命。`,
-            `需花粉路进化至神祇境（12级）方可深入。`
+            `映照诸天后可承受大阴间的法则，于此继续冲击神祇与神将。`,
+            `需主修花粉路达到映照诸天（11级）；准仙帝级通行条件照常。`
         ] };
     }
     if (locationName === '阳间' && threshold.code === 'yangjian') {
@@ -3963,19 +3964,21 @@ async checkLocationThreshold(player, location) {
                 ] };
         }
     }
-    // 仙域：仙王（秘境18 或 仙古16）
+    // 仙域：保留秘境18/仙古16/花粉18，主修花粉17可先入域继续进化。
     if (locationName === '仙域') {
         if (threshold.code === 'immortal-domain') {
             return { ok: false, msgs: [
                 `【仙域壁垒·境界不足】`,
-                `仙域乃诸天至高净土，非仙王者不可入！`,
+                `仙域乃诸天高阶净土，需达到对应体系的承载门槛。`,
                 `你立于仙域壁垒前，感受到无上威压：`,
                 ``,
                 `- 仙域界壁流淌着原始真解之力`,
-                `- 唯有凝聚出完整王印者方可叩关`,
-                `- 仙域法则排斥一切未达仙王境的生灵`,
+                `- 人体秘境18级、仙古今世法16级，或花粉18级可依原规则叩关`,
+                `- 主修花粉达到大宇／究极（17级）即可先入仙域，再冲击宇究`,
+                `当前角色：人体秘境${Number(player.mijinglevel_id)||1}级｜仙古今世法${Number(player.xiangulevel_id)||1}级｜花粉${Number(player.huafenlevel_id)||1}级`,
+                ...getXianguImmortalAccessGuide(player),
                 ``,
-                `「不成仙王，终是蝼蚁...」`,
+                `「先承仙域法则，再续自身道途。」`,
                 `界壁后传来冷漠的道音`
             ] };
         }

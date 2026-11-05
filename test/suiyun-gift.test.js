@@ -44,12 +44,14 @@ function fixture(t) {
     },
     readSuiyunGifts: () => gift.readSuiyunGifts({ file }),
     withSuiyunGiftClaim: (owner, recipient, name, grant) => gift.withSuiyunGiftClaim(owner, recipient, name, grant, { file, now: 1000 }),
+    revokeSuiyunGift: (owner, recipient, revoke) => gift.revokeSuiyunGift(owner, recipient, revoke, { file }),
   };
   const stripped = source.replace(/^import[\s\S]*?;\r?\n/gm, '').replace(/^export /gm, '');
   const Suiyun = new Function(...Object.keys(dependencies), `${stripped}\nreturn Suiyun;`)(...Object.values(dependencies));
   state.app = new Suiyun();
   state.event = (extra = {}) => ({ user_id: 'owner', msg: '#赐予月华', isGroup: true, reply: async message => message, ...extra });
   state.give = id => state.app.gift(state.event({ message: [{ type: 'text', text: '#赐予月华' }, { type: 'at', qq: id }] }));
+  state.revoke = id => state.app.gift(state.event({ msg: '#收回月华', at: id }));
   state.claims = () => gift.readSuiyunGifts({ file });
   return state;
 }
@@ -60,8 +62,8 @@ test('赐予月华指令兼容紧邻艾特，无目标查看名额且不创建�
     assert.ok(f.app.rule.some(rule => rule.fnc === 'gift' && new RegExp(rule.reg).test(msg)));
   }
   const reply = await f.app.gift(f.event());
-  assert.match(reply, /全服名额 0\/3/);
-  assert.match(reply, /1：空缺.*\n2：空缺.*\n3：空缺/);
+  assert.match(reply, /全服名额 0\/5/);
+  assert.match(reply, /1：空缺.*\n2：空缺.*\n3：空缺.*\n4：空缺.*\n5：空缺/);
   assert.match(reply, /霜剑入月、岁云归一、白云苍狗/);
   assert.equal(fs.existsSync(path.dirname(f.file)), false);
   assert.equal(f.writes, 0);
@@ -95,15 +97,17 @@ test('重复赐予不重复占名额或写入玩家，可跨实例读取持久�
   assert.equal(regrants, 0);
 });
 
-test('三席为所有岁云持有者共用，四个并发目标最多保存三位', async t => {
+test('五席为所有岁云持有者共用，六个并发目标最多保存五位', async t => {
   const f = fixture(t);
-  for (let index = 1; index <= 4; index++) f.players[`target${index}`] = { id: `target${index}`, 名号: `目标${index}` };
+  for (let index = 1; index <= 6; index++) f.players[`target${index}`] = { id: `target${index}`, 名号: `目标${index}` };
   f.players.owner2 = { id: 'owner2', 灵根: core.createSuiyunRoot(5) };
-  const replies = await Promise.all([1, 2, 3, 4].map(index => f.app.gift(f.event({ user_id: index % 2 ? 'owner' : 'owner2', at: `target${index}` }))));
-  assert.equal(f.claims().length, 3);
-  assert.equal(f.writes, 3);
-  assert.equal(Object.values(f.players).filter(player => player.月华传承).length, 3);
-  assert.equal(replies.filter(reply => reply.includes('三个名额已用尽')).length, 1);
+  const replies = await Promise.all([1, 2, 3, 4, 5, 6].map(index => f.app.gift(f.event({ user_id: index % 2 ? 'owner' : 'owner2', at: `target${index}` }))));
+  assert.equal(f.claims().length, 5);
+  assert.equal(f.writes, 5);
+  assert.equal(Object.values(f.players).filter(player => player.月华传承).length, 5);
+  const fifth = Object.values(f.players).find(player => player.月华传承?.名额 === 5);
+  assert.equal(core.hasSuiyunSkills(fifth), true);
+  assert.equal(replies.filter(reply => reply.includes('5个名额已用尽')).length, 1);
 });
 
 test('双方身份检查拒绝自传、全体艾特、未建档、非岁云与化身授予者', async t => {
@@ -135,20 +139,19 @@ test('已有岁云灵根或其化身中的本源不会浪费传承名额，受�
 });
 
 for (const failure of ['before', 'after']) {
-  test(`玩家写入${failure === 'before' ? '前' : '后'}中断保留原席，原目标重试完成且没有第四人`, async t => {
+  test(`玩家写入${failure === 'before' ? '前' : '后'}中断保留原席，原目标重试完成且没有第六人`, async t => {
     const f = fixture(t);
     f.failWrite = failure;
     await assert.rejects(f.give('target'), new RegExp(`injected-${failure}-write`));
     assert.equal(f.claims()[0].delivered, false);
     assert.match(await f.app.gift(f.event()), /待原目标重试完成/);
-    for (const id of ['other1', 'other2', 'other3']) f.players[id] = { id, 名号: id };
-    await f.give('other1');
-    await f.give('other2');
-    assert.match(await f.give('other3'), /三个名额已用尽/);
+    for (const id of ['other1', 'other2', 'other3', 'other4', 'other5']) f.players[id] = { id, 名号: id };
+    for (const id of ['other1', 'other2', 'other3', 'other4']) await f.give(id);
+    assert.match(await f.give('other5'), /5个名额已用尽/);
     assert.match(await f.give('target'), /承接第1席/);
     assert.equal(f.claims()[0].delivered, true);
-    assert.equal(f.claims().length, 3);
-    assert.equal(Object.values(f.players).filter(player => player.月华传承).length, 3);
+    assert.equal(f.claims().length, 5);
+    assert.equal(Object.values(f.players).filter(player => player.月华传承).length, 5);
   });
 }
 
@@ -172,7 +175,7 @@ test('损坏的传承记录保留占位并显式报错，不补发新席', async
   assert.equal(fs.existsSync(`${file}.2.json`), false);
 });
 
-test('跨进程抢同一目标只占一席，再并发抢不同目标总计仍为三席', async t => {
+test('跨进程抢同一目标只占一席，再并发抢不同目标总计仍为五席', async t => {
   const file = tempRegistry(t);
   const moduleURL = new URL('../model/suiyunGift.js', import.meta.url).href;
   const script = `import { withSuiyunGiftClaim } from ${JSON.stringify(moduleURL)};
@@ -193,8 +196,50 @@ test('跨进程抢同一目标只占一席，再并发抢不同目标总计仍�
   assert.ok(same.every(result => result.ok));
   assert.equal(gift.readSuiyunGifts({ file }).length, 1);
   const different = await Promise.all(Array.from({ length: 6 }, (_, index) => run(`other${index}`)));
-  assert.equal(different.filter(result => result.ok).length, 2);
+  assert.equal(different.filter(result => result.ok).length, 4);
   const claims = gift.readSuiyunGifts({ file });
-  assert.equal(claims.length, 3);
-  assert.equal(new Set(claims.map(claim => claim.recipientId)).size, 3);
+  assert.equal(claims.length, 5);
+  assert.equal(new Set(claims.map(claim => claim.recipientId)).size, 5);
 });
+
+test('原授予者收回后战技失效、其他数据保留且空席可换人', async t => {
+  const f = fixture(t);
+  await f.give('target');
+  const { 月华传承, ...before } = clone(f.players.target);
+  assert.equal(core.hasSuiyunSkills(f.players.target), true);
+  assert.ok(f.app.rule.some(rule => new RegExp(rule.reg).test('#收回月华@目标')));
+  assert.match(await f.revoke('target'), /第1席已空出/);
+  assert.deepEqual(f.players.target, before);
+  assert.equal(core.hasSuiyunSkills(f.players.target), false);
+  assert.equal(f.claims().length, 0);
+  assert.match(await f.revoke('target'), /未占用/);
+  f.players.next = { id: 'next', 名号: '下位受赐者' };
+  await f.give('next');
+  assert.equal(f.players.next.月华传承.名额, 1);
+  assert.equal(f.claims().length, 1);
+});
+
+test('另一位岁云传承者无权收回；已删除角色仍可释放原席', async t => {
+  const f = fixture(t);
+  await f.give('target');
+  f.players.other = { id: 'other', 灵根: core.createSuiyunRoot(5) };
+  assert.match(await f.app.gift(f.event({ user_id: 'other', msg: '#收回月华', at: 'target' })), /原授予者/);
+  assert.equal(core.hasSuiyunSkills(f.players.target), true);
+  delete f.players.target;
+  assert.match(await f.revoke('target'), /第1席已空出/);
+  assert.equal(f.claims().length, 0);
+});
+
+for (const failure of ['before', 'after']) {
+  test(`收回写入${failure === 'before' ? '前' : '后'}中断时保留席位，重试完成；并发重复收回只释放一次`, async t => {
+    const f = fixture(t);
+    await f.give('target');
+    f.failWrite = failure;
+    await assert.rejects(f.revoke('target'), /injected-/);
+    assert.equal(f.claims().length, 1);
+    const replies = await Promise.all([f.revoke('target'), f.revoke('target')]);
+    assert.equal(replies.filter(reply => reply.includes('第1席已空出')).length, 1);
+    assert.equal(f.players.target.月华传承, undefined);
+    assert.equal(f.claims().length, 0);
+  });
+}

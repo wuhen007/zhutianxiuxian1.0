@@ -3,6 +3,8 @@ import { addGongfaProficiency, getGongfaProficiencyProfile } from './gongfaProfi
 import { reduceTribulationDamageByDefense } from './tribulationDamage.js';
 import { getPassiveTribulationDamageMultiplier } from './innateTreasure.js';
 import { getExtraCultivationLevelProduct } from './extraCultivation.js';
+import {getFlowerPollenProgression} from './flowerPollenProgression.js';
+import {getFlowerBranchState,normalizeFlowerBranchState} from './flowerPollenBranch.js';
 
 export const FLOWER_POLLEN_MEDIA = Object.freeze({
   普通进化花粉: Object.freeze({ quality: 1, chance: 0.05, risk: 12, accumulation: 10 }),
@@ -185,6 +187,7 @@ export function ensureFlowerPollenState(player) {
   player.花粉隐患 = Math.max(0, Math.min(200, Math.trunc(number(player.花粉隐患))));
   if (!Array.isArray(player.花粉极境)) player.花粉极境 = [];
   if (typeof player.花粉路分支 !== 'string') player.花粉路分支 = '';
+  normalizeFlowerBranchState(player);
   // 始祖污染度 0-100
   player.始祖污染度 = Math.max(0, Math.min(POLLUTION_MAX, Math.trunc(number(player.始祖污染度))));
   if (!player.始祖印记 || typeof player.始祖印记 !== 'object') player.始祖印记 = { until: 0 };
@@ -583,7 +586,7 @@ export function purifyPollution(player, amount) {
 }
 
 export function getFlowerBranchProfile(player) {
-  return FLOWER_BRANCH_PROFILES[player?.花粉路分支] || NEUTRAL_FLOWER_BRANCH;
+  return FLOWER_BRANCH_PROFILES[getFlowerBranchState(player).branch] || NEUTRAL_FLOWER_BRANCH;
 }
 
 export function getFlowerDaoRuleForRealm(realmId) {
@@ -985,7 +988,8 @@ export function getFlowerBreakthroughRule(currentLevelId) {
 }
 
 export function resolveFlowerBreakthrough(player, mediumName, random = Math.random, options = {}) {
-  if (Number(player?.huafenlevel_id) === 23) return { ok: false, reason: 'sacrifice-bubble-required' };
+  const progression=getFlowerPollenProgression(player);
+  if(progression)return {ok:false,reason:progression.reason,progression};
   ensureFlowerPollenState(player);
   const rule = getFlowerBreakthroughRule(player.huafenlevel_id);
   if (!rule) return { ok: false, reason: 'not-required' };
@@ -1016,18 +1020,22 @@ export function resolveFlowerBreakthrough(player, mediumName, random = Math.rand
     }
     return { ok: false, reason: 'breakthrough-failed', breakthrough: true, chance, failedStage: failed.name, stages };
   }
+  const previousBranch=getFlowerBranchState(player);
   player.huafenlevel_id = targetLevelId;
   if (targetLevelId === 17) {
     player.花粉路分支 = player.花粉极境.includes('究极根基') ? '究极' : '大宇';
+    player.花粉路前身分支 = player.花粉路分支;
   } else if (targetLevelId === 18) {
-    player.花粉路前身分支 = player.花粉路分支 || (player.花粉极境.includes('究极根基') ? '究极' : '大宇');
+    if(previousBranch.branch==='大宇'||previousBranch.branch==='究极')player.花粉路前身分支=previousBranch.branch;
+    else delete player.花粉路前身分支;
     player.花粉路分支 = '宇究';
   }
   return { ok: true, breakthrough: true, chance, targetLevelId, stages, branch: player.花粉路分支 };
 }
 
 export function resolveFlowerEvolution(player, mediumName, random = Math.random, options = {}) {
-  if (Number(player?.huafenlevel_id) === 23) return { ok: false, reason: 'sacrifice-bubble-required' };
+  const progression=getFlowerPollenProgression(player);
+  if(progression)return {ok:false,reason:progression.reason,progression};
   ensureFlowerPollenState(player);
   const medium = FLOWER_POLLEN_MEDIA[mediumName];
   if (!medium) return { ok: false, reason: 'unknown-medium' };
@@ -1059,11 +1067,14 @@ export function resolveFlowerEvolution(player, mediumName, random = Math.random,
     return { ok: false, reason: 'failed', chance };
   }
 
+  const previousBranch=getFlowerBranchState(player);
   player.huafenlevel_id = targetLevelId;
   if (targetLevelId === 17) {
     player.花粉路分支 = player.花粉极境.includes('究极根基') ? '究极' : '大宇';
+    player.花粉路前身分支 = player.花粉路分支;
   } else if (targetLevelId === 18) {
-    player.花粉路前身分支 = player.花粉路分支 || (player.花粉极境.includes('究极根基') ? '究极' : '大宇');
+    if(previousBranch.branch==='大宇'||previousBranch.branch==='究极')player.花粉路前身分支=previousBranch.branch;
+    else delete player.花粉路前身分支;
     player.花粉路分支 = '宇究';
   }
   return { ok: true, chance, targetLevelId, branch: player.花粉路分支 };
@@ -1071,8 +1082,8 @@ export function resolveFlowerEvolution(player, mediumName, random = Math.random,
 
 export function getNextFlowerExtremeTrial(player) {
   ensureFlowerPollenState(player);
-  const formerBranch = player.花粉路前身分支
-    || (player.花粉极境.includes('究极根基') ? '究极' : '大宇');
+  const branchState=getFlowerBranchState(player);
+  const formerBranch = branchState.formerBranch || (['大宇','究极'].includes(branchState.branch)?branchState.branch:'');
   for (const realmLevel of Object.keys(EXTREME_TRIALS).map(Number).sort((a, b) => a - b)) {
     if (realmLevel > player.huafenlevel_id) break;
     const trial = EXTREME_TRIALS[realmLevel].find(candidate => {

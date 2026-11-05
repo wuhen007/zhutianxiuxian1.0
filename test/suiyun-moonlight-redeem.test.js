@@ -49,7 +49,7 @@ test('受赠资格校验本人身份与完整三技，只有技能不获得任�
   assert.equal(spendMoonlight(player, 9999), false);
   assert.equal(hasSuiyunSkills({ ...player, id: 'other' }), false);
   assert.equal(hasSuiyunSkills({ ...player, id: undefined }), false);
-  for (const change of [{ 名额: 0 }, { 名额: 4 }, { 授予者: 'student' }, { 技能: ['霜剑入月'] }, { 传授时间: NaN }]) {
+  for (const change of [{ 名额: 0 }, { 名额: 6 }, { 授予者: 'student' }, { 技能: ['霜剑入月'] }, { 传授时间: NaN }]) {
     assert.equal(hasSuiyunSkills({ ...player, 月华传承: { ...gift, ...change } }), false);
   }
   for (const flag of ['_tahua_type', '_yiqihua_entity', '_帝骑分身', '_圆神分身', '_万灵魔幡主魂', '分身']) {

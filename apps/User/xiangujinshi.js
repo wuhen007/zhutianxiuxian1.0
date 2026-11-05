@@ -1,3 +1,4 @@
+import {formatXianguProgression,getXianguImmortalAccessGuide} from '../../model/xianguProgression.js';
 import { plugin, verc, config, data } from '../../api/api.js';
 import fs from 'fs';
 import path from 'node:path';
@@ -220,6 +221,10 @@ export class xiangujinshi extends plugin {
          e.reply(messages);
         return;
     }
+    // 高阶晋升已有专用流程，先给出当前前路，避免落入旧占位回复，
+    // 也不再让普通冲关的位面压制、潜力门槛挡住只读指引。
+    const progression = formatXianguProgression(player);
+    if (progression) return e.reply(progression);
     // 读取位面数据
     let weimianData = {};
     try {
@@ -241,23 +246,19 @@ export class xiangujinshi extends plugin {
     const weimianLevel = weimianData["诸天位面"] || 10;
     const weimianyazhi = 10 - weimianLevel;
     const targetXianguLevel = Number(player.xiangulevel_id) + 1;
-    if (targetXianguLevel === 25) {
-      return e.reply('祭道之上持有已认主的大道至宝后，发送 #证道 即可冲击唯一道之上。');
-    }
-    if (targetXianguLevel === 24) {
-      return e.reply('祭道之上须遭始祖彻底永祭，进入没有任何概念的空间泡影，现实时间720分钟后挣脱；冲关不替代此条件。');
-    }
-    if (targetXianguLevel === 23) {
-      return e.reply('仙帝阶段需另行完成10次 #推演己道，再使用 #祭道；冲关与冲关极境不代替祭道门槛。');
-    }
-    const grandUniverse = getPlayerGrandUniverse(data.xiaoshijie, player, usr_qq);
+    // Visitors cultivate under the laws of the universe they actually entered.
+    // A missing visited host must not silently fall back to an owned universe.
+    const universeOwner = player.大宇宙位置?.界主 || usr_qq;
+    const grandUniverse = getPlayerGrandUniverse(data.xiaoshijie, player, universeOwner);
     if (!canBreakthroughXianguRealmHere(player, targetXianguLevel, grandUniverse)) {
       const targetName = data.xiangujinshi_list.find(item => item.level_id == targetXianguLevel)?.level || '仙道领域';
       return e.reply([
         '【仙域法则未至·仙道难成】',
         `${player.名号}欲冲击${targetName}，当前所在之地尚不足以承载此道果。`,
         '真仙至帝光仙王须身处仙域，或身处法则足够完整的玩家大宇宙。',
-      ].join('\n'));
+        player.大宇宙位置?.界主 ? '当前访问宇宙尚未具备本次目标境界的承载条件，请核对界主的法则进度。' : '',
+        ...getXianguImmortalAccessGuide(player),
+      ].filter(Boolean).join('\n'));
     }
     const targetingQuasiEmperor = targetXianguLevel === 21;
     const quasiEmperorGate = targetingQuasiEmperor
@@ -401,7 +402,7 @@ if (player.xiangulevel_id === 4) {
     }
     const commandRoute = resolveXianguBreakthroughCommand(player.xiangulevel_id, isExtreme);
     if (commandRoute) return await this[commandRoute.method](e, usr_qq, player);
-    return e.reply("后续内容还在更新");
+    return e.reply('当前仙古境界尚未匹配到冲关路线，请使用 #修仙状态 核对境界；本次未扣除资源。');
   }
 
   // 普通搬血境突破
