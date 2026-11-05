@@ -129,7 +129,7 @@ export async function searchPlayerGongfa(readPlayer, files, gongfa) {
 
 export function isTianjiAdmin(e, masters = [], playerId = '') {
   const ids = [String(e.user_id).replace(/^qg_/, ''), String(playerId)];
-  return Boolean(e.isMaster || masters.map(String).some(id => ids.includes(id)));
+  return Boolean(e.isMaster || e?.member?.is_owner || masters.map(String).some(id => ids.includes(id)));
 }
 
 export function isSuiyunInheritanceQuery(keyword) {

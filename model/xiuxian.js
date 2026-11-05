@@ -14033,6 +14033,25 @@ export async function setFileValue(user_qq, num, type) {
   return;
 }
 
+/**
+ * 修仙插件统一管理员判定（玩法管理权限）：
+ *   1. 云崽主人（e.isMaster）
+ *   2. xiuxian.yaml 的 Master 配置列表
+ *   3. 群主（e.member.is_owner）
+ * 注意：刻意不含「群管理员」——按服主决定，玩法管理只下放给群主。
+ * 危险操作（删档/改灵石/数据恢复等）不要用本函数，仍应只认 e.isMaster。
+ */
+export function isXiuxianAdmin(e) {
+  if (e?.isMaster) return true;
+  try {
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig?.Master || [];
+    const qq = String(e?.user_id || '').replace('qg_', '');
+    if (masterList.includes(qq)) return true;
+  } catch {}
+  return Boolean(e?.member?.is_owner);
+}
+
 export async function Synchronization_ASS(e) {
   const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
   const masterList = xiuxianConfig.Master || [];

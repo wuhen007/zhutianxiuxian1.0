@@ -1,5 +1,6 @@
+import { isXiuxianAdmin } from '../../model/xiuxian.js';
 // 诸天世界频道：群管理员显式加入后实时收发。
-import { plugin } from '../../api/api.js';
+import {  plugin } from '../../api/api.js';
 import { segment } from 'icqq';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -1082,14 +1083,14 @@ export class WorldChat extends plugin {
     }
 
     if (raw === '开启' || raw === '关闭') {
-      if (!e.isMaster) return e.reply('仅机器人管理员可设置本服跨服交易开关');
+      if (!isXiuxianAdmin(e)) return e.reply('仅机器人管理员可设置本服跨服交易开关');
       client.setTradeEnabled(raw === '开启');
       return e.reply(`本服跨服交易已${raw === '开启' ? '开启' : '关闭'}，仍需单独同意交易位面`);
     }
 
     const allowMatch = raw.match(/^(同意|拒绝)\s+([\s\S]+)$/i);
     if (allowMatch) {
-      if (!e.isMaster) return e.reply('仅机器人管理员可设置位面交易许可');
+      if (!isXiuxianAdmin(e)) return e.reply('仅机器人管理员可设置位面交易许可');
       const reference = allowMatch[2].trim();
       const realms = await client.listRealms();
       const resolved = realms.ok
@@ -1126,7 +1127,7 @@ export class WorldChat extends plugin {
     }
 
     if (raw === '允许全部') {
-      if (!e.isMaster) return e.reply('仅机器人管理员可设置位面交易许可');
+      if (!isXiuxianAdmin(e)) return e.reply('仅机器人管理员可设置位面交易许可');
       client.setTradeAllowServers(['*']);
       client.setTradeDenyServers([]);
       return e.reply('已允许与所有开启跨服交易的位面进行交易');
@@ -1282,7 +1283,7 @@ export class WorldChat extends plugin {
   }
 
   async setWorldEnabled(e) {
-    if (!e.isMaster) return e.reply('仅机器人主人可修改世界频道总开关');
+    if (!isXiuxianAdmin(e)) return e.reply('仅机器人主人可修改世界频道总开关');
     const enabled = /^#世界\s*开启$/.test(e.msg);
     client.setEnable(enabled);
     await e.reply(`世界频道已${enabled ? '开启' : '关闭'}。${enabled ? '已加入的群将在总机连接成功后自动接收。' : '已保存本群订阅，重新开启后恢复接收。'}`);
@@ -1318,7 +1319,7 @@ export class WorldChat extends plugin {
       worldChatConnectionHint(status),
       '指令菜单：#世界帮助',
     ];
-    if (e.isMaster) {
+    if (isXiuxianAdmin(e)) {
       if (!e.isGroup) {
         lines.push(
           `总机：${status.url}`,
@@ -1345,7 +1346,7 @@ export class WorldChat extends plugin {
   }
 
   async rename(e) {
-    if (!e.isMaster) return e.reply('仅机器人管理员可修改本服昵称');
+    if (!isXiuxianAdmin(e)) return e.reply('仅机器人管理员可修改本服昵称');
     const name = (e.msg.match(/^#世界\s*改名\s*([\s\S]+)$/)?.[1] || '')
       .trim()
       .slice(0, 30);
@@ -1371,7 +1372,7 @@ export class WorldChat extends plugin {
   }
 
   async exposeAdmin(e) {
-    if (!e.isMaster) return e.reply('仅机器人管理员可操作群号公开');
+    if (!isXiuxianAdmin(e)) return e.reply('仅机器人管理员可操作群号公开');
     if (client.cfg.expose_group === 'admin')
       return e.reply('当前已设为仅其他服管理员可见');
     if (!this.confirmed('admin', e)) {
@@ -1385,7 +1386,7 @@ export class WorldChat extends plugin {
   }
 
   async exposePublic(e) {
-    if (!e.isMaster) return e.reply('仅机器人管理员可操作群号公开');
+    if (!isXiuxianAdmin(e)) return e.reply('仅机器人管理员可操作群号公开');
     if (!this.confirmed('public', e)) {
       return e.reply(
         '确认后，已加入世界频道的群号会对所有成员公开。30 秒内再次发送本指令确认。'
@@ -1397,14 +1398,14 @@ export class WorldChat extends plugin {
   }
 
   async exposeOff(e) {
-    if (!e.isMaster) return e.reply('仅机器人管理员可操作群号公开');
+    if (!isXiuxianAdmin(e)) return e.reply('仅机器人管理员可操作群号公开');
     client.setExpose(false);
     e.reply('已关闭群号公开');
     return true;
   }
 
   async toggle(e) {
-    if (!e.isMaster) return e.reply('仅机器人管理员可操作世界频道开关');
+    if (!isXiuxianAdmin(e)) return e.reply('仅机器人管理员可操作世界频道开关');
     const enabled = !client.cfg.enable;
     client.setEnable(enabled);
     e.reply(`诸天世界频道已${enabled ? '开启' : '关闭'}`);

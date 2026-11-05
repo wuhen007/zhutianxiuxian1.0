@@ -30,8 +30,10 @@ const DEFAULTS = {
   matchWait: 1200,
   /** 定时任务（cron）的推送是否改走官方「主动消息」 */
   scheduledActive: true,
-  /** 主动消息本地限流：每个群每分钟最多发几条，超出回退协议号 */
-  activePerMinute: 10,
+  /** 世界频道（跨服发言）是否改走官方「主动消息」。广播式，配额消耗比定时任务快，单独开关 */
+  worldChatActive: true,
+  /** 主动消息本地限流：每个群每分钟最多发几条，超出回退协议号（与官方硬限 20 对齐） */
+  activePerMinute: 20,
 };
 
 let cache = null;
@@ -171,6 +173,9 @@ export function getSettings() {
         allowActive: Boolean(raw.allowActive),
         matchWait: Number.parseInt(raw.matchWait, 10) || DEFAULTS.matchWait,
         scheduledActive: raw.scheduledActive === undefined ? DEFAULTS.scheduledActive : Boolean(raw.scheduledActive),
+        // 世界频道（跨服发言）属于「一条消息广播到所有群」，没有触发消息可借用，
+        // 只能走主动消息；单独给个开关，关掉就回退协议号
+        worldChatActive: raw.worldChatActive === undefined ? DEFAULTS.worldChatActive : Boolean(raw.worldChatActive),
         activePerMinute: Number.parseInt(raw.activePerMinute, 10) || DEFAULTS.activePerMinute,
         groups,
       };
@@ -374,9 +379,13 @@ export function isConfigured(groupId) {
  * 定时任务专用：没有触发消息，只能发「主动消息」。
  * 主动消息受每群 20 条/分钟、每群每天 1000 条限制，失败时由调用方回退协议号。
  */
-export async function tryOfficialActive(groupId, msg) {
+export async function tryOfficialActive(groupId, msg, options = {}) {
   const cfg = getSettings();
   if (!cfg.enable || !cfg.scheduledActive) return { handled: false, reason: 'disabled' };
+  // 世界频道有独立开关：它是广播式主动消息，配额烧得比定时任务快得多
+  if (options.scope === 'worldChat' && !cfg.worldChatActive) {
+    return { handled: false, reason: 'worldchat-disabled' };
+  }
 
   const openid = cfg.groups[String(groupId || '')];
   if (!openid) return { handled: false, reason: 'no-openid' };

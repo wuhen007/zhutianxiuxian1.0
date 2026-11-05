@@ -1,5 +1,6 @@
+import { isXiuxianAdmin } from '../../model/xiuxian.js';
 import fs from 'fs';
-import { plugin } from '../../api/api.js';
+import {  plugin } from '../../api/api.js';
 import { Read_player, Write_player, __PATH } from '../../model/xiuxian.js';
 import { readShouyuanDifficulty } from './shouyuanDifficulty.js';
 import { triggerShouyuanRebirth } from './shouyuantask.js';
@@ -29,7 +30,7 @@ export class ManualShouyuanTask extends plugin {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
       e.reply('只有主人可以执行此操作');
       return false;
     }
@@ -44,7 +45,7 @@ export class ManualShouyuanTask extends plugin {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
       e.reply('只有主人可以执行此操作');
       return false;
     }

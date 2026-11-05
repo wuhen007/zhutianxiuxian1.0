@@ -1,3 +1,5 @@
+import { isConfigured, tryOfficialActive } from '../../model/officialReply.js';
+
 export function readyWorldChatBot(bot = globalThis.Bot) {
   if (!bot || typeof bot.pickGroup !== 'function') return null;
   if (Array.isArray(bot.uin) && bot.uin.length === 0) return null;
@@ -24,6 +26,18 @@ export async function sendWorldGroupMessage(
   message,
   fallback
 ) {
+  // 世界频道优先用官方身份发（配了代发的群才走这条）。
+  // 广播式消息没有触发消息可借，只能走主动消息，受每群 20 条/分钟、1000 条/天限制；
+  // 超限/超时/失败都会返回 handled:false，自动落到下面的协议号逻辑，不丢消息。
+  if (isConfigured(groupId)) {
+    try {
+      const official = await tryOfficialActive(groupId, message, { scope: 'worldChat' });
+      if (official?.handled) return official.res ?? true;
+    } catch (error) {
+      globalThis.logger?.warn?.(`[worldchat] 官方发送异常，回退协议号：${error.message}`);
+    }
+  }
+
   let primaryError;
   try {
     const group = bot.pickGroup(groupId, true);

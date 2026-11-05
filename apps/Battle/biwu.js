@@ -1,4 +1,5 @@
-import { plugin, verc, data } from '../../api/api.js';
+import { isXiuxianAdmin } from '../../model/xiuxian.js';
+import {  plugin, verc, data } from '../../api/api.js';
 import {
   existplayer,
   Read_player,
@@ -39,7 +40,7 @@ export class biwu extends plugin {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) return false;
+    if (!isXiuxianAdmin(e)) return false;
     if (!verc({ e })) return false;
     let A = e.user_id.toString().replace('qg_','');
     A= await channel(A);

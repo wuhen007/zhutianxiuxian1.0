@@ -1,4 +1,5 @@
-import { plugin, common, config, data } from '../../api/api.js';
+import { isXiuxianAdmin } from '../../model/xiuxian.js';
+import {  plugin, common, config, data } from '../../api/api.js';
 import fs from 'fs';
 import {
   __PATH,
@@ -30,6 +31,7 @@ import {
 import {
   filterRememberedNajieDrops,
   hasNajieDropMemory,
+  rememberNajieDrop,
   tryRecallOwnNajieDrop,
 } from '../../model/najieDropMemory.js';
 import {
@@ -442,6 +444,7 @@ async function createNajieDrop(player_id, oldPlayer, oldNajie, taskId = null) {
     lunhuiCount: lunhuiCount,
     createTime: Date.now(),
     expiredTime: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7天后过期
+    protectUntil: Date.now() + 60 * 60 * 1000, // 1小时保护期：仅物主可捡，之后任何人可拾取
     beFound: false
   };
   
@@ -629,10 +632,22 @@ async function pickupNajieDrop(dropKey, pickerId) {
     }
 
     const picker = await Read_player(pickerId);
-    if (!hasNajieDropMemory(picker, dropKey)) {
+    // 物主捡自己的转世掉落不需要「记忆」——转世掉落本就源于他本人，
+    // 依赖遗落纳戒记忆会让物主永远找不到自己的东西（2026-11-04 实测踩坑）
+    const isOwner = String(data.player_id) === String(pickerId);
+    if (!isOwner && !hasNajieDropMemory(picker, dropKey)) {
       return {
         success: false,
         message: '你对这枚纳戒没有任何记忆，即使抵达坐标，也只会与它擦肩而过。',
+      };
+    }
+    // 1小时保护期：残魂守护，非物主无法抢先捡走
+    const protectUntil = Number(data.protectUntil) || 0;
+    if (!isOwner && protectUntil && Date.now() < protectUntil) {
+      const remainMin = Math.ceil((protectUntil - Date.now()) / 60000);
+      return {
+        success: false,
+        message: `亡者的遗物尚有残魂守护，约${remainMin}分钟后他人方可拾取。`,
       };
     }
     const reach = checkNajieDropReach(picker, data.location);
@@ -1087,8 +1102,16 @@ async function forceRebirthPlayer(
       const hasLoot = (oldNajie && !isNajieEmpty(oldNajie)) || hasEquipment || hasPet;
       if (hasLoot) {
         dropInfo = await createNajieDrop(player_id, oldPlayer, augmentedNajie, taskId);
-        dropInfo.remembered = tryRecallOwnNajieDrop(new_player, dropInfo.dropKey);
+        // 物主必定记得自己的掉落（原先 35% 概率随机回忆，导致大多数物主永远搜不到）
+        dropInfo.remembered = rememberNajieDrop(new_player, dropInfo.dropKey);
         console.log(`【纳戒掉落】玩家 ${player_id} 的遗物掉落至 ${formatLocation(dropInfo.location)}（装备:${hasEquipment} 仙宠:${hasPet}）`);
+        // 群播报掉落位置与捡取规则：此前只有服务器日志，物主和旁观者都无从得知位置与编号
+        const dropLoc = dropInfo.location;
+        await sendRebirthMessage(e, [
+          `【纳戒遗落】${oldPlayer.名号}的遗物散落于${dropLoc.weimianName} (${dropLoc.x},${dropLoc.y})。`,
+          `1小时内残魂守护、仅物主可捡；此后任何人可拾取，7天未捡将被天地收回。`,
+          `物主发送 #前往${dropLoc.x},${dropLoc.y} 抵达后发送 #捡取纳戒 即可寻回。`,
+        ].join('\n'));
       }
     } catch (err) {
       console.error(`【纳戒掉落】处理掉落失败:`, err);
@@ -1982,7 +2005,7 @@ class ReincarnationRoad extends plugin {
 
   async toggleRebirthOutput(e) {
     try {
-      if (!e.isMaster && !this.getMasterList().includes(String(e.user_id).replace('qg_', ''))) {
+      if (!isXiuxianAdmin(e)) {
         return e.reply('此指令仅限管理员使用。');
       }
 
@@ -2259,7 +2282,8 @@ class NajieDrop extends plugin {
         allDrops,
         player,
         radius,
-        drop => hasNajieDropMemory(player, drop.key)
+        // 自己的转世掉落不需要「记忆」也可见，否则物主永远搜不到自己的纳戒
+        drop => String(drop.player_id) === String(usr_qq) || hasNajieDropMemory(player, drop.key)
       );
       
       if (nearbyDrops.length === 0) {

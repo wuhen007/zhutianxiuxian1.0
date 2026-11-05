@@ -1,4 +1,5 @@
 import { plugin, verc, data, config } from '../../api/api.js';
+import { isConfigured, tryOfficialActive } from '../../model/officialReply.js';
 import fs from 'fs';
 import { multiplySuiyunLoot } from '../../model/suiyunLoot.js';
 import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
@@ -795,6 +796,15 @@ async function InitWorldBoss(e) {
 
 async function pushInfo(id, is_group, msg) {
   if (is_group) {
+    // 同 Auction.js：黑暗动乱全服公告走官方主动消息，超限/失败回退协议号
+    if (isConfigured(id)) {
+      try {
+        const official = await tryOfficialActive(id, msg);
+        if (official?.handled) return official.res ?? true;
+      } catch (err) {
+        console.error('[官方代发] pushInfo 官方发送异常，回退协议号:', err?.message || err);
+      }
+    }
     await Bot.pickGroup(id)
       .sendMsg(msg)
       .catch(err => {

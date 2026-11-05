@@ -1,5 +1,6 @@
+import { isXiuxianAdmin } from '../../model/xiuxian.js';
 import fs from 'fs';
-import { plugin, common, config, data } from '../../api/api.js';
+import {  plugin, common, config, data } from '../../api/api.js';
 import path from 'path';
 import {__PATH, sleep} from '../../model/xiuxian.js';
 import { existplayer,  Read_Exchange,
@@ -161,7 +162,7 @@ export class channels extends plugin {
       e.reply("未找到该申请")
     }
     async conversion(e){
-      if(!e.isMaster){
+      if(!isXiuxianAdmin(e)){
         return
       }
       let playerList = [];

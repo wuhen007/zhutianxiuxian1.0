@@ -974,8 +974,9 @@ async useLinggenToken(e) {
         e.reply(" 道伤未愈还敢强提真元？速速退去疗伤！");
         return;
     }
-    e.reply(" 你执众生仙钓，垂纶于众生海之畔...");
+    // 过程文案合并为一条（开场+悬念），结算后单独再发一条
     await sleep(2000);
+    await e.reply([" 你执众生仙钓，垂纶于众生海之畔...", " 钓竿微颤...众生海似有禁忌之物苏醒..."].join('\n'));
     
    
     
@@ -1014,8 +1015,7 @@ async useLinggenToken(e) {
     // 更新垂钓CD
     await redis.set("xiuxian:player:" + usr_qq + "diaocd", now_Time);
     
-    // 制造悬念
-    e.reply(" 钓竿微颤...众生海似有禁忌之物苏醒...");
+    // 制造悬念（已并入上面的过程条）
     await sleep(3000);
     
     // 垂钓奖励逻辑
@@ -1246,10 +1246,10 @@ if (isLucky || player.灵根.type === "圆环之理" || getSuiyunEffects(player)
     await  Add_najie_thing(usr_qq, "众生仙钓", "道具", -1);
     // 最终总结
     await sleep(1000);
-    e.reply(` 本次垂钓后需修养：${Math.trunc(baseCD/60000)}分钟`);
-    e.reply(rewardMsg);
-    e.reply(` 感悟天道：修为+${xiuwei} │ 淬炼体魄：血气+${xueqi}`);
-    e.reply(" 众生钓竿回归沉寂，等待下一次出山...");
+    const resultMsgs = [` 本次垂钓后需修养：${Math.trunc(baseCD/60000)}分钟`];
+    if (rewardMsg) resultMsgs.push(rewardMsg);
+    resultMsgs.push(` 感悟天道：修为+${xiuwei} │ 淬炼体魄：血气+${xueqi}`, " 众生钓竿回归沉寂，等待下一次出山...");
+    await e.reply(resultMsgs.filter(Boolean).join('\n'));
 }
   async  chengzhang(e) {
     // e.reply("未到开启日期")
@@ -7125,11 +7125,15 @@ player.仙道潜力 = Math.max(0, (player.仙道潜力 || 0) - learnPotentialCos
       this.finish('DUIHUAN');
       return false;
     } else if (les == '兑换') {
-      let ifexist2 = data.bapin.find(item => item.name == gonfa);
+      // 名字规范化：NFKC 折叠全角字符、忽略「·」分隔符差异。
+      // 玩家常写成「八品心禅不灭诀」，列表里是「八品·心禅不灭诀」，严格等值会白白失败。
+      const norm = (s) => String(s || '').normalize('NFKC').replace(/[·・]/g, '').trim();
+      const target = norm(gonfa);
+      let ifexist2 = data.bapin.find(item => norm(item.name) === target);
       if (ifexist2) {
         await Add_najie_thing(usr_qq, '残卷', '道具', -10);
         await Add_najie_thing(usr_qq, gonfa, '功法', 1);
-        await this.reply('兑换' + gonfa + '成功');
+        await this.reply('兑换' + ifexist2.name + '成功');
         this.finish('DUIHUAN');
         return false;
       } else {

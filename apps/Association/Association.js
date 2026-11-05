@@ -1,5 +1,6 @@
+import { isXiuxianAdmin } from '../../model/xiuxian.js';
 import fs from 'fs';
-import {
+import { 
   plugin,
   puppeteer,
   verc,
@@ -67,7 +68,7 @@ export class Association extends plugin {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
       return e.reply('只有只因器人主人可以开启');
     }
     let x = e.group_id;

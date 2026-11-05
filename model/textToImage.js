@@ -375,8 +375,10 @@ export function installTextToImageHook(e) {
     }
 
     // 官方优先：带 msg_id 属于被动消息，不吃「20 条/分钟、1000 条/天」的主动消息配额；
-    // 发不出去会自动回退到下面的协议号发送。引用回复仍走协议号（官方 v2 没有引用样式）。
-    if (!fromOfficial && !quote) {
+    // 发不出去会自动回退到下面的协议号发送。
+    // 引用回复也走官方：官方 v2 没有引用样式，发出后引用会被丢弃，但消息内容不丢——
+    // 之前对 quote 直接放行协议号，导致洗劫/兑换这类带引用的回复永远都是协议号身份。
+    if (!fromOfficial) {
       try {
         const route = await tryOfficialSend(trigger, payload || msg);
         if (route.handled) return route.res ?? true;

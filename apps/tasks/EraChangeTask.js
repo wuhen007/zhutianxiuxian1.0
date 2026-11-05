@@ -1,6 +1,7 @@
+import { isXiuxianAdmin } from '../../model/xiuxian.js';
 import plugin from '../../../../lib/plugins/plugin.js';
 import config from '../../model/Config.js';
-import { data } from '../../api/api.js';
+import {  data } from '../../api/api.js';
 import fs from 'fs';
 import path from 'path';
 import { __PATH } from '../../model/xiuxian.js';
@@ -397,7 +398,7 @@ export class EraChangeTask extends plugin {
   const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
   const masterList = xiuxianConfig.Master || [];
   const userQQ = e.user_id.toString().replace('qg_', '');
-  if (!e.isMaster && !masterList.includes(userQQ)) {
+  if (!isXiuxianAdmin(e)) {
     return e.reply('你没有权限使用此命令');
   }
 
@@ -1802,7 +1803,7 @@ if (index === 4) { // 当前是绝灵时代
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
       return e.reply('你没有权限使用此命令');
     }
 
@@ -1952,7 +1953,7 @@ if (index === 4) { // 当前是绝灵时代
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
       return e.reply('你没有权限使用此命令');
     }
 
@@ -2207,7 +2208,7 @@ if (index === 4) { // 当前是绝灵时代
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
       return e.reply('你没有权限使用此命令');
     }
 

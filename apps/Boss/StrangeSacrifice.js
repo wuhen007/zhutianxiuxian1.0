@@ -1,7 +1,8 @@
+import { isXiuxianAdmin } from '../../model/xiuxian.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { config, data, plugin, verc } from '../../api/api.js';
+import {  config, data, plugin, verc } from '../../api/api.js';
 import {
   ForwardMsg,
   Read_player,
@@ -765,7 +766,7 @@ export class StrangeSacrifice extends plugin {
     const rawId = String(e.user_id || '').replace('qg_', '');
     const id = String(await channel(rawId));
     const masters = (config.getConfig('xiuxian', 'xiuxian')?.Master || []).map(String);
-    if (!e.isMaster && !masters.includes(id) && !masters.includes(rawId)) return e.reply('此指令仅限机器人主人或修仙管理员。');
+    if (!isXiuxianAdmin(e)) return e.reply('此指令仅限机器人主人或修仙管理员。');
     return withPlayerMutationLock('system:strange-sacrifice', async () => {
       // 与祭礼巡查/战斗结算同锁，先等当前结算完成，避免旧状态再次覆盖复苏结果。
       const legacyKeys = ['xiuxian:dajie_eternally_defeated', 'xiuxian:epochs_since_dajie'];

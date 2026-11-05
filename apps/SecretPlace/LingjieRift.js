@@ -1,4 +1,5 @@
-import { plugin, common, config, data } from '../../api/api.js';
+import { isXiuxianAdmin } from '../../model/xiuxian.js';
+import {  plugin, common, config, data } from '../../api/api.js';
 import {
   Add_najie_thing,
   Add_源石,
@@ -152,7 +153,7 @@ export class LingjieRift extends plugin {
     const setting = config.getConfig('xiuxian', 'xiuxian') || {};
     const userQQ = String(e.user_id).replace('qg_', '');
     const masterList = (setting.Master || []).map(String);
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
       return e.reply('你没有权限开启灵界裂缝。');
     }
 

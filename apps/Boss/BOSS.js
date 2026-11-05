@@ -1,5 +1,7 @@
+import { isXiuxianAdmin } from '../../model/xiuxian.js';
 import fs from 'fs';
-import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
+import {  consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
+import { isConfigured, tryOfficialActive } from '../../model/officialReply.js';
 import { plugin, verc, data, config } from '../../api/api.js';
 import {
   Add_灵石,
@@ -54,7 +56,7 @@ export class BOSS extends plugin {
 
   // 开启妖王时记录群聊
   async CreateWorldBoss(e) {
-    if (!e || e.isMaster) {
+    if (!e || isXiuxianAdmin(e)) {
       // 记录群聊ID
       if (e?.group_id) {
         this.bossGroups.add(e.group_id);
@@ -67,7 +69,7 @@ export class BOSS extends plugin {
   //妖王结束指令
   async DeleteWorldBoss(e) {
     if (!verc({ e })) return false;
-    if (e.isMaster) {
+    if (isXiuxianAdmin(e)) {
       if (await BossIsAlive()) {
         await redis.del('Xiuxian:WorldBossStatus');
         await redis.del('zhutianxiuxian1.0Record');
@@ -466,6 +468,15 @@ async function InitWorldBoss(e) {
 }
 async function pushInfo(id, is_group, msg) {
   if (is_group) {
+    // 同 Auction.js：妖王/BOSS 直播推送走官方主动消息，超限/失败回退协议号
+    if (isConfigured(id)) {
+      try {
+        const official = await tryOfficialActive(id, msg);
+        if (official?.handled) return official.res ?? true;
+      } catch (err) {
+        Bot.logger?.warn?.(`[官方代发] pushInfo 官方发送异常，回退协议号：${err.message}`);
+      }
+    }
     await Bot.pickGroup(id)
       .sendMsg(msg)
       .catch(err => {

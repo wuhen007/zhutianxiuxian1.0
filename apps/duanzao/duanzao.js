@@ -1,6 +1,7 @@
+import { isXiuxianAdmin } from '../../model/xiuxian.js';
 import fs from 'fs';
 
-import { plugin, puppeteer, verc, data, Show } from '../../api/api.js';
+import {  plugin, puppeteer, verc, data, Show } from '../../api/api.js';
 import { add_qinmidu, __PATH } from '../../model/xiuxian.js';
 import {
   getMinggeBonusMultiplier,
@@ -272,7 +273,7 @@ export class duanzao extends plugin {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) return false;
+    if (!isXiuxianAdmin(e)) return false;
     await Write_duanlu([]);
     let playerList = [];
     let files = fs
@@ -1008,6 +1009,7 @@ export class duanzao extends plugin {
 
   isMaster(e, user_qq) {
     if (e.isMaster) return true;
+    if (e?.member?.is_owner) return true; // 玩法管理下放群主
     try {
       const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
       const masterList = xiuxianConfig.Master || [];

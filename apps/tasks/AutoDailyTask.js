@@ -1,4 +1,5 @@
-import { plugin, config } from '../../api/api.js';
+import { isXiuxianAdmin } from '../../model/xiuxian.js';
+import {  plugin, config } from '../../api/api.js';
 import xiuxianData from '../../model/XiuxianData.js';
 import {
     Read_player,
@@ -936,7 +937,7 @@ async isAutoTaskEnabled(usr_qq) {
         const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
         const masterList = xiuxianConfig.Master || [];
         const userQQ = e.user_id.toString().replace('qg_', '');
-        if (!e.isMaster && !masterList.includes(userQQ)) {
+        if (!isXiuxianAdmin(e)) {
             return false;
         }
 
@@ -1004,7 +1005,7 @@ async isAutoTaskEnabled(usr_qq) {
         const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
         const masterList = xiuxianConfig.Master || [];
         const userQQ = e.user_id.toString().replace('qg_', '');
-        if (!e.isMaster && !masterList.includes(userQQ)) {
+        if (!isXiuxianAdmin(e)) {
             return false;
         }
 
@@ -1089,7 +1090,7 @@ async isAutoTaskEnabled(usr_qq) {
         const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
         const masterList = xiuxianConfig.Master || [];
         const userQQ = e.user_id.toString().replace('qg_', '');
-        if (!e.isMaster && !masterList.includes(userQQ)) {
+        if (!isXiuxianAdmin(e)) {
             return false;
         }
 

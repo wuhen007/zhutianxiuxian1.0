@@ -1,4 +1,5 @@
-import { plugin, verc, data, config } from '../../api/api.js';
+import { isXiuxianAdmin } from '../../model/xiuxian.js';
+import {  plugin, verc, data, config } from '../../api/api.js';
 import fs from 'fs';
 import { multiplySuiyunLoot } from '../../model/suiyunLoot.js';
 import {
@@ -109,7 +110,7 @@ export class BOSS3 extends plugin {
       }
       return true;
     }
-    if (e.isMaster) {
+    if (isXiuxianAdmin(e)) {
       if (!await BossIsAlive()) {
         if (await InitWorldBoss(e) == 0)
           e.reply("厄土高原深处，黑雾骤然沸腾！诡异始祖感应到现世出现了变数，决定提前发动大祭！诸天万界即将陷入永夜，亿万生灵将成为祭品！");
@@ -124,7 +125,7 @@ export class BOSS3 extends plugin {
   //黑暗动乱结束指令
   async DeleteWorldBoss(e) {
     if (!verc({ e })) return false;
-    if (e.isMaster) {
+    if (isXiuxianAdmin(e)) {
       if (await BossIsAlive()) {
         const WorldBossStatusStr = await redis.get('guiyishizu');
         if (WorldBossStatusStr) {
@@ -263,7 +264,7 @@ export class BOSS3 extends plugin {
   }
 
   async RestoreAllPlanes(e) {
-    if (!verc({ e }) || !e.isMaster) return false;
+    if (!verc({ e }) || !isXiuxianAdmin(e)) return false;
     const result = await repairAllDestroyedPlanes();
     await e.reply(result.repairedCount
       ? `【诸天复原】已恢复${result.repairedCount}个位面：${result.repaired.join('、')}`
@@ -272,7 +273,7 @@ export class BOSS3 extends plugin {
   }
 
   async RestoreNamedPlane(e) {
-    if (!verc({ e }) || !e.isMaster) return false;
+    if (!verc({ e }) || !isXiuxianAdmin(e)) return false;
     const planeName = String(e.msg || '').replace(/^#恢复/, '').trim();
     const repaired = await repairDestroyedPlaneByName(planeName);
     await e.reply(repaired

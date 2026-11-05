@@ -1,4 +1,5 @@
-import { plugin, puppeteer, verc, data, Show } from '../../api/api.js';
+import { isXiuxianAdmin } from '../../model/xiuxian.js';
+import {  plugin, puppeteer, verc, data, Show } from '../../api/api.js';
 import fs from 'fs';
 import {
   existplayer,
@@ -2942,7 +2943,7 @@ async shoulie_back(e) {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) return false;
+    if (!isXiuxianAdmin(e)) return false;
     let usr_qq = e.user_id.toString().replace('qg_','');
     usr_qq = await channel(usr_qq);
     let ifexistplay = await existplayer(usr_qq);

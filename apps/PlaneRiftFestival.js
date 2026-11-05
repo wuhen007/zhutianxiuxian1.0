@@ -109,6 +109,7 @@ function loadMasterIds() {
 
 function isAdmin(e) {
   if (e.isMaster) return true;
+  if (e?.member?.is_owner) return true; // 玩法管理下放群主
   try {
     return loadMasterIds().has(String(e.user_id));
   } catch {

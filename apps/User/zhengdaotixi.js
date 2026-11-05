@@ -1,4 +1,5 @@
 import { getMemoryEffects } from '../../model/memoryPath.js';
+import { isConfigured, tryOfficialActive } from '../../model/officialReply.js';
 import { getSuiyunStage } from '../../model/suiyun.js';
 import { plugin, verc, config, data } from '../../api/api.js';
 import fs from 'fs';
@@ -6050,6 +6051,15 @@ async function getAptitudeNameByLevel(level) {
  */
 async function pushInfo(id, is_group, msg) {
   if (is_group) {
+    // 同 Auction.js：轮回/转世叙事推送走官方主动消息，超限/失败回退协议号
+    if (isConfigured(id)) {
+      try {
+        const official = await tryOfficialActive(id, msg);
+        if (official?.handled) return official.res ?? true;
+      } catch (err) {
+        Bot.logger?.warn?.(`[官方代发] pushInfo 官方发送异常，回退协议号：${err.message}`);
+      }
+    }
     await Bot.pickGroup(id)
       .sendMsg(msg)
       .catch(err => {

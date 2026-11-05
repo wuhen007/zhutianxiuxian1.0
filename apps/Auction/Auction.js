@@ -1,10 +1,11 @@
+import { isXiuxianAdmin } from '../../model/xiuxian.js';
 import plugin from '../../../../lib/plugins/plugin.js';
 import data from '../../model/XiuxianData.js';
 import common from '../../../../lib/common/common.js';
 import config from '../../model/Config.js';
 import Show from '../../model/show.js';
 import puppeteer from '../../../../lib/puppeteer/puppeteer.js';
-import { __PATH } from '../../model/xiuxian.js';
+import {  __PATH } from '../../model/xiuxian.js';
 import {
   existplayer,
   Read_player,
@@ -22,6 +23,7 @@ import {
 } from '../../model/auctionSettlement.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
+import { isConfigured, tryOfficialActive } from '../../model/officialReply.js';
 import {
   applyTianjiaoAuctionCounterbid,
   selectHostileTianjiao,
@@ -120,7 +122,7 @@ export class Auction extends plugin {
         const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
         const masterList = xiuxianConfig.Master || [];
         const userQQ = e.user_id.toString().replace('qg_', '');
-        if (!e.isMaster && !masterList.includes(userQQ)) {
+        if (!isXiuxianAdmin(e)) {
         return false;
     }
     // if (!e.isMaster) {
@@ -198,7 +200,7 @@ export class Auction extends plugin {
         const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
         const masterList = xiuxianConfig.Master || [];
         const userQQ = e.user_id.toString().replace('qg_', '');
-        if (!e.isMaster && !masterList.includes(userQQ)) {
+        if (!isXiuxianAdmin(e)) {
         return false;
     }
     // if (!e.isMaster) {
@@ -220,7 +222,7 @@ export class Auction extends plugin {
         const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
         const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-        if (!e.isMaster && !masterList.includes(userQQ)) {
+        if (!isXiuxianAdmin(e)) {
         return false;
     }
     // if (!e.isMaster) {
@@ -700,6 +702,16 @@ export async function openAU() {
  */
 async function pushInfo(id, is_group, msg) {
   if (is_group) {
+    // 拍卖直播/出价推送是广播消息，没有触发消息可借，走官方主动消息；
+    // 超限或失败自动落回协议号，消息不丢
+    if (isConfigured(id)) {
+      try {
+        const official = await tryOfficialActive(id, msg);
+        if (official?.handled) return official.res ?? true;
+      } catch (err) {
+        Bot.logger?.warn?.(`[官方代发] pushInfo 官方发送异常，回退协议号：${err.message}`);
+      }
+    }
     await Bot.pickGroup(id)
       .sendMsg(msg)
       .catch(err => {

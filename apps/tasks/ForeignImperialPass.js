@@ -1,4 +1,5 @@
-import { hasSuiyunAuthority } from '../../model/suiyunAuthority.js';
+import { isXiuxianAdmin } from '../../model/xiuxian.js';
+import {  hasSuiyunAuthority } from '../../model/suiyunAuthority.js';
 import plugin from '../../../../lib/plugins/plugin.js';
 import fs from 'fs';
 import path from 'path';
@@ -608,7 +609,7 @@ export class ForeignImperialPass extends plugin {
   async forceImperialPass(e) {
     const settings = config.getConfig('xiuxian', 'xiuxian') || {};
     const qq = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !(settings.Master || []).map(String).includes(qq)) {
+    if (!isXiuxianAdmin(e)) {
       return e.reply('只有主人或修仙管理员可以强制触发异域叩关。');
     }
     const state = readState();

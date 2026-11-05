@@ -297,6 +297,15 @@ export class WorldChatClient {
   }
 
   saveConfig() {
+    // name（区服名）由用户在配置文件里手动管理，运行时不改它。
+    // 这里在写盘前把磁盘上的 name 同步进内存，避免高频 saveConfig
+    // （连接/心跳/seq 持久化）用启动时的旧值把手改的名字覆盖回去。
+    try {
+      const disk = JSON.parse(fs.readFileSync(this.configPath, 'utf8'));
+      if (typeof disk.name === 'string' && disk.name && disk.name !== this.cfg.name) {
+        this.cfg.name = disk.name;
+      }
+    } catch {}
     if (this.persist) atomicWriteJson(this.configPath, this.cfg);
   }
 

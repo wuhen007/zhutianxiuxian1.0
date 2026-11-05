@@ -1,4 +1,5 @@
-import {plugin} from '../../api/api.js';
+import { isXiuxianAdmin } from '../../model/xiuxian.js';
+import { plugin} from '../../api/api.js';
 import fs from 'node:fs';
 import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
 import data from '../../model/XiuxianData.js';
@@ -113,7 +114,7 @@ export class TeamBoss extends plugin {
 
   //若陀龙王开启指令
   async CreateWorldBoss(e) {
-    if (e.isMaster) {
+    if (isXiuxianAdmin(e)) {
       let usr_qq = e.user_id.toString().replace('qg_','');
       usr_qq = await channel(usr_qq);
       await InitWorldBoss(usr_qq);
@@ -123,7 +124,7 @@ export class TeamBoss extends plugin {
   }
   //若陀龙王结束指令
   async DeleteWorldBoss(e) {
-    if (e.isMaster) {
+    if (isXiuxianAdmin(e)) {
       let Boss_List = await Read_Boss_List();
 
       for (let i = 0; i < Boss_List.length; i++) {

@@ -1,10 +1,11 @@
+import { isXiuxianAdmin } from '../../model/xiuxian.js';
 import plugin from '../../../../lib/plugins/plugin.js';
 import data from '../../model/XiuxianData.js';
 import common from '../../../../lib/common/common.js';
 import config from '../../model/Config.js';
 import Show from '../../model/show.js';
 import puppeteer from '../../../../lib/puppeteer/puppeteer.js';
-import { __PATH } from '../../model/xiuxian.js';
+import {  __PATH } from '../../model/xiuxian.js';
 import {
   existplayer,
   Read_player,
@@ -20,6 +21,7 @@ import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { compareAndSetRedisJson } from '../../utils/redisJsonCas.js';
 import { createAuctionId } from '../../model/auctionSettlement.js';
 import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
+import { isConfigured, tryOfficialActive } from '../../model/officialReply.js';
 import {
   applyTianjiaoAuctionCounterbid,
   selectHostileTianjiao,
@@ -158,7 +160,7 @@ export class Auction2 extends plugin {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
         return false;
     }
 
@@ -213,7 +215,7 @@ export class Auction2 extends plugin {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
         return false;
     }
 
@@ -230,7 +232,7 @@ export class Auction2 extends plugin {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
         return false;
     }
     const redisGlKey = 'xiuxian:AuctionofficialTask_GroupList2';
@@ -509,6 +511,15 @@ export async function openAU() {
  */
 async function pushInfo(id, is_group, msg) {
   if (is_group) {
+    // 同 Auction.js：广播推送走官方主动消息，超限/失败回退协议号
+    if (isConfigured(id)) {
+      try {
+        const official = await tryOfficialActive(id, msg);
+        if (official?.handled) return official.res ?? true;
+      } catch (err) {
+        Bot.logger?.warn?.(`[官方代发] pushInfo 官方发送异常，回退协议号：${err.message}`);
+      }
+    }
     await Bot.pickGroup(id)
       .sendMsg(msg)
       .catch(err => {

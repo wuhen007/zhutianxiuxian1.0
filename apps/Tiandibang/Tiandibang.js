@@ -1,6 +1,7 @@
+import { isXiuxianAdmin } from '../../model/xiuxian.js';
 import fs from 'fs';
 import path from 'path';
-import { plugin, puppeteer, verc, Show, data, config } from '../../api/api.js';
+import {  plugin, puppeteer, verc, Show, data, config } from '../../api/api.js';
 import { __PATH } from '../../model/xiuxian.js';
 import {
   getTiandibangSettlementKey,
@@ -72,7 +73,7 @@ async settle_rewards(e) {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
         e.reply('只有主人可以执行此操作');
         return false;
     }
@@ -749,7 +750,7 @@ tiandibang[m].血量上限 = player.血量上限;   // 新增：更新血量上�
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
       e.reply('只有主人可以执行操作');
       return false;
     }

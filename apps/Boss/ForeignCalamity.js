@@ -1,4 +1,5 @@
-import { plugin, data, config } from '../../api/api.js';
+import { isXiuxianAdmin } from '../../model/xiuxian.js';
+import {  plugin, data, config } from '../../api/api.js';
 import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 import {
   Add_najie_thing,
@@ -122,7 +123,7 @@ export class ForeignCalamity extends plugin {
     const qq = playerId(e);
     const masters = (Array.isArray(settings.Master) ? settings.Master : [settings.Master])
       .filter(value => value != null).map(value => String(value).replace(/^qg_/, ''));
-    if (!e.isMaster && !masters.includes(qq)) return e.reply('此指令仅限机器人主人或修仙管理员。');
+    if (!isXiuxianAdmin(e)) return e.reply('此指令仅限机器人主人或修仙管理员。');
     const match = String(e.msg || '').trim().match(/^#召唤(?:域外)?灾厄\s*(\d+)?$/);
     const count = match?.[1] == null ? 1 : Number(match[1]);
     if (!match || !Number.isSafeInteger(count) || count < 1 || count > 10) {

@@ -1,4 +1,5 @@
-import { plugin, common, config, data } from '../../api/api.js';
+import { isXiuxianAdmin } from '../../model/xiuxian.js';
+import {  plugin, common, config, data } from '../../api/api.js';
 import fs from 'fs';
 import {
   Read_player,
@@ -64,7 +65,7 @@ export class DarkSuppressionTask extends plugin {
   async removeSuppression(e) {
     const adminQQ = String(e.user_id).replace('qg_', '');
     const masters = (config.getConfig('xiuxian', 'xiuxian').Master || []).map(String);
-    if (!e.isMaster && !masters.includes(adminQQ)) return false;
+    if (!isXiuxianAdmin(e)) return false;
 
     const rawTarget = getTargetQQFromEvent(e);
     const playerId = rawTarget ? String(await channel(rawTarget)) : '';

@@ -107,13 +107,13 @@ Era:
     - 799048038
   Master: null
   current:
-    index: 1
-    years: 1000
-    epoch: 5
-    totalYears: 211000
+    index: 2
+    years: 8000
+    epoch: 7
+    totalYears: 328000
   yearlyAdvance: 1000
   weimianRepairInterval: 2000
-  foreignCalamityNaturalYears: 208000
+  foreignCalamityNaturalYears: 325000
 BotType: onebot
 AutoDailyTask:
   cron: 0 18 18 * * *

@@ -1,4 +1,5 @@
-import { hasSuiyunAuthority } from '../../model/suiyunAuthority.js';
+import { isXiuxianAdmin } from '../../model/xiuxian.js';
+import {  hasSuiyunAuthority } from '../../model/suiyunAuthority.js';
 import { plugin, puppeteer, verc, data, config,Show } from '../../api/api.js';
 import { __PATH } from '../../model/xiuxian.js';
 import { getTimedActionMultiplier } from '../../model/innateTreasure.js';
@@ -92,7 +93,7 @@ export class Xijie extends plugin {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) return false;
+    if (!isXiuxianAdmin(e)) return false;
     var didian = e.msg.replace('#重置', '');
     didian = didian.trim();
     let shop;

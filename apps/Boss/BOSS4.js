@@ -1,4 +1,5 @@
-import { hasSuiyunAuthority } from '../../model/suiyunAuthority.js';
+import { isXiuxianAdmin } from '../../model/xiuxian.js';
+import {  hasSuiyunAuthority } from '../../model/suiyunAuthority.js';
 import fs from 'fs';
 import path from 'path';
 import { multiplySuiyunLoot } from '../../model/suiyunLoot.js';
@@ -1117,7 +1118,7 @@ export class BOSS4 extends plugin {
   }
 
   async CreateWorldBoss2(e) {
-    if (!e || e.isMaster) {
+    if (!e || isXiuxianAdmin(e)) {
       if (WorldBOSSBattleLock === 1 || await redis.get('tianjiao:battle:lock')) {
         e?.reply?.('天骄战斗正在进行，暂不能重置天骄状态。');
         return false;
@@ -1129,7 +1130,7 @@ export class BOSS4 extends plugin {
 
   async DeleteWorldBoss2(e) {
     if (!verc({ e })) return false;
-    if (e.isMaster) {
+    if (isXiuxianAdmin(e)) {
       if (WorldBOSSBattleLock === 1 || await redis.get('tianjiao:battle:lock')) {
         e.reply('天骄战斗正在进行，暂不能关闭天骄挑战。');
         return false;

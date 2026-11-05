@@ -1062,6 +1062,11 @@ async daily_lottery(e) {
         await redis.sAdd('xiuxian:AuctionofficialTask_GroupList', sgGid);
       }
     }
+    // 官方通道（QQBot）的新群：纳入「官方接管」名单，之后开了全量消息就走官方通道。
+    // 不依赖平台的 GROUP_ADD_ROBOT 事件——实测那个事件不一定会投递到（拉群时若插件未生效就永久错过）。
+    if (e.qqbot_user_id && e.group_id) {
+      await redis.sAdd('qqbot:bridge:groups', String(e.group_id));
+    }
     // 官方通道的新玩家：建议（不强制）绑定 QQ 号。
     // 绑定只是为了作者核对身份、以及以后换通道继承存档，不绑也能正常玩。
     if (qqbotOpenid && !getBinding(qqbotOpenid)) {
