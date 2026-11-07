@@ -38,6 +38,8 @@ const DEFAULTS = {
 
 let cache = null;
 let cacheMtime = -1;
+/** 配置解析失败只告警一次，避免每条消息刷屏 */
+let warnedConfigError = false;
 let bridgeModule;
 /** 每个群第一次代发成功时记一条，方便确认链路真的切过去了 */
 const firstSuccess = new Set();
@@ -187,10 +189,36 @@ export function getSettings() {
           `定时任务走官方=${cache.scheduledActive ? `是（每群 ≤${cache.activePerMinute} 条/分钟）` : '否'}`,
       );
     }
-  } catch {
+  } catch (err) {
     if (!cache) cache = { ...DEFAULTS, groups: {} };
+    // 配置读失败会静默降级成「空 groups」，表现就是官方号突然不说话了。
+    // 改 yaml 最容易踩的是缩进和中文冒号，这里留一条，别让人靠猜。
+    if (!warnedConfigError) {
+      warnedConfigError = true;
+      log('error', `读取 official-reply.yaml 失败，官方代发已全部回退协议号：${err?.message ?? err}`);
+    }
   }
   return cache;
+}
+
+/**
+ * 把推送目标解析成官方 group_openid。两种来源：
+ *
+ *  1. 老群：配置 groups 里存的是「数字群号 → openid」，查表即可；
+ *  2. 新群：只挂了官方 Bot、没挂协议号，压根不知道数字群号（官方不下发群号，
+ *     也没有群列表接口）。这种群直接把 group_openid 当推送目标写进配置就行，
+ *     32 位十六进制串本身就是 openid，原样拿去发。
+ *
+ * 所以「按 openid 推送」是成立的：不用先想办法把 openid 和群号对上——本来也对不上。
+ */
+const OPENID_RE = /^[0-9A-Fa-f]{32}$/;
+
+export function resolveOpenid(groupId, cfg = getSettings()) {
+  const key = String(groupId ?? '').trim();
+  if (!key) return '';
+  const mapped = cfg?.groups?.[key];
+  if (mapped) return mapped;
+  return OPENID_RE.test(key) ? key : '';
 }
 
 /**
@@ -231,7 +259,7 @@ export async function tryOfficialSend(trigger, msg) {
   const cfg = getSettings();
   if (!cfg.enable) return { handled: false, reason: 'disabled' };
 
-  const openid = cfg.groups[String(trigger?.groupId || '')];
+  const openid = resolveOpenid(trigger?.groupId, cfg);
   if (!openid) return { handled: false, reason: 'no-openid' };
 
   const bridge = await getBridge();
@@ -369,10 +397,10 @@ export async function tryOfficialSend(trigger, msg) {
   return { handled: false, reason, error: result?.error };
 }
 
-/** 这个群号是否配置了官方代发 */
+/** 这个群号（或 group_openid）是否配置了官方代发 */
 export function isConfigured(groupId) {
   const cfg = getSettings();
-  return Boolean(cfg.enable && cfg.groups[String(groupId || '')]);
+  return Boolean(cfg.enable && resolveOpenid(groupId, cfg));
 }
 
 /**
@@ -387,7 +415,7 @@ export async function tryOfficialActive(groupId, msg, options = {}) {
     return { handled: false, reason: 'worldchat-disabled' };
   }
 
-  const openid = cfg.groups[String(groupId || '')];
+  const openid = resolveOpenid(groupId, cfg);
   if (!openid) return { handled: false, reason: 'no-openid' };
 
   const bridge = await getBridge();

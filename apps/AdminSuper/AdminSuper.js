@@ -98,11 +98,11 @@ export class AdminSuper extends plugin {
     fnc: 'imprisonPlayer'
 },
 {
-    reg: '^#全局推送消息(\\d+)$',
+    reg: '^#全局推送消息([0-9A-Fa-f]{32}|\\d+)$',
     fnc: 'globalPushMessage'
 },
 {
-    reg: '^#删除全局推送(\\d+)$',
+    reg: '^#删除全局推送([0-9A-Fa-f]{32}|\\d+)$',
     fnc: 'removeGlobalPush'
 },
 {
@@ -396,7 +396,7 @@ async sendToRebirth(e) {
     }
     
     // 解析群号
-    const match = e.msg.match(/^#全局推送消息(\d+)$/);
+    const match = e.msg.match(/^#全局推送消息([0-9A-Fa-f]{32}|\d+)$/);
     if (!match) {
         e.reply('格式错误，请使用：#全局推送消息群号');
         return true;
@@ -453,7 +453,7 @@ async removeGlobalPush(e) {
     }
     
     // 解析群号
-    const match = e.msg.match(/^#删除全局推送(\d+)$/);
+    const match = e.msg.match(/^#删除全局推送([0-9A-Fa-f]{32}|\d+)$/);
     if (!match) {
         e.reply('格式错误，请使用：#删除全局推送群号');
         return true;

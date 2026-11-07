@@ -19,6 +19,7 @@ import fs from 'fs';
 import path from 'path';
 import { data, config } from '../../api/api.js';
 import { Write_player } from '../../model/xiuxian.js';
+import { isConfigured, tryOfficialActive } from '../../model/officialReply.js';
 import { sendToYongJi } from './YongJiList.js';
 import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 import { hasRealmAuthority } from '../../model/realmAuthority.js';
@@ -767,6 +768,16 @@ async function getGroupList() {
 async function sendToAllGroups(groupList, msg) {
   const groups = groupList || [];
   for (const groupId of groups) {
+    // 配了官方代发的群优先用官方号发（只写 openid 的新群也走这条），失败再回退协议号。
+    // 原来这里直连 Bot.pickGroup：纯 openid 目标在协议号里根本不存在这个群，消息直接丢。
+    if (isConfigured(groupId)) {
+      try {
+        const official = await tryOfficialActive(groupId, msg);
+        if (official?.handled) continue;
+      } catch (err) {
+        logger.warn?.(`[诡异大祭] 官方发送异常，回退协议号：${err?.message ?? err}`);
+      }
+    }
     Bot.pickGroup(groupId).sendMsg(msg).catch(console.error);
   }
 }
