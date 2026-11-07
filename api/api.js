@@ -102,6 +102,21 @@ export const verc = ({ e }) => {
             } catch (error) {
                 console.warn(`[频道映射] 读取玩家 ${userId} 绑定失败：${error.message}`);
             }
+            // 官方通道 openid：channel.json 为空时，回退到官方绑定表 identity_map.json
+            if (!/^\d+$/.test(userId)) {
+                try {
+                    const identityFile = getResourcePath('identity_map.json');
+                    if (fs.existsSync(identityFile)) {
+                        const bindingMap = JSON.parse(fs.readFileSync(identityFile, 'utf8'));
+                        const identity = bindingMap?.byOpenid?.[userId];
+                        if (identity?.qq && fs.existsSync(getResourcePath(path.join('xiuxian_player', `${identity.qq}.json`)))) {
+                            userId = String(identity.qq);
+                        }
+                    }
+                } catch (error) {
+                    console.warn(`[身份绑定] 读取玩家 ${userId} 绑定失败：${error.message}`);
+                }
+            }
             const playerFile = getResourcePath(path.join('xiuxian_player', `${userId}.json`));
             if (fs.existsSync(playerFile)) {
                 const player = JSON.parse(fs.readFileSync(playerFile, 'utf8'));
@@ -146,6 +161,11 @@ export const verc = ({ e }) => {
         } catch (error) {
             console.warn(`[形神状态] 读取玩家 ${userId} 失败：${error.message}`);
         }
+    }
+    // 未绑定的官方 openid：给绑定引导，避免下游 Read_player 抛 ENOENT
+    if (userId && !/^\d+$/.test(userId) && !fs.existsSync(getResourcePath(path.join('xiuxian_player', `${userId}.json`)))) {
+        e.reply?.('【身份未绑定】请先在群内发送 #修仙绑定 <旧QQ号> <名号>，绑定后再使用玩法指令。');
+        return false;
     }
     return true;
 };

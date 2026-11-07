@@ -14451,6 +14451,17 @@ export async function channel(usr_qq) {
       }
     }
   }
+  // 官方通道 openid：channel.json 为空时，回退到官方绑定表 identity_map.json
+  if (!/^\d+$/.test(usr_qq)) {
+    try {
+      const identityFile = path.join(__PATH.channel, '..', 'identity_map.json');
+      if (fs.existsSync(identityFile)) {
+        const bindingMap = JSON.parse(fs.readFileSync(identityFile, 'utf8'));
+        const identity = bindingMap?.byOpenid?.[usr_qq];
+        if (identity?.qq && data.existData('player', String(identity.qq))) usr_qq = String(identity.qq);
+      }
+    } catch {}
+  }
   return usr_qq; // 返回转换后的 usr_qq 值
 }
 
