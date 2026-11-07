@@ -3475,18 +3475,21 @@ export async function get_player_img(e) {
     item => item.level_id == player.Physique_id
   ).exp;
   let occupation = player.occupation;
-  // 老存档存在 occupation 为 [] 或 ''、occupation_level 为 null 的情况：
-  // isNotNull 判不出空数组，按职业配置是否命中来判断，缺配置时统一回落为「无」，避免 .name 抛错。
-  const occupationItem =
-    isNotNull(player.occupation) && player.occupation !== ''
-      ? data.occupation_exp_list.find(item => item.id == player.occupation_level)
-      : undefined;
+  // 老存档存在 occupation 为 [] 或 ''、occupation_level 越界（如 60，配置只到 37）的情况：
+  // isNotNull 判不出空数组，这里要求 occupation 必须是非空字符串，且等级能在配置里查到，
+  // 两者缺一就回落为「无」，避免 .name 抛错或显示出玩家并没有的职业。
+  const hasOccupationName =
+    typeof player.occupation === 'string' && player.occupation.trim() !== '';
+  const occupationItem = hasOccupationName
+    ? data.occupation_exp_list.find(item => item.id == player.occupation_level)
+    : undefined;
   let occupation_level;
   let occupation_level_name;
   let occupation_exp;
   let occupation_need_exp;
   if (!occupationItem) {
-    occupation = '无';
+    // 没有职业名（空数组/空串）显示「无」；有职业名但等级越界则保留职业名，只隐藏等级信息
+    occupation = hasOccupationName ? player.occupation : '无';
     occupation_level_name = '-';
     occupation_exp = '-';
     occupation_need_exp = '-';
@@ -14177,7 +14180,7 @@ export async function synchronization(e) {
       治疗效果加成: 0, 每回合恢复: 0, 血上限加成: 0,
       全伤害类型加成: 0, 全类型减免: 0, 减伤: 0, 治疗加成: 0,
       神通加成: 0, 暴击率加成: 0, 位面传送次数: 0, 高级传送次数: 0,
-      星图: 0, linggen: [], occupation: [], 仙宠: [], 学习的功法: [],
+      星图: 0, linggen: [], occupation: '', 仙宠: [], 学习的功法: [],
       附加命格: [], 记忆坐标: ['凡间'], 传送阵坐标: [], 仙宠寻宝: '',
       道途: { version: 1, stages: {}, daily: { date: '', count: 0 } },
     };

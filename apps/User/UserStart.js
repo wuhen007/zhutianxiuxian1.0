@@ -400,7 +400,7 @@ async draw_player_mingge(e) {
       轮回点: 10,
       daofaxianshu: 0,
       daofaxianshu_endtime: 0,
-      occupation: [], //职业
+      occupation: '', //职业（未选择时为空串，勿用空数组，否则展示层查表会崩）
       occupation_level: 1,
       镇妖塔层数: 0,
       神魄段数: 0,
@@ -925,7 +925,7 @@ async daily_lottery(e) {
       轮回点: 10,
       daofaxianshu: 0,
       daofaxianshu_endtime: 0,
-      occupation: [], //职业
+      occupation: '', //职业（未选择时为空串，勿用空数组，否则展示层查表会崩）
       occupation_level: 1,
       镇妖塔层数: 0,
       神魄段数: 0,
