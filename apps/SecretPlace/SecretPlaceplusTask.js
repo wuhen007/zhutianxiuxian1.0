@@ -95,6 +95,20 @@ async function writeTaskJson(key, value, action, preserveTaskTtl = false) {
   return redisOptions ? redis.set(key, json, redisOptions) : redis.set(key, json);
 }
 
+/** 纳戒按物品名聚合数量：沉迷开始/结束各取一次，差值即为全部获得物（含所有发放路径） */
+function najieCountMap(najie) {
+  const map = new Map();
+  for (const value of Object.values(najie || {})) {
+    if (!Array.isArray(value)) continue;
+    for (const item of value) {
+      const name = String(item?.name || '');
+      if (!name) continue;
+      map.set(name, (map.get(name) || 0) + (Number(item?.数量) || 0));
+    }
+  }
+  return map;
+}
+
 export class SecretPlaceplusTask extends plugin {
   constructor() {
     super({
@@ -184,6 +198,19 @@ export class SecretPlaceplusTask extends plugin {
         if (isShangcangAction(action)) return false;
         //最后发送的消息
         let msg = [];
+        // 首次结算时存纳戒快照：结算完成用差值算出全部获得物品（覆盖所有 Add_najie_thing 路径）
+        try {
+          const snapRaw = await redis.get(historyKey);
+          if (snapRaw) {
+            const snapHistory = JSON.parse(snapRaw);
+            if (!snapHistory.najie_snapshot) {
+              snapHistory.najie_snapshot = await Read_najie(player_id);
+              await writeHistory(snapHistory);
+            }
+          }
+        } catch (err) {
+          console.warn(`[沉迷结算] 纳戒快照记录失败，结算时回退埋点明细：${err?.message || err}`);
+        }
         //动作结束时间
         let end_time = action.end_time;
         //现在的时间
@@ -2518,6 +2545,21 @@ if (action.settled_count >= action.total_count) {
         status: h.status || 'completed',
         items_gained: Array.isArray(h.items_gained) ? h.items_gained : [],
       };
+      // 有快照时用纳戒差值覆盖埋点结果，保证所有 Add_najie_thing 发放路径都列入明细
+      if (h.najie_snapshot) {
+        try {
+          const before = najieCountMap(h.najie_snapshot);
+          const after = najieCountMap(await Read_najie(player_id));
+          const gained = [];
+          for (const [name, count] of after) {
+            const delta = count - (before.get(name) || 0);
+            if (delta > 0) gained.push({ name, count: delta });
+          }
+          harvestData.items_gained = gained;
+        } catch (err) {
+          console.warn(`[沉迷结算] 纳戒差值失败，回退埋点明细：${err?.message || err}`);
+        }
+      }
       if (h.end_time) {
         harvestData.end_time = fmt(h.end_time);
         const dur = h.end_time - h.start_time;
