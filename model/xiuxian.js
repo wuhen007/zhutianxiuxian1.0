@@ -3,6 +3,7 @@ import path from 'path';
 import puppeteer from '../../../lib/puppeteer/puppeteer.js';
 import { writeJsonAtomically } from '../utils/atomicJson.js';
 import { withPlayerMutationLock } from '../utils/playerMutationLock.js';
+import { recordAddictionReward } from './addictionRewardContext.js';
 import { assertRevivalWriteCurrent, getRevivalCommandBlock } from './revivalEarth.js';
 import { assertTrialWriteCurrent, getTrialCommandBlock } from './trialUniverse.js';
 import { assertSwordMagicWriteCurrent, getSwordMagicCommandBlock } from './swordMagic.js';
@@ -5808,6 +5809,8 @@ export async function Add_najie_thing(
     if (await Write_najie(usr_qq, najie) === false) {
       throw new Error(`纳戒写入被封锁，物品尚未结算：${itemName}`);
     }
+    // 只记沉迷结算上下文内确实发放的物品；其它调用（卖东西/管理员发奖）不在上下文里
+    if (Number(x) > 0) recordAddictionReward(usr_qq, itemName, Number(x), thing_class);
   };
   //写入
   //这部分写得很冗余,但能跑

@@ -63,6 +63,7 @@ import { resolveZhetianDungeonVictory } from '../../model/zhetianInheritance.js'
 import { rollShengfaDungeonEncounter } from '../../model/shengfaFragment.js';
 import { shouldTriggerDungeonMalignantEvent } from '../../model/dungeonMalignantEvent.js';
 import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
+import { runWithAddictionReward, captureAddictionReward } from '../../model/addictionRewardContext.js';
 import {
   applyTianjiaoDungeonSneakAttack,
   selectHostileTianjiao,
@@ -125,8 +126,33 @@ export class SecretPlaceplusTask extends plugin {
       cron: this.set.actionplus_task,
       name: 'SecretPlaceplusTask',
       fnc: () => runTaskOnce('SecretPlaceplusTask', async () => {
-        await this.Secretplaceplustask();
-        await this.settleFashanProxies();
+        // 只在结算调用链内记录发放来源；卖东西/管理员发奖等并发指令不在这个上下文里
+        const rewardCtx = { rewards: new Map() };
+        await runWithAddictionReward(rewardCtx, async () => {
+          await this.Secretplaceplustask();
+          await this.settleFashanProxies();
+        });
+        // 每轮定时任务的奖励按玩家累计进 addiction_history（保留原有 TTL）
+        for (const [qq, list] of rewardCtx.rewards) {
+          try {
+            const key = `xiuxian:player:${qq}:addiction_history`;
+            const raw = await redis.get(key);
+            if (!raw) continue;
+            const history = JSON.parse(raw);
+            const acc = new Map((history.als_items_gained || []).map(it => [it.name, { ...it }]));
+            for (const it of list.values()) {
+              const prev = acc.get(it.name);
+              if (prev) prev.count += it.count;
+              else acc.set(it.name, { ...it });
+            }
+            history.als_items_gained = [...acc.values()];
+            const ttl = await redis.ttl(key);
+            await redis.set(key, JSON.stringify(history));
+            if (ttl > 0) await redis.expire(key, ttl);
+          } catch (err) {
+            console.warn(`[沉迷结算] 奖励累计落盘失败 ${qq}：${err?.message || err}`);
+          }
+        }
       }),
     };
   }
@@ -2545,8 +2571,19 @@ if (action.settled_count >= action.total_count) {
         status: h.status || 'completed',
         items_gained: Array.isArray(h.items_gained) ? h.items_gained : [],
       };
-      // 有快照时用纳戒差值覆盖埋点结果，保证所有 Add_najie_thing 发放路径都列入明细
-      if (h.najie_snapshot) {
+      // 优先级：ALS 上下文（精确按发放来源）> 纳戒快照差值 > 原有埋点
+      const rewardCtxNow = captureAddictionReward();
+      const thisRound = rewardCtxNow?.rewards?.get(String(player_id));
+      const alsAcc = Array.isArray(h.als_items_gained) ? h.als_items_gained : [];
+      if (alsAcc.length || thisRound?.size) {
+        const merged = new Map(alsAcc.map(it => [it.name, { ...it }]));
+        for (const it of thisRound?.values() || []) {
+          const prev = merged.get(it.name);
+          if (prev) prev.count += it.count;
+          else merged.set(it.name, { ...it });
+        }
+        harvestData.items_gained = [...merged.values()];
+      } else if (h.najie_snapshot) {
         try {
           const before = najieCountMap(h.najie_snapshot);
           const after = najieCountMap(await Read_najie(player_id));
