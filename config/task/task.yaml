@@ -23,6 +23,10 @@ saiji: 0 0 0 ? * 1
 # Cron表达式（每天0点，保持原样）
 resetCron: 0 0 0 ? * 1
 enable: true
+# 秘境沉迷过程推送：
+#   false（默认）= 过程文案完全不推送，结算完成时只发一条「奖励明细」（修为/血气/道具汇总）
+#   true = 恢复原行为：每轮文案进 temp 队列，由 temp_task 每5分钟批量发过程长图
+secretPlaceProcessPush: false
 # 洗劫商店刷新（每周一、三、五、日中午12点）
 shop: 0 0 12 ? * 1,3,5,7
 

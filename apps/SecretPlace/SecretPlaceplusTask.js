@@ -104,6 +104,8 @@ export class SecretPlaceplusTask extends plugin {
       rule: [],
     });
     this.set = config.getConfig('task', 'task');
+    // 过程推送开关：默认关闭，过程文案攒到结算完成时一次性发，避免每5分钟刷长图
+    this.processPush = this.set.secretPlaceProcessPush === true;
     this.task = {
       cron: this.set.actionplus_task,
       name: 'SecretPlaceplusTask',
@@ -2498,9 +2500,26 @@ if (action.settled_count >= action.total_count) {
         `【沉迷结算完成】`,
     ];
     await sendSecretPlaceNotification(action, player_id, finalMsg);
-    // 发送消息
-    msg = await get_log_img(msg);
-    await sendSecretPlaceNotification(action, player_id, msg);
+    // 静默模式：最终只发奖励明细，过程文案一条不推；开关打开时保留原来的长图
+    if (!this.processPush) {
+      const rawHistory = await redis.get(historyKey);
+      const h = rawHistory ? JSON.parse(rawHistory) : {};
+      const lines = [
+        `【沉迷结算 · 奖励明细】`,
+        `结算轮次：${action.settled_count}/${action.total_count}`,
+        `修为 +${Math.trunc(Number(h.xiuwei_gained) || 0)}`,
+        `血气 +${Math.trunc(Number(h.xueqi_gained) || 0)}`,
+        `获得道具：`,
+      ];
+      const items = Array.isArray(h.items_gained) ? h.items_gained : [];
+      if (items.length) items.forEach(it => lines.push(`  ${it.name} ×${it.count}`));
+      else lines.push('  无');
+      if (Number(h.death_count) > 0) lines.push(`战斗中陨落 ${h.death_count} 次`);
+      await sendSecretPlaceNotification(action, player_id, lines.join('\n'));
+    } else {
+      msg = await get_log_img(msg);
+      await sendSecretPlaceNotification(action, player_id, msg);
+    }
 } else {
     // 还有下一次结算，设置新的结算时间
     action.next_settle_time = Number(action.next_settle_time) + action.interval;
@@ -2512,32 +2531,34 @@ if (action.settled_count >= action.total_count) {
               await Add_血气(player_id, qixue);
               await Add_修为(player_id, xiuwei);
               if (weizhi?.name !== '岁云殿堂') await Add_寿元(player_id,-Math.max(x,1))
-              //发送消息
-              try {
-                let temp = await Read_temp();
-                let p = {
-                  msg: player.名号 + last_msg + fyd_msg,
-                  qq: player_id,
-                  qq_group: action.group_id,
-                  notify_bot_id: action.notify_bot_id,
-                  notify_type: action.notify_type,
-                  notify_target: action.notify_target,
-                };
-                temp.push(p);
-                await Write_temp(temp);
-              } catch {
-                await Write_temp([]);
-                let temp = await Read_temp();
-                let p = {
-                  msg: player.名号 + last_msg + fyd_msg,
-                  qq: player_id,
-                  qq_group: action.group_id,
-                  notify_bot_id: action.notify_bot_id,
-                  notify_type: action.notify_type,
-                  notify_target: action.notify_target,
-                };
-                temp.push(p);
-                await Write_temp(temp);
+              // 过程推送：关闭时把本轮文案攒进任务状态，结算完成时一次性合并发图；
+              // 开启时恢复原行为（每轮进 temp 队列，由 temp_task 每5分钟批量发）
+              const roundLog = player.名号 + last_msg + fyd_msg;
+              if (this.processPush) {
+                try {
+                  let temp = await Read_temp();
+                  temp.push({
+                    msg: roundLog,
+                    qq: player_id,
+                    qq_group: action.group_id,
+                    notify_bot_id: action.notify_bot_id,
+                    notify_type: action.notify_type,
+                    notify_target: action.notify_target,
+                  });
+                  await Write_temp(temp);
+                } catch {
+                  await Write_temp([]);
+                  let temp = await Read_temp();
+                  temp.push({
+                    msg: roundLog,
+                    qq: player_id,
+                    qq_group: action.group_id,
+                    notify_bot_id: action.notify_bot_id,
+                    notify_type: action.notify_type,
+                    notify_target: action.notify_target,
+                  });
+                  await Write_temp(temp);
+                }
               }
             }
           }
