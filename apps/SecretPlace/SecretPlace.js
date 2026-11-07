@@ -1222,6 +1222,10 @@ async Xiuxianstate(e) {
     if (!verc({ e })) return false;
     let usr_qq = e.user_id.toString().replace('qg_', '');
     usr_qq = await channel(usr_qq);
+    if (!await existplayer(usr_qq)) {
+        await e.reply('凡界众生册中尚无你的名字。\n新玩家请发送 #踏入仙途 直接开始；老玩家请发送 #修仙绑定 <旧QQ号> <名号> 关联旧存档。');
+        return false;
+    }
     const player = await Read_player(usr_qq);
     
     // 获取真身位置

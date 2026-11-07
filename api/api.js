@@ -162,11 +162,6 @@ export const verc = ({ e }) => {
             console.warn(`[形神状态] 读取玩家 ${userId} 失败：${error.message}`);
         }
     }
-    // 未绑定的官方 openid：给绑定引导，避免下游 Read_player 抛 ENOENT
-    if (userId && !/^\d+$/.test(userId) && !fs.existsSync(getResourcePath(path.join('xiuxian_player', `${userId}.json`)))) {
-        e.reply?.('【身份未绑定】请先在群内发送 #修仙绑定 <旧QQ号> <名号>，绑定后再使用玩法指令。');
-        return false;
-    }
     return true;
 };
 
