@@ -33,6 +33,7 @@ import { getDailyTaskDateKey } from '../../model/dailyTask.js';
 import { buildUniqueItemRarityMap } from '../../model/najieRaritySync.js';
 import { backfillXianguEternalClaims } from '../../model/xianguEternalBackfill.js';
 import { reviveFromYongJi } from '../Boss/YongJiList.js';
+import { blockGroup, unblockGroup, getAutoGroupIds } from '../../model/activeGroups.js';
 export class AdminSuper extends plugin {
   constructor() {
     super({
@@ -418,8 +419,8 @@ async sendToRebirth(e) {
             xiuxianConfig.Era.notifyGroups = [];
         }
         
-        // 检查群号是否已存在
-        if (xiuxianConfig.Era.notifyGroups.includes(groupId)) {
+        // 检查群号是否已存在（配置里可能是数字，统一按字符串比）
+        if (xiuxianConfig.Era.notifyGroups.map(String).includes(String(groupId))) {
             e.reply(`群号 ${groupId} 已在全局推送列表中`);
             return true;
         }
@@ -429,6 +430,9 @@ async sendToRebirth(e) {
         
         // 保存配置
         config.setConfig('xiuxian', 'xiuxian', xiuxianConfig);
+
+        // 手动加回来就解除黑名单，之后照常跟着群活跃度自动维护
+        await unblockGroup(groupId);
         
         e.reply(`✅ 成功添加群号 ${groupId} 到全局推送列表
 当前推送群组：
@@ -472,7 +476,8 @@ async removeGlobalPush(e) {
         }
         
         // 检查群号是否存在
-        const index = xiuxianConfig.Era.notifyGroups.indexOf(groupId);
+        // 注意配置里可能是数字（未加引号的群号），也可能字符串，统一按字符串比对
+        const index = xiuxianConfig.Era.notifyGroups.map(String).indexOf(String(groupId));
         if (index === -1) {
             e.reply(`群号 ${groupId} 不在全局推送列表中`);
             return true;
@@ -483,8 +488,11 @@ async removeGlobalPush(e) {
         
         // 保存配置
         config.setConfig('xiuxian', 'xiuxian', xiuxianConfig);
+
+        // 记黑名单：否则自动注册会在群里再有人发指令时把它加回来
+        await blockGroup(groupId);
         
-        e.reply(`✅ 成功从全局推送列表中移除群号 ${groupId}
+        e.reply(`✅ 成功从全局推送列表中移除群号 ${groupId}（不会再被自动加入）
 当前推送群组：
 ${xiuxianConfig.Era.notifyGroups.length > 0 ? xiuxianConfig.Era.notifyGroups.join('\n') : '暂无群组'}`);
         
@@ -523,15 +531,18 @@ async viewGlobalPush(e) {
             return true;
         }
         
-        let message = '📋 全局推送群组列表：';
+        const autoSet = await getAutoGroupIds();
+        let message = '📋 全局推送群组列表：\n';
         notifyGroups.forEach((groupId, index) => {
-            message += `${index + 1}. 群号: ${groupId}`;
+            const tag = autoSet.has(String(groupId)) ? '（自动：有人在玩修仙）' : '';
+            message += `${index + 1}. ${groupId}${tag}\n`;
         });
         
-        message += `共 ${notifyGroups.length} 个群组`;
-        message += `使用指令：`;
-        message += `• #全局推送消息群号 - 添加群组`;
-        message += `• #删除全局推送群号 - 删除群组`;
+        message += `\n共 ${notifyGroups.length} 个群组\n\n`;
+        message += `• #全局推送消息 群号 或 openid — 添加\n`;
+        message += `• #删除全局推送 群号 或 openid — 删除\n`;
+        message += `\n带「自动」的群不用手工加：有人在里面用修仙指令就会自动进来，`;
+        message += `长期没活跃会自动移出；手动删掉的不会再加回。`;
         
         e.reply(message);
         return true;

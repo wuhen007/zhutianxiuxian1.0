@@ -4,6 +4,7 @@ import { AppName } from '../app.config.js';
 import { wrapPluginClass } from '../model/textToImage.js';
 import { installScheduledSender } from '../model/scheduledSender.js';
 import { installHashSpaceFix } from '../model/hashSpaceFix.js';
+import { installActiveGroups } from '../model/activeGroups.js';
 
 export const appsOut = async AppsName => {
   const firstName = `plugins/${AppName}`;
@@ -62,6 +63,10 @@ export const appsOut = async AppsName => {
 
   // 玩家发 `# 修仙状态`（井号后带空格）或全角 `＃` 时也能命中指令
   await installHashSpaceFix();
+
+  // 活跃群自动注册：群里有玩家在跑修仙，就自动并入 Era.notifyGroups，
+  // 省掉「新群必须手工加进推送名单」这一步。必须在包装层之后调用。
+  await installActiveGroups(apps).catch(err => logger.error(`[自动推送] 初始化失败：${err.message}`));
 
   return apps;
 };

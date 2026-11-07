@@ -15,6 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
 import { __dirname as PluginDir } from '../app.config.js';
+import { noteSendResult } from './activeGroups.js';
 
 const CONFIG_FILE = path.join(PluginDir, 'config/xiuxian/official-reply.yaml');
 
@@ -370,6 +371,8 @@ export async function tryOfficialSend(trigger, msg) {
       firstSuccess.add(gid);
       log('info', `群 ${gid} 首次以官方身份发送成功（${msgId ? '被动回复' : '主动消息'}）`);
     }
+    // 成功了就清掉失败计数，避免偶发失败累积成「被判死」
+    noteSendResult(gid, true).catch(() => { });
     stats.ok += 1;
     if (!msgId) stats.active += 1;
     // 每 50 条打一次汇总，避免刷屏，又能在日志里追踪趋势
@@ -394,6 +397,9 @@ export async function tryOfficialSend(trigger, msg) {
 
   stats.fallback += 1;
   log('warn', `官方发送失败，回退协议号：${reason}`);
+  // 群解散 / 机器人被踢都会连续失败，累计到阈值由 activeGroups 移出推送名单；
+  // 但「主动消息无权限」这类不算，那个群还在正常玩，只是这条通道发不出去
+  noteSendResult(trigger?.groupId, false, reason).catch(() => { });
   return { handled: false, reason, error: result?.error };
 }
 
@@ -432,6 +438,7 @@ export async function tryOfficialActive(groupId, msg, options = {}) {
     stats.ok += 1;
     stats.active += 1;
     const gid = String(groupId);
+    noteSendResult(gid, true).catch(() => { });
     if (!firstActiveSuccess.has(gid)) {
       firstActiveSuccess.add(gid);
       log('info', `群 ${gid} 定时任务首次以官方身份发送成功（主动消息）`);
@@ -454,6 +461,7 @@ export async function tryOfficialActive(groupId, msg, options = {}) {
   stats.fallback += 1;
   const reason = result?.error?.message || 'unknown';
   log('warn', `定时任务官方发送失败，回退协议号：${reason}`);
+  noteSendResult(groupId, false, reason).catch(() => { });
   return { handled: false, reason, error: result?.error };
 }
 
