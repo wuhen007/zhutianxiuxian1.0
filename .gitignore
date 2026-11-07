@@ -69,3 +69,7 @@ data/lingshi-market.json.*.tmp
 # Standalone public gateway releases and private runtime identity
 dist/web-gateway/
 gateway-data/
+
+# 管理员/权限类文档只在本地留存，不入库（本仓库公开）
+docs/*.docx
+docs/管理员指令总表.md
