@@ -7,8 +7,8 @@ import {
   Read_equipment,
   Write_equipment,
   Read_najie,
-  Write_najie
-} from '../../model/xiuxian.js';
+  Write_najie,
+  isXiuxianAdmin} from '../../model/xiuxian.js';
 
 /**
  * 全体玩家初始帝兵"废铁"数值同步修复
@@ -51,7 +51,7 @@ export class feitieFix extends plugin {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) return false;
+    if (!isXiuxianAdmin(e)) return false;
 
     e.reply('开始同步全体玩家废铁数值…');
     const target = this.getTargetStats();

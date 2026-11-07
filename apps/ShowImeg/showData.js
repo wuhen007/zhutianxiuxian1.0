@@ -10,7 +10,7 @@ import {
   get_xiangujinshi_img,
   get_mijing_img,
   get_association_img,
-} from "../../model/xiuxian.js";
+  isXiuxianAdmin,} from "../../model/xiuxian.js";
 export class showData extends plugin {
   constructor(e) {
     super({
@@ -65,7 +65,7 @@ export class showData extends plugin {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) return  false;
+    if (!isXiuxianAdmin(e)) return  false;
 if (!verc({ e })) return  false ;
     let img = await get_adminset_img(e);
     e.reply(img);

@@ -6,6 +6,7 @@ import {
   Read_player,
   channel,
   existplayer,
+  isXiuxianAdmin,
 } from '../model/xiuxian.js';
 import {
   SURVEY_QUESTIONS,
@@ -154,8 +155,7 @@ export class CultivationSurvey extends plugin {
 
   async showSurveyStatistics(e) {
     const userId = String(await this.resolveUserId(e));
-    const masters = (config.getConfig('xiuxian', 'xiuxian')?.Master || []).map(String);
-    if (!e.isMaster && !masters.includes(userId)) return false;
+    if (!isXiuxianAdmin(e)) return false;
     const statistics = buildSurveyStatistics(readSurveyResponses());
     const report = formatSurveyStatistics(statistics);
     try {

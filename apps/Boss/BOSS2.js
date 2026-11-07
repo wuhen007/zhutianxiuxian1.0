@@ -11,7 +11,8 @@ import {
   Read_player,
   Harm,
   zd_battle,
-  channel, Add_najie_thing 
+  channel, Add_najie_thing,
+  isXiuxianAdmin
 } from '../../model/xiuxian.js';
 import {
   DARK_REVOLT_SUPREMES,
@@ -160,7 +161,7 @@ export class BOSS2 extends plugin {
       return true;
     }
   }
-        if (e.isMaster) {
+        if (isXiuxianAdmin(e)) {
             if (!await BossIsAlive()) {
                 if (await InitWorldBoss(e) == 0)
                     e.reply("似乎有什么东西干预了岁月，让禁区至尊有所预感，提前出世要收割万灵生命展开帝战打开成仙之门，恐怖的黑暗动乱开启！");
@@ -176,7 +177,7 @@ export class BOSS2 extends plugin {
   //黑暗动乱结束指令
   async DeleteWorldBoss(e) {
     if (!verc({ e })) return false;
-    if (e.isMaster) {
+    if (isXiuxianAdmin(e)) {
       if (await BossIsAlive()) {
         await redis.del('Xiuxian:WorldBossStatus2');
         await redis.del('zhutianxiuxian1.0Record2');

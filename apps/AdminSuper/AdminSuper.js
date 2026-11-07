@@ -19,7 +19,8 @@ import {
   Add_灵石,
   Add_源石,
   Add_纪元积累,
-  channel
+  channel,
+  isXiuxianAdmin,
 } from '../../model/xiuxian.js';
 import { Read_player, __PATH } from '../../model/xiuxian.js';
 import {
@@ -146,7 +147,7 @@ async setMaster(e) {
   const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
   const masterList = xiuxianConfig.Master || [];
   const userQQ = e.user_id.toString().replace('qg_', '');
-  if (!e.isMaster && !masterList.includes(userQQ)) {
+  if (!isXiuxianAdmin(e)) {
     return e.reply('你没有权限设置修仙管理员');
   }
 
@@ -199,26 +200,60 @@ async setMaster(e) {
     return e.reply(`用户 ${targetQQ} 已经是修仙管理员了`);
   }
 
-  try {
-    // 使用现有的config对象读取配置
-    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
-    
-    // 确保Master数组存在
-    if (!xiuxianConfig.Master) {
-      xiuxianConfig.Master = [];
+  // 服务主人：写入全局 Master，所有群生效
+  if (e.isMaster) {
+    try {
+      const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+      if (!xiuxianConfig.Master) {
+        xiuxianConfig.Master = [];
+      }
+      xiuxianConfig.Master.push(targetQQ);
+      config.setConfig('xiuxian', 'xiuxian', xiuxianConfig);
+      return e.reply(`成功设置用户 ${targetQQ} 为修仙管理员（全局生效）`);
+    } catch (error) {
+      console.error('设置修仙管理员失败:', error);
+      return e.reply('设置修仙管理员失败，请检查配置文件权限');
     }
-    
-    // 添加新的管理员
-    xiuxianConfig.Master.push(targetQQ);
-    
-    // 使用config对象保存配置
-    config.setConfig('xiuxian', 'xiuxian', xiuxianConfig);
-    
-    e.reply(`成功设置用户 ${targetQQ} 为修仙管理员`);
-    
+  }
+
+  // 群主 / 群内管理员：只能授予本群成员，且只在本群生效，写入 MasterScoped
+  const groupId = String(e.group_id || '');
+  if (!groupId) {
+    return e.reply('群主只能在群聊中授予本群成员管理权限，请在本群 @ 目标成员使用');
+  }
+  let memberMap = null;
+  try {
+    let group = e.group || null;
+    if (!group) {
+      group = e.bot?.pickGroup ? e.bot.pickGroup(groupId) : Bot.pickGroup(Number(groupId));
+    }
+    memberMap = await group.getMemberMap();
   } catch (error) {
-    console.error('设置修仙管理员失败:', error);
-    e.reply('设置修仙管理员失败，请检查配置文件权限');
+    console.error('校验群成员失败:', error);
+    return e.reply(`无法校验群成员列表，操作已取消：${error?.message || error}`);
+  }
+  const isMember = memberMap && [...memberMap.keys()].some(k => String(k) === String(targetQQ));
+  if (!isMember) {
+    return e.reply(`只能授予本群成员。${targetQQ} 不在本群（${groupId}）。`);
+  }
+  try {
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    if (!xiuxianConfig.MasterScoped || typeof xiuxianConfig.MasterScoped !== 'object') {
+      xiuxianConfig.MasterScoped = {};
+    }
+    const scopedList = Array.isArray(xiuxianConfig.MasterScoped[targetQQ])
+      ? xiuxianConfig.MasterScoped[targetQQ].map(String)
+      : [];
+    if (scopedList.includes(groupId)) {
+      return e.reply(`用户 ${targetQQ} 已经在本群拥有修仙管理权限了`);
+    }
+    scopedList.push(groupId);
+    xiuxianConfig.MasterScoped[targetQQ] = scopedList;
+    config.setConfig('xiuxian', 'xiuxian', xiuxianConfig);
+    return e.reply(`已授予 ${targetQQ} 本群（${groupId}）的修仙管理权限，该权限仅在本群生效`);
+  } catch (error) {
+    console.error('设置本群修仙管理员失败:', error);
+    return e.reply('设置修仙管理员失败，请检查配置文件权限');
   }
 }
 async sendToRebirth(e) {
@@ -226,7 +261,7 @@ async sendToRebirth(e) {
   const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
   const masterList = xiuxianConfig.Master || [];
   const userQQ = e.user_id.toString().replace('qg_', '');
-  if (!e.isMaster && !masterList.includes(userQQ)) {
+  if (!isXiuxianAdmin(e)) {
     return false;
   }
   
@@ -356,7 +391,7 @@ async sendToRebirth(e) {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!e.isMaster) {
         return false;
     }
     
@@ -413,7 +448,7 @@ async removeGlobalPush(e) {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!e.isMaster) {
         return false;
     }
     
@@ -467,7 +502,7 @@ async viewGlobalPush(e) {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!e.isMaster) {
         return false;
     }
     
@@ -516,7 +551,7 @@ async viewGlobalPush(e) {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
         return false;
     }
     // 检查是否有艾特信息
@@ -597,7 +632,7 @@ async setPlayerToPrison(targetQQ, minutes) {
        const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
         return false;
     }
     let nowTime = new Date().getTime();
@@ -623,7 +658,7 @@ async setPlayerToPrison(targetQQ, minutes) {
      const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
         return false;
     }
    let nowtime = new Date().getTime();
@@ -660,7 +695,7 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
         const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
         return false;
     }
     if (!verc({ e })) return false;
@@ -694,7 +729,7 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
       return false;
     }
     if (!verc({ e })) return false;
@@ -743,7 +778,7 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
         const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
         return false;
     }
     if (!verc({ e })) return false;
@@ -776,7 +811,7 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
         const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
         return false;
     }
     if (!verc({ e })) return false;
@@ -863,7 +898,7 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
         const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
         return false;
     }
     if (!verc({ e })) return false;
@@ -908,7 +943,7 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
         const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
         return false;
     }
     if (!verc({ e })) return false;
@@ -952,7 +987,7 @@ async relieveFashanAction(e) {
         const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
         return false;
     }
     
@@ -1028,7 +1063,7 @@ async relieveFashanAction(e) {
         const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
         return false;
     }
     if (!verc({ e })) return false;
@@ -1107,7 +1142,7 @@ async relieveFashanAction(e) {
         const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
         return false;
     }
     if (!verc({ e })) return false;
@@ -1136,7 +1171,7 @@ async relieveFashanAction(e) {
         const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
         return false;
     }
     const msg1 = e.msg.replace('#将米娜桑的纳戒里叫', '');
@@ -1174,7 +1209,7 @@ async relieveFashanAction(e) {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
       return false;
     }
     if (!verc({ e })) return false;
@@ -1475,7 +1510,7 @@ async relieveFashanAction(e) {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
       return e.reply('你没有权限发放拉新奖励');
     }
 
@@ -1563,7 +1598,7 @@ async relieveFashanAction(e) {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
       return false;
     }
 
@@ -1641,7 +1676,7 @@ async relieveFashanAction(e) {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
       return false;
     }
 
@@ -1722,7 +1757,7 @@ async relieveFashanAction(e) {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
       return e.reply('你没有权限执行补登。');
     }
     if (!verc({ e })) return false;
@@ -1764,7 +1799,7 @@ async relieveFashanAction(e) {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
       return e.reply('你没有权限发放纪元积累。');
     }
     if (!verc({ e })) return false;

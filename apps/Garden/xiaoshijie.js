@@ -65,8 +65,8 @@ import {
   Add_修为,
   Add_血气,
   Read_najie,
-  Write_najie
-} from '../../model/xiuxian.js';
+  Write_najie,
+  isXiuxianAdmin} from '../../model/xiuxian.js';
 import { Read_player, __PATH, Read_danyao } from '../../model/xiuxian.js';
 import {
   BAITIAN_TEMPLE_NAME,
@@ -809,7 +809,6 @@ export class xiaoshijie extends plugin {
          {
         reg: '^#催熟小世界作物$',
         fnc: 'forceRipenCrops',
-        permission: 'master'
     },
     {
         reg: '^#一键种植(.*?)$',
@@ -1181,6 +1180,7 @@ checkShenyaoGrowth(world, hoursPassed) {
     return results;
 }
 async forceRipenCrops(e) {
+    if (!isXiuxianAdmin(e)) return e.reply('此指令仅限修仙管理员。');
     if (!e.isGroup) return;
     
     const usr_qq = e.user_id;

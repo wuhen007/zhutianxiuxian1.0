@@ -58,8 +58,8 @@ import {
   convert2integer,
   GetPower,
   get_equipment_img,
-  channel
-} from '../../model/xiuxian.js';
+  channel,
+  isXiuxianAdmin} from '../../model/xiuxian.js';
 import {__PATH} from '../../model/xiuxian.js';
 import { AppName } from '../../app.config.js';
 import { readall } from '../../model/duanzaofu.js';
@@ -1609,8 +1609,8 @@ async huodong(e) {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
-      e.reply('只有主人可以执行操作');
+    if (!isXiuxianAdmin(e)) {
+      e.reply('只有修仙管理员可以执行操作');
       return false;
     }
     let File = fs.readdirSync(__PATH.player_path);

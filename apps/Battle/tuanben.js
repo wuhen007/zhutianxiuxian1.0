@@ -11,7 +11,8 @@ import {
 } from '../../model/suiyunCombat.js';
 import { multiplySuiyunLoot } from '../../model/suiyunLoot.js';
 import { plugin, config ,data} from '../../api/api.js';
-import { existplayer, Read_player, Read_equipment, Write_player, Add_najie_thing, channel ,calculateHarm, ensureNumber, bigNumberTransform, exist_najie_thing, get_fight_img, initActionBar, advanceUnitBars, getReadyUnits, boostActionBar, pushBackActionBar, ACTION_BAR_MAX, applyXianguTurnRecovery, calcDamage, getSeedSkillEntry, settleBattleGongfaProficiency } from '../../model/xiuxian.js';
+import { existplayer, Read_player, Read_equipment, Write_player, Add_najie_thing, channel ,calculateHarm, ensureNumber, bigNumberTransform, exist_najie_thing, get_fight_img, initActionBar, advanceUnitBars, getReadyUnits, boostActionBar, pushBackActionBar, ACTION_BAR_MAX, applyXianguTurnRecovery, calcDamage, getSeedSkillEntry, settleBattleGongfaProficiency,
+  isXiuxianAdmin} from '../../model/xiuxian.js';
 import { segment } from "icqq"
 import {
  checkEmperorAwareness,
@@ -149,7 +150,6 @@ export class tuanben extends plugin {
          {
           reg: '^#关闭所有讨伐$',
           fnc: 'shutdownAllBattles',
-          permission: 'master' // 仅管理员可用
         },
    {
       reg: '^#加入讨伐队伍\\s*(.*)$',   // 修改后的正则
@@ -182,17 +182,14 @@ export class tuanben extends plugin {
                 {
           reg: '^#重置所有讨伐CD$',
           fnc: 'resetAllPlayerCD',
-          permission: 'master' // 仅管理员可用
         },
   {
           reg: '^#关闭团本系统$',
           fnc: 'disableTuanbenSystem',
-          permission: 'master'
         },
         {
           reg: '^#开启团本系统$',
           fnc: 'enableTuanbenSystem',
-          permission: 'master'
         },
           {
     reg: '^#结算团本奖励$',
@@ -261,6 +258,7 @@ export class tuanben extends plugin {
   
   // 关闭团本系统
   async disableTuanbenSystem(e) {
+    if (!isXiuxianAdmin(e)) return e.reply('此指令仅限修仙管理员。');
     await redis.set(this.systemStatusKey, 'disabled');
     e.reply('团本系统已关闭！所有玩家将无法进行团本相关操作');
     return true;
@@ -268,6 +266,7 @@ export class tuanben extends plugin {
   
   // 开启团本系统
   async enableTuanbenSystem(e) {
+    if (!isXiuxianAdmin(e)) return e.reply('此指令仅限修仙管理员。');
     await redis.set(this.systemStatusKey, 'enabled');
     e.reply('团本系统已开启！玩家可以正常进行团本活动');
     return true;
@@ -310,6 +309,7 @@ async checkPlayerCD(userId) {
 }
   
 async resetAllPlayerCD(e) {
+  if (!isXiuxianAdmin(e)) return e.reply('此指令仅限修仙管理员。');
   // 如果是第一次发送指令，要求确认
 
   
@@ -687,6 +687,7 @@ async createEmperorTeam(e) {
   /*========== 核心功能实现 ==========*/
     // 关闭所有讨伐队伍
   async shutdownAllBattles(e) {
+    if (!isXiuxianAdmin(e)) return e.reply('此指令仅限修仙管理员。');
     // 获取所有队伍键
     const teamKeys = await redis.keys(this.redisKeys.team('*'));
     

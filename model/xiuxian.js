@@ -14039,10 +14039,12 @@ export async function setFileValue(user_qq, num, type) {
 /**
  * 修仙插件统一管理员判定（玩法管理权限）：
  *   1. 云崽主人（e.isMaster）
- *   2. xiuxian.yaml 的 Master 配置列表
- *   3. 群主（e.member.is_owner）
+ *   2. xiuxian.yaml 的 Master 配置列表（全局生效，仅主人可写）
+ *   3. MasterScoped：群主在本群授予的管理员，形如 { "<qq>": ["<群号>", ...] }，只在该群生效
+ *   4. 群主（e.member.is_owner）
  * 注意：刻意不含「群管理员」——按服主决定，玩法管理只下放给群主。
- * 危险操作（删档/改灵石/数据恢复等）不要用本函数，仍应只认 e.isMaster。
+ * 服主已决定把除「插件更新 / 全局推送 / 代执行」外的管理指令全部下放给群主，
+ * 因此这些指令统一走本函数；上述三条保留项仍只认 e.isMaster。
  */
 export function isXiuxianAdmin(e) {
   if (e?.isMaster) return true;
@@ -14051,6 +14053,10 @@ export function isXiuxianAdmin(e) {
     const masterList = xiuxianConfig?.Master || [];
     const qq = String(e?.user_id || '').replace('qg_', '');
     if (masterList.includes(qq)) return true;
+    const scoped = xiuxianConfig?.MasterScoped || {};
+    const groups = Array.isArray(scoped[qq]) ? scoped[qq] : [];
+    const gid = String(e?.group_id || '');
+    if (gid && groups.map(String).includes(gid)) return true;
   } catch {}
   return Boolean(e?.member?.is_owner);
 }

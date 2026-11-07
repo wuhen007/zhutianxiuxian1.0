@@ -41,7 +41,6 @@ export class AutoDailyTask extends plugin {
                 {
                     reg: '^#测试自动任务$',
                     fnc: 'testAutoTask',
-                    permission: 'master'
                 },
                 {
                     reg: '^#查看领取记录$',
@@ -50,12 +49,10 @@ export class AutoDailyTask extends plugin {
                 {
                     reg: '^#重置全体签到记录$',
                     fnc: 'resetAllSignRecords',
-                    permission: 'master'
                 },
                 {
                     reg: '^#重置全体今日签到记录$',
                     fnc: 'resetAllTodaySignRecords',
-                    permission: 'master'
                 },
                 {
                     reg: '^#开启自动任务$',

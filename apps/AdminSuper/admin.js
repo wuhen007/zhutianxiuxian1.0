@@ -21,7 +21,7 @@ export class admin extends plugin {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) return false;
+    if (!e.isMaster) return false;
     if (!verc({ e })) return false;
     const isForce = e.msg.includes('强制');
     if (isForce) {

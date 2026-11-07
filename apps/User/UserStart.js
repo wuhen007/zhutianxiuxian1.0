@@ -202,7 +202,7 @@ async proxyCommand(e) {
   const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
   const masterList = xiuxianConfig.Master || [];
   const userQQ = e.user_id.toString().replace('qg_', '');
-  if (!e.isMaster && !masterList.includes(userQQ)) {
+  if (!e.isMaster) {
     e.reply('您没有权限使用代操作功能');
     return false;
   }

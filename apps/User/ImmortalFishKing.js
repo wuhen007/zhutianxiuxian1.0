@@ -16,7 +16,7 @@ import {
   existplayer,
   exist_najie_thing,
   zd_battle,
-} from "../../model/xiuxian.js";
+  isXiuxianAdmin,} from "../../model/xiuxian.js";
 import {
   FISHING_PLANE_NAMES,
   getPlaneFishConfig,
@@ -99,7 +99,7 @@ export class ImmortalFishKing extends plugin {
       event: "message",
       priority: 599,
       rule: [
-        { reg: "^#召唤\\S+鱼王.*$", fnc: "summon", permission: "master" },
+        { reg: "^#召唤\\S+鱼王.*$", fnc: "summon"},
         { reg: "^#鱼王列表$", fnc: "list" },
         { reg: "^#鱼王状态$", fnc: "status" },
         { reg: "^#鱼王榜$", fnc: "damageList" },
@@ -123,6 +123,7 @@ export class ImmortalFishKing extends plugin {
   }
 
   async summon(e) {
+    if (!isXiuxianAdmin(e)) return e.reply('此指令仅限修仙管理员。');
     if (!e.isGroup || !e.group_id) return e.reply("召唤鱼王只能在群聊中进行。");
     const match = String(e.msg || "").trim().match(/^#召唤(.+?)鱼王(?:\s*@.*)?$/);
     const plane = match?.[1]?.trim();

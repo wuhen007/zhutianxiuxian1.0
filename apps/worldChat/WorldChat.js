@@ -1283,7 +1283,7 @@ export class WorldChat extends plugin {
   }
 
   async setWorldEnabled(e) {
-    if (!isXiuxianAdmin(e)) return e.reply('仅机器人主人可修改世界频道总开关');
+    if (!isXiuxianAdmin(e)) return e.reply('仅修仙管理员可修改世界频道总开关');
     const enabled = /^#世界\s*开启$/.test(e.msg);
     client.setEnable(enabled);
     await e.reply(`世界频道已${enabled ? '开启' : '关闭'}。${enabled ? '已加入的群将在总机连接成功后自动接收。' : '已保存本群订阅，重新开启后恢复接收。'}`);

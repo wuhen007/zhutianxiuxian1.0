@@ -334,14 +334,13 @@ export class StrangeSacrifice extends plugin {
         { reg: '^#迎战诡异小祭$', fnc: 'fightSmall' },
         { reg: '^#迎战诡异大祭$', fnc: 'fightBig' },
         { reg: '^#迎战厄土高原$', fnc: 'fightBig' },
-        { reg: '^#开启诡异小祭万界$', fnc: 'openSmall', permission: 'master' },
-        { reg: '^#开启诡异大祭万界$', fnc: 'openBig', permission: 'master' },
+        { reg: '^#开启诡异小祭万界$', fnc: 'openSmall'},
+        { reg: '^#开启诡异大祭万界$', fnc: 'openBig'},
         {
           reg: '^#关闭诡异(?:小祭|大祭)万界$',
           fnc: 'adminSettle',
-          permission: 'master',
         },
-        { reg: '^#结算诡异祭礼$', fnc: 'adminSettle', permission: 'master' },
+        { reg: '^#结算诡异祭礼$', fnc: 'adminSettle'},
         { reg: '^#复苏[厄额]土高原$', fnc: 'restoreHighland' },
       ],
     });
@@ -718,6 +717,7 @@ export class StrangeSacrifice extends plugin {
   }
 
   async forceOpen(e, type) {
+    if (!isXiuxianAdmin(e)) return e.reply('此指令仅限修仙管理员。');
     return withPlayerMutationLock('system:strange-sacrifice', () => this.forceOpenLocked(e, type));
   }
 

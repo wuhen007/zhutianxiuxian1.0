@@ -1,7 +1,8 @@
 import { plugin } from '../../api/api.js';
 import { alluser } from '../../model/duanzaofu.js';
 import config from '../../model/Config.js';
-import { Read_player, Write_player } from '../../model/xiuxian.js';
+import { Read_player, Write_player,
+  isXiuxianAdmin} from '../../model/xiuxian.js';
 import { migrateShengxuPlayer } from '../../model/shengxuPlaneMigration.js';
 
 /**
@@ -30,7 +31,7 @@ export class shengxuPlaneMigrate extends plugin {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) return false;
+    if (!isXiuxianAdmin(e)) return false;
 
     e.reply('开始迁移圣墟位面旧存档（小阴间/阳间）…');
     const players = await alluser();

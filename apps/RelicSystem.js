@@ -8,7 +8,7 @@ import {
   channel,
   exist_najie_thing,
   existplayer,
-} from '../model/xiuxian.js';
+  isXiuxianAdmin,} from '../model/xiuxian.js';
 import {
   RELIC_AFFIXES,
   RELIC_EXPANSION_ITEM,
@@ -58,7 +58,6 @@ export class RelicSystem extends plugin {
         {
           reg: '^#发放遗珍(?:\\*\\d+)?\\*(?:凡耀|灵玄|至圣|大道|超脱)\\*.+$',
           fnc: 'grant',
-          permission: 'master',
         },
       ],
     });
@@ -314,6 +313,7 @@ export class RelicSystem extends plugin {
   }
 
   async grant(e) {
+    if (!isXiuxianAdmin(e)) return e.reply('此指令仅限修仙管理员。');
     const args = e.msg.replace(/^#发放遗珍\*/, '').split('*').map(value => value.trim());
     let target = await this.playerId(e);
     if (/^\d+$/.test(args[0]) && args.length >= 3) target = args.shift();

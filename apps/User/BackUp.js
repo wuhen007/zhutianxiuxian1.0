@@ -1,7 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import { plugin, config, data } from '../../api/api.js';
-import { __PATH, channel, existplayer, Read_player } from '../../model/xiuxian.js';
+import { __PATH, channel, existplayer, Read_player,
+  isXiuxianAdmin} from '../../model/xiuxian.js';
 import { findPlayerArchiveSnapshot, selectBackupsToDelete } from '../../model/backupSnapshot.js';
 import { writeJsonAtomically } from '../../utils/atomicJson.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
@@ -151,8 +152,8 @@ export class BackUp extends plugin {
     if (e) {
       const masterList = config.getConfig('xiuxian', 'xiuxian').Master || [];
       const userQQ = e.user_id.toString().replace('qg_', '');
-      if (!e.isMaster && !masterList.includes(userQQ)) {
-        e.reply('只有主人可以执行操作');
+      if (!isXiuxianAdmin(e)) {
+        e.reply('只有修仙管理员可以执行操作');
         return false;
       }
     }
@@ -236,8 +237,8 @@ export class BackUp extends plugin {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
-      e.reply('只有主人可以执行操作');
+    if (!isXiuxianAdmin(e)) {
+      e.reply('只有修仙管理员可以执行操作');
       return false;
     }
     try {
@@ -276,8 +277,8 @@ export class BackUp extends plugin {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
-      e.reply('只有主人可以执行操作');
+    if (!isXiuxianAdmin(e)) {
+      e.reply('只有修仙管理员可以执行操作');
       return false;
     }
 
@@ -435,8 +436,8 @@ export class BackUp extends plugin {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
-      e.reply('只有主人可以执行操作');
+    if (!isXiuxianAdmin(e)) {
+      e.reply('只有修仙管理员可以执行操作');
       return false;
     }
 

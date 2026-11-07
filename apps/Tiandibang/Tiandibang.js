@@ -58,7 +58,6 @@ export class Tiandibang extends plugin {
          {
           reg: '^#结算天地榜奖励$',
           fnc: 'settle_rewards',
-          permission: 'master' // 只有主人可以执行
         }
       ],
     });
@@ -74,7 +73,7 @@ async settle_rewards(e) {
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
     if (!isXiuxianAdmin(e)) {
-        e.reply('只有主人可以执行此操作');
+        e.reply('只有修仙管理员可以执行此操作');
         return false;
     }
     
@@ -751,7 +750,7 @@ tiandibang[m].血量上限 = player.血量上限;   // 新增：更新血量上�
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
     if (!isXiuxianAdmin(e)) {
-      e.reply('只有主人可以执行操作');
+      e.reply('只有修仙管理员可以执行操作');
       return false;
     }
     await withTiandibangLock(async () => {

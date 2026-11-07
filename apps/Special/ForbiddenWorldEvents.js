@@ -8,7 +8,7 @@ import {
   Write_player,
   channel,
   existplayer,
-} from '../../model/xiuxian.js';
+  isXiuxianAdmin,} from '../../model/xiuxian.js';
 import {
   getPlayerPlaneCoordinate,
   getPlayerPlaneName,
@@ -142,8 +142,8 @@ export class ForbiddenWorldEvents extends plugin {
         { reg: '^#迎战违禁品清算$', fnc: 'fightCleansing' },
         { reg: '^#大道至宝惊鸿$', fnc: 'showDaoSighting' },
         { reg: '^#追寻大道至宝$', fnc: 'seekDaoSighting' },
-        { reg: '^#开启违禁品清算(?:\\s+.+)?$', fnc: 'adminOpenCleansing', permission: 'master' },
-        { reg: '^#开启大道至宝惊鸿(?:\\s+.+)?$', fnc: 'adminOpenDaoSighting', permission: 'master' },
+        { reg: '^#开启违禁品清算(?:\\s+.+)?$', fnc: 'adminOpenCleansing'},
+        { reg: '^#开启大道至宝惊鸿(?:\\s+.+)?$', fnc: 'adminOpenDaoSighting'},
       ],
     });
     this.task = {
@@ -199,6 +199,7 @@ export class ForbiddenWorldEvents extends plugin {
   }
 
   async adminOpenCleansing(e) {
+    if (!isXiuxianAdmin(e)) return e.reply('此指令仅限修仙管理员。');
     const { worldYear } = currentWorldTime();
     const { state } = await this.loadState();
     if (getActive(state, 'cleansing', worldYear)) return e.reply('当前已经存在一场违禁品清算。');
@@ -347,6 +348,7 @@ export class ForbiddenWorldEvents extends plugin {
   }
 
   async adminOpenDaoSighting(e) {
+    if (!isXiuxianAdmin(e)) return e.reply('此指令仅限修仙管理员。');
     const { state, worldYear } = await this.loadState();
     if (getActive(state, 'daoSighting', worldYear)) return e.reply('当前已经有一道大道至宝余辉横贯诸天。');
     const location = createRealmEventLocation();

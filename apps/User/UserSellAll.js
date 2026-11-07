@@ -42,8 +42,8 @@ import {
   Write_player,
   channel,
   buildAt,
-  GetPower
-} from '../../model/xiuxian.js';
+  GetPower,
+  isXiuxianAdmin} from '../../model/xiuxian.js';
 import { getMinggeEffects, getMinggeDirectMultiplier } from '../../model/mingge.js';
 import {
   getDimensionTradeCompatibility,
@@ -842,7 +842,7 @@ async all_shenyao(e) {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) return false;
+    if (!isXiuxianAdmin(e)) return false;
     let player=await alluser()
     for(let i=0;i<player.length;i++){
       let player2=await Read_player(player[i])
@@ -1428,7 +1428,7 @@ async all_shenyao(e) {
     if (!verc({ e })) return false;
     const userQQ = e.user_id.toString().replace('qg_', '');
     const masterList = config.getConfig('xiuxian', 'xiuxian').Master || [];
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
       return e.reply('你没有权限执行一键同步');
     }
 

@@ -32,7 +32,8 @@ foundthing,
   LevelTask,
   get_log_img,
   channel,
-  ForwardMsg
+  ForwardMsg,
+  isXiuxianAdmin
 } from '../../model/xiuxian.js';
 import {
     getRealmAuthorityLevel,
@@ -272,7 +273,6 @@ export class daofa extends plugin {
                     reg: '^#掌控生死(?:\\s+.*)?$',
                     fnc: 'controlLifeDeath',
                     dsc: '掌控目标玩家的生死（延长或缩短寿元）',
-                    permission: 'master' // 仅管理员可用
                 },
                 {
                     reg: '^#推进时代\\s+(\\d+)$',
@@ -429,7 +429,7 @@ async  checkGongfaRequirements(player) {
             `下次修炼：${bigNumberTransform(cost.cultivation)}修为 + ${bigNumberTransform(cost.lifespan)}年寿元，进度 +${cost.progress}%`,
             '指令：#修炼轮回大道 或 #修炼轮回大道*10（1～99次）',
             '跨阶段逐次计算消耗；批量资源不足则不扣费，满级自动停止。');
-        if (canControlLifeDeath(state)) message.push('已解锁掌控生死：主人可用 #掌控生死 @QQ +年数 / -年数。');
+        if (canControlLifeDeath(state)) message.push('已解锁掌控生死：修仙管理员可用 #掌控生死 @QQ +年数 / -年数。');
         if (canAdvanceReincarnationEra(state)) message.push('已解锁时代推进：你可用 #推进时代 年数（1～10000，影响全服）；岁月境大圆满即可，无需进度100%。');
         message.push('生死境初期→中期→后期→大圆满→岁月境初期→中期→后期→大圆满100%。',
             '能力系数随境界同步；当前仅已接入上述主动指令，不代表已自动复活或自动增加寿元。',
@@ -511,9 +511,9 @@ async  checkGongfaRequirements(player) {
         Object.assign(reincarnation, normalizeReincarnationWay(reincarnation));
     }
 
-    // 主人主动调用才生效；进入岁月境后不再丢失生死境已解锁权限。
+    // 修仙管理员（主人 / Master / 本群群主或群主授权）可调用；进入岁月境后不再丢失生死境已解锁权限。
     async controlLifeDeath(e) {
-        if (!e.isMaster) return e.reply('此指令仅限机器人主人。');
+        if (!isXiuxianAdmin(e)) return e.reply('此指令仅限修仙管理员。');
         if (!verc({ e })) return false;
         const match = /^#掌控生死\s+@?(\d+)\s+([+-]?\d+)$/.exec(String(e.msg || ''));
         const mentioned = typeof e.at === 'object' ? e.at?.qq || e.at?.user_id : e.at;

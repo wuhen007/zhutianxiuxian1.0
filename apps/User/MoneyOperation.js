@@ -20,8 +20,8 @@ import {
   Add_纪元积累,
   channel,
   buildAt,
-  instead_equipment
-} from '../../model/xiuxian.js';
+  instead_equipment,
+  isXiuxianAdmin} from '../../model/xiuxian.js';
 import {
   EquipmentTransferError,
   isItemPermanentlyNonTradeable,
@@ -152,7 +152,7 @@ export class MoneyOperation extends plugin {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
         return false;
     }
     //对方
@@ -269,7 +269,7 @@ export class MoneyOperation extends plugin {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) {
+    if (!isXiuxianAdmin(e)) {
         return false;
     }
     //所有玩家

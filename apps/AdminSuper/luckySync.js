@@ -1,6 +1,7 @@
 import { plugin } from '../../api/api.js';
 import config from '../../model/Config.js';
 import { syncAllPlayerLucky } from '../../model/luckySync.js';
+import { isXiuxianAdmin } from '../../model/xiuxian.js';
 
 /**
  * 同步全体玩家的正确幸运值
@@ -28,7 +29,7 @@ export class luckySync extends plugin {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!e.isMaster && !masterList.includes(userQQ)) return false;
+    if (!isXiuxianAdmin(e)) return false;
 
     e.reply('开始同步全体玩家幸运值…');
     const result = await syncAllPlayerLucky();
