@@ -157,7 +157,12 @@ export class MoneyOperation extends plugin {
     }
     //对方
     let isat = e.message.some(item => item.type === 'at');
-    if (!isat) return false;
+    if (!isat) {
+      // 能走到这里说明已经是管理员；给个用法提示，避免「发了没反应」被当成指令坏了。
+      // （普通玩家在 isXiuxianAdmin 那步就静默返回，这段提示不会被用来探测）
+      e.reply('用法：#发物品名*数量@玩家\n例：#发群星圣药*5000@某人（不写数量默认 1）');
+      return false;
+    }
     let atItem = e.message.filter(item => item.type === 'at'); //获取at信息
     let B_qq = atItem[0].qq//对方qq
     B_qq=B_qq.toString().replace('qg_','');
@@ -171,7 +176,9 @@ export class MoneyOperation extends plugin {
     //获取发送灵石数量
     let thing_name = e.msg.replace('#发', '');
     let code = thing_name.split('*');
-    thing_name = code[0];
+    // 必须 trim：`#发群星圣药 *5000` 这种在 * 前带空格的写法，split 出来是「群星圣药 」，
+    // 而 foundthing 是精确比较（j.name == thing_name），带空格永远查不到，会误报「这方世界没有」
+    thing_name = String(code[0] ?? '').trim();
     let thing_amount = code[1]; //数量
     let thing_piji;
     thing_amount = Number(thing_amount);
@@ -279,7 +286,7 @@ export class MoneyOperation extends plugin {
     //获取发送灵石数量
     let thing_name = e.msg.replace('#全体发', '');
     let code = thing_name.split('*');
-    thing_name = code[0];
+    thing_name = String(code[0] ?? '').trim();
     let thing_amount = code[1]; //数量
     let thing_piji;
     thing_amount = Number(thing_amount);
