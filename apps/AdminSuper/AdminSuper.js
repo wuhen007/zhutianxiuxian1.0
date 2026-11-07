@@ -800,12 +800,21 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
     let ifexistplay = await existplayer(qq);
     if (!ifexistplay) return false;
     let level = parseInt(e.msg.replace('#补发等级', ''));
-    
+    if (!Number.isFinite(level) || level === 0) {
+      return e.reply('请提供要补发的等级数，例如：#补发等级 5');
+    }
+    // 职业等级表 experience.json 最高 37 级，越界会让 #我 等展示查表失败，这里统一夹紧
+    const MAX_OCCUPATION_LEVEL = 37;
+
     let player=await Read_player(qq)
-    player.occupation_level+=level
+    const beforeLevel = Number(player.occupation_level) || 1;
+    player.occupation_level = Math.min(Math.max(1, beforeLevel + level), MAX_OCCUPATION_LEVEL);
     await Write_player(qq,player)
     player=await Read_player(qq)
-    e.reply("补发"+level+"级成功,当前为"+player.occupation+player.occupation_level+"级")
+    const capped = beforeLevel + level !== player.occupation_level
+      ? `（已按上限 ${MAX_OCCUPATION_LEVEL} 级夹紧）`
+      : '';
+    e.reply("补发"+level+"级成功,当前为"+player.occupation+player.occupation_level+"级"+capped)
   }
   async jiesan_ass(e) {
         const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
