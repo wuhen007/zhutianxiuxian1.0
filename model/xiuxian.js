@@ -3475,24 +3475,26 @@ export async function get_player_img(e) {
     item => item.level_id == player.Physique_id
   ).exp;
   let occupation = player.occupation;
+  // 老存档存在 occupation 为 [] 或 ''、occupation_level 为 null 的情况：
+  // isNotNull 判不出空数组，按职业配置是否命中来判断，缺配置时统一回落为「无」，避免 .name 抛错。
+  const occupationItem =
+    isNotNull(player.occupation) && player.occupation !== ''
+      ? data.occupation_exp_list.find(item => item.id == player.occupation_level)
+      : undefined;
   let occupation_level;
   let occupation_level_name;
   let occupation_exp;
   let occupation_need_exp;
-  if (!isNotNull(player.occupation)) {
+  if (!occupationItem) {
     occupation = '无';
     occupation_level_name = '-';
     occupation_exp = '-';
     occupation_need_exp = '-';
   } else {
     occupation_level = player.occupation_level;
-    occupation_level_name = data.occupation_exp_list.find(
-      item => item.id == occupation_level
-    ).name;
+    occupation_level_name = occupationItem.name;
     occupation_exp = player.occupation_exp;
-    occupation_need_exp = data.occupation_exp_list.find(
-      item => item.id == occupation_level
-    ).experience;
+    occupation_need_exp = occupationItem.experience;
   }
   let this_association;
   if (!isNotNull(player.宗门)) {
@@ -5557,7 +5559,10 @@ export async function Add_职业经验(usr_qq, exp = 0) {
     if(level>36){
       break
     }
-    let need_exp = data.occupation_exp_list.find(item => item.id == level).experience;
+    let need_exp = data.occupation_exp_list.find(item => item.id == level)?.experience;
+    if (need_exp == null) {
+      break;
+    }
 
     if (need_exp > exp) {
       break;

@@ -1517,6 +1517,7 @@ async Couple(e) {
 
     let failA = await getFailCnt(A), failB = await getFailCnt(B);
     let maxFail = Math.max(failA, failB);
+    const width = 10;                      // 进度条总长（保底与失败分支共用，勿下移）
 
     // ==========  保底融合  ==========
     if (!fusionHit && maxFail >= FUSION_GUARANTEE) {
@@ -1547,7 +1548,6 @@ if (!fusionHit) {
     await setFailCnt(B, failB + 1);
 
     const next = Math.min(failA + 1, FUSION_GUARANTEE);   //  当前失败次数
-    const width = 10;                      // 进度条总长
     const filled = Math.min(Math.floor((next / FUSION_GUARANTEE) * width), width);
     const empty  = width - filled;
     const bar    = '▰'.repeat(filled) + '▱'.repeat(empty);

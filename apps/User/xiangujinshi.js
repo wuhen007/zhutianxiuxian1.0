@@ -29,7 +29,8 @@ import {
   dujie,
   LevelTask,
   get_log_img,
-  channel
+  channel,
+  sleep
 } from '../../model/xiuxian.js';
 import { XianguTribulation, XIANGU_REALM_ROUTES } from '../SecretPlace/xianguTribulation.js';
 import {
