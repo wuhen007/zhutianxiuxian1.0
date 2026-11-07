@@ -22,6 +22,7 @@ import {
   Write_temp,
   zd_battle,
   get_log_img,
+  get_addictionharvest_img,
 } from '../../model/xiuxian.js';
 import { AppName } from '../../app.config.js';
 import { runTaskOnce } from '../../utils/taskGuard.js';
@@ -2494,28 +2495,39 @@ if (action.settled_count >= action.total_count) {
     await Write_player(player_id, player);
     await Add_血气(player_id, qixue);
     await Add_修为(player_id, xiuwei);
-       // 构建最终消息
-    let finalMsg = [
-        segment.at(Number(player_id)), // 艾特玩家
-        `【沉迷结算完成】`,
-    ];
-    await sendSecretPlaceNotification(action, player_id, finalMsg);
-    // 静默模式：最终只发奖励明细，过程文案一条不推；开关打开时保留原来的长图
+    // 静默模式：结算完成只发一张「沉迷收获」图，过程文案一条不推；开关打开时保留原来的长图
     if (!this.processPush) {
       const rawHistory = await redis.get(historyKey);
       const h = rawHistory ? JSON.parse(rawHistory) : {};
-      const lines = [
-        `【沉迷结算 · 奖励明细】`,
-        `结算轮次：${action.settled_count}/${action.total_count}`,
-        `修为 +${Math.trunc(Number(h.xiuwei_gained) || 0)}`,
-        `血气 +${Math.trunc(Number(h.xueqi_gained) || 0)}`,
-        `获得道具：`,
-      ];
-      const items = Array.isArray(h.items_gained) ? h.items_gained : [];
-      if (items.length) items.forEach(it => lines.push(`  ${it.name} ×${it.count}`));
-      else lines.push('  无');
-      if (Number(h.death_count) > 0) lines.push(`战斗中陨落 ${h.death_count} 次`);
-      await sendSecretPlaceNotification(action, player_id, lines.join('\n'));
+      const fmt = t => {
+        if (!t) return '';
+        const d = new Date(t);
+        const p = n => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+      };
+      const harvestData = {
+        nickname: player.名号 || player_id,
+        location: h.location,
+        location_type: h.location_type,
+        settled_count: h.settled_count ?? action.settled_count,
+        total_count: h.total_count ?? action.total_count,
+        death_count: Number(h.death_count) || 0,
+        xiuwei_gained: (Number(h.xiuwei_gained) || 0).toLocaleString(),
+        xueqi_gained: (Number(h.xueqi_gained) || 0).toLocaleString(),
+        start_time: fmt(h.start_time),
+        status: h.status || 'completed',
+        items_gained: Array.isArray(h.items_gained) ? h.items_gained : [],
+      };
+      if (h.end_time) {
+        harvestData.end_time = fmt(h.end_time);
+        const dur = h.end_time - h.start_time;
+        const hours = Math.floor(dur / 3600000);
+        const minutes = Math.floor((dur % 3600000) / 60000);
+        harvestData.duration = hours > 0 ? `${hours}小时${minutes}分钟` : `${minutes}分钟`;
+      }
+      // 与 #沉迷收获 共用同一套模板；定时任务没有事件对象，Show 基类允许传空对象
+      const img = await get_addictionharvest_img({}, harvestData);
+      await sendSecretPlaceNotification(action, player_id, img);
     } else {
       msg = await get_log_img(msg);
       await sendSecretPlaceNotification(action, player_id, msg);
