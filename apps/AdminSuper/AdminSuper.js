@@ -784,7 +784,9 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
     if (!verc({ e })) return false;
     //没有at信息直接返回,不执行
     let isat = e.message.some(item => item.type === 'at');
-    if (!isat) return false;
+    if (!isat) {
+      return e.reply('请 @ 要补发等级的玩家，例如：#补发等级 5 @某人');
+    }
     //获取at信息
     let atItem = e.message.filter(item => item.type === 'at');
     //对方qq
@@ -807,14 +809,23 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
     const MAX_OCCUPATION_LEVEL = 37;
 
     let player=await Read_player(qq)
+    // 补的是「职业等级」，玩家没选职业时补了也显示不出来（#我 里职业为「无」、等级隐藏），
+    // 老存档 occupation 还可能是 [] / null，这里直接提示，不再默默写一个看不见的数字。
+    const occName = typeof player.occupation === 'string' ? player.occupation.trim() : '';
+    if (!occName) {
+      return e.reply(
+        `【补发等级】玩家 ${player.名号 || qq} 还没有职业（occupation 为空），` +
+        `这里补的是职业等级，补了也不会显示。\n请先让他用 #选择职业 选好职业，再补发。`
+      );
+    }
     const beforeLevel = Number(player.occupation_level) || 1;
-    player.occupation_level = Math.min(Math.max(1, beforeLevel + level), MAX_OCCUPATION_LEVEL);
+    const afterLevel = Math.min(Math.max(1, beforeLevel + level), MAX_OCCUPATION_LEVEL);
+    player.occupation_level = afterLevel;
     await Write_player(qq,player)
-    player=await Read_player(qq)
-    const capped = beforeLevel + level !== player.occupation_level
+    const capped = afterLevel !== beforeLevel + level
       ? `（已按上限 ${MAX_OCCUPATION_LEVEL} 级夹紧）`
       : '';
-    e.reply("补发"+level+"级成功,当前为"+player.occupation+player.occupation_level+"级"+capped)
+    e.reply(`补发${level}级成功，当前为${occName}${afterLevel}级${capped}`)
   }
   async jiesan_ass(e) {
         const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
