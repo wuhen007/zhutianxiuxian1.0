@@ -223,6 +223,28 @@ export function resolveOpenid(groupId, cfg = getSettings()) {
 }
 
 /**
+ * 判断两个群标识是不是同一个群。
+ *
+ * 同一个群在两条通道上的写法不一样：协议号给的是数字群号，官方通道给的是 group_openid。
+ * 管理员在协议号群里授权时存的是群号，玩家在官方群里触发时带的是 openid，
+ * 直接字符串比较必然对不上。这里用 official-reply.yaml 的映射表把两边打通。
+ */
+export function groupsEqual(a, b) {
+  const x = String(a ?? '').trim();
+  const y = String(b ?? '').trim();
+  if (!x || !y) return false;
+  if (x === y) return true;
+  // group_openid 是十六进制，大小写不该影响判定
+  if (x.toUpperCase() === y.toUpperCase()) return true;
+  try {
+    const map = getSettings().groups || {};
+    if (map[x] && String(map[x]).toUpperCase() === y.toUpperCase()) return true;
+    if (map[y] && String(map[y]).toUpperCase() === x.toUpperCase()) return true;
+  } catch { /* 配置读不到就只认全等 */ }
+  return false;
+}
+
+/**
  * 懒加载 qqbot-api 的发送桥。
  * 用动态 import + 兜底：没装/未启用那个插件时，这里只是不可用，不能把修仙插件搞崩。
  */

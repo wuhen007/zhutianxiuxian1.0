@@ -115,6 +115,12 @@ export class AdminSuper extends plugin {
     fnc: 'setMaster'
 },
 {
+    // 只在本群生效的授权。官方群里主人也拿不到 e.isMaster，
+    // 用这条可以精确给某个群的群主开权限，而不是把对方提成全服管理员。
+    reg: '^#设置本群管理员.*$',
+    fnc: 'setMaster'
+},
+{
     reg: '^#全体纳戒修复字段(.*)$',
     fnc: 'repairAllNajieFields'
 },
@@ -201,8 +207,12 @@ async setMaster(e) {
     return e.reply(`用户 ${targetQQ} 已经是修仙管理员了`);
   }
 
+  // #设置本群管理员：即便主人执行也只给本群权限，不写全局 Master。
+  // 官方群里主人拿不到 e.isMaster，正好用这条精确授权某个群的群主。
+  const scopedOnly = /^#设置本群管理员/.test(String(e.msg || ''));
+
   // 服务主人：写入全局 Master，所有群生效
-  if (e.isMaster) {
+  if (e.isMaster && !scopedOnly) {
     try {
       const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
       if (!xiuxianConfig.Master) {
@@ -233,9 +243,15 @@ async setMaster(e) {
     console.error('校验群成员失败:', error);
     return e.reply(`无法校验群成员列表，操作已取消：${error?.message || error}`);
   }
-  const isMember = memberMap && [...memberMap.keys()].some(k => String(k) === String(targetQQ));
-  if (!isMember) {
-    return e.reply(`只能授予本群成员。${targetQQ} 不在本群（${groupId}）。`);
+  // 官方机器人没有「查群成员」的接口（getMemberMap 返回空 Map）。
+  // 这时不能判定「不在本群」——否则官方群里永远授权不了任何人，
+  // 群主也就永远拿不到第一个管理员席位。拿不到名单就跳过这一步。
+  const rosterUnavailable = !memberMap || memberMap.size === 0;
+  if (!rosterUnavailable) {
+    const isMember = [...memberMap.keys()].some(k => String(k) === String(targetQQ));
+    if (!isMember) {
+      return e.reply(`只能授予本群成员。${targetQQ} 不在本群（${groupId}）。`);
+    }
   }
   try {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
@@ -251,7 +267,9 @@ async setMaster(e) {
     scopedList.push(groupId);
     xiuxianConfig.MasterScoped[targetQQ] = scopedList;
     config.setConfig('xiuxian', 'xiuxian', xiuxianConfig);
-    return e.reply(`已授予 ${targetQQ} 本群（${groupId}）的修仙管理权限，该权限仅在本群生效`);
+    // openid 形式的群标识太长，回复里不直接甩一串十六进制
+    const shown = /^[0-9A-Fa-f]{32}$/.test(groupId) ? '本群' : `本群（${groupId}）`;
+    return e.reply(`已授予 ${targetQQ} ${shown}的修仙管理权限，该权限仅在本群生效`);
   } catch (error) {
     console.error('设置本群修仙管理员失败:', error);
     return e.reply('设置修仙管理员失败，请检查配置文件权限');

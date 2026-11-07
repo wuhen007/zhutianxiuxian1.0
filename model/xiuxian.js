@@ -28,6 +28,8 @@ import { getPlayerLayout } from './playerLayout.js';
 import { swapEquipmentState } from './equipmentSwap.js';
 import { FileRollbackTransaction } from '../apps/SecretPlace/rebirthTransaction.js';
 import { releaseJuelingLifespanForAuthority } from './juelingLifespan.js';
+// 群标识跨通道归一（数字群号 ↔ group_openid），权限判定里要用
+import { groupsEqual } from './officialReply.js';
 import { applyClowWishBattleWeakness } from './clowWish.js';
 import { findTalentSynchronizationMatch } from './talentSynchronization.js';
 import { getSuiyunEffects, getSuiyunLotusBonus, hasSuiyunSkills, advanceSuiyunToRealm } from './suiyun.js';
@@ -14054,17 +14056,57 @@ export async function setFileValue(user_qq, num, type) {
  * 服主已决定把除「插件更新 / 全局推送 / 代执行」外的管理指令全部下放给群主，
  * 因此这些指令统一走本函数；上述三条保留项仍只认 e.isMaster。
  */
+/**
+ * 官方通道的 user_id 是 group_openid，而权限名单（Master / MasterScoped）里存的是 QQ 号。
+ * 不归一化的话，官方群里的主人和管理员一律判不出来。
+ * 带 mtime 缓存：绑定表随时间增长，没必要每条消息都重新解析。
+ */
+let _idMapCache = null;
+let _idMapMtime = -1;
+function openidToQQ(rawId) {
+  const id = String(rawId ?? '').replace('qg_', '').trim();
+  // 纯数字就是 QQ 号；短串是频道 openid 前缀，不需要查表
+  if (!id || /^\d+$/.test(id) || id.length < 24) return id;
+  try {
+    const file = path.join(__PATH.data_path, 'identity_map.json');
+    const stat = fs.statSync(file);
+    if (!_idMapCache || stat.mtimeMs !== _idMapMtime) {
+      _idMapCache = JSON.parse(fs.readFileSync(file, 'utf8'))?.byOpenid || {};
+      _idMapMtime = stat.mtimeMs;
+    }
+    const rec = _idMapCache[id] || _idMapCache[id.toUpperCase()];
+    return rec?.qq ? String(rec.qq) : id;
+  } catch {
+    return id;
+  }
+}
+
 export function isXiuxianAdmin(e) {
   if (e?.isMaster) return true;
   try {
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
-    const masterList = xiuxianConfig?.Master || [];
-    const qq = String(e?.user_id || '').replace('qg_', '');
-    if (masterList.includes(qq)) return true;
+    const masterList = (xiuxianConfig?.Master || []).map(String);
+    const rawId = String(e?.user_id || '').replace('qg_', '');
+    // 官方通道拿到的 user_id 是 openid，名单里存的是 QQ 号；
+    // 两个都试一遍，协议号通道（本来就是 QQ 号）不会因此漏判。
+    const qq = openidToQQ(rawId);
+    if (masterList.includes(qq) || masterList.includes(rawId)) return true;
+
+    // 官方通道的 e.isMaster 依赖 qqbot-api 的白名单/硬绑定，主人的 openid
+    // 大多没登记，于是「主人在官方群里不是主人」。这里用 QQ 号兜一次：
+    // 映射来源与存档归属是同一份 identity_map，信任级别一致。
+    const owners = (globalThis.Bot?.config?.masterQQ || []).map(String);
+    if (owners.length && (owners.includes(qq) || owners.includes(rawId))) return true;
+
     const scoped = xiuxianConfig?.MasterScoped || {};
-    const groups = Array.isArray(scoped[qq]) ? scoped[qq] : [];
+    const scopedList = [
+      ...(Array.isArray(scoped[qq]) ? scoped[qq] : []),
+      ...(qq !== rawId && Array.isArray(scoped[rawId]) ? scoped[rawId] : []),
+    ];
     const gid = String(e?.group_id || '');
-    if (gid && groups.map(String).includes(gid)) return true;
+    // 授权时记的可能是一个群的数字群号，触发时带的却是它的 group_openid（或反过来），
+    // 用 groupsEqual 按 official-reply.yaml 的映射打通，否则跨通道授权永远对不上。
+    if (gid && scopedList.some(g => groupsEqual(g, gid))) return true;
   } catch {}
   return Boolean(e?.member?.is_owner);
 }
