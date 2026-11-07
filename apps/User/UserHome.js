@@ -2359,6 +2359,9 @@ if (func == "打开") {
             } else {
                 equ = najie.装备.find(item => item.name == thing_name && item.pinji == pj);
             }
+            if (!equ) {
+                return e.reply(`纳戒中没有找到「${thing_name}」这件装备，请核对名称，或先发送 #纳戒 查看。`);
+            }
             if (isInnateTreasureName(equ?.name) || equ?.先天至宝本体) {
                 return e.reply(`先天至宝不使用普通装备指令，请发送 #执掌先天至宝 ${equ.name}`);
             }

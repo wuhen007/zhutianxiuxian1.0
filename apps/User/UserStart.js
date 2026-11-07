@@ -1585,12 +1585,12 @@ async daily_gift(e) {
     let usr_qq = e.user_id.toString().replace('qg_','');
     usr_qq = await channel(usr_qq);
     
+    // 有无账号（必须先校验再读存档，否则无存档玩家会抛 ENOENT）
+    if (!await existplayer(usr_qq)) return false;
+
     // 读取玩家数据
     let player = await Read_player(usr_qq);
-    
-    // 有无账号
-    if (!await existplayer(usr_qq)) return false;
-    
+
     let now = new Date();
     let nowTime = now.getTime();
     let Yesterday = await shijianc(nowTime - 24 * 60 * 60 * 1000);
