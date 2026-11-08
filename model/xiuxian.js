@@ -14112,10 +14112,9 @@ export function isXiuxianAdmin(e) {
 }
 
 export async function Synchronization_ASS(e) {
-  const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
-  const masterList = xiuxianConfig.Master || [];
-  const userQQ = e.user_id.toString().replace('qg_', '');
-  if (!e.isMaster && !masterList.includes(userQQ)) {
+  // 与外层 #一键同步 用同一套判定：官方群里 user_id 是 openid，
+  // 直接比对 Master 名单永远不中，会让群主看到“开始”却同步 0 个宗门。
+  if (!isXiuxianAdmin(e)) {
     return { scanned: 0, succeeded: 0, failed: 0, errors: [], denied: true };
   }
   const files = fs.readdirSync(__PATH.association).filter(file => file.endsWith('.json'));
@@ -14158,10 +14157,7 @@ export async function Synchronization_ASS(e) {
 }
 
 export async function synchronization(e) {
-  const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
-  const masterList = xiuxianConfig.Master || [];
-  const userQQ = e.user_id.toString().replace('qg_', '');
-  if (!e.isMaster && !masterList.includes(userQQ)) {
+  if (!isXiuxianAdmin(e)) {
     return { scanned: 0, succeeded: 0, failed: 0, errors: [], denied: true };
   }
   const files = fs.readdirSync(__PATH.player_path).filter(file => file.endsWith('.json'));

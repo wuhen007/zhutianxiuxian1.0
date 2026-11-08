@@ -87,6 +87,9 @@ function runtime(input = legacyPlayer(), { noEquipment = false, allowWrites = fa
     withPlayerMutationLock: (id, task) => { counters.locks++; return withPlayerMutationLock(id, task); },
     isNotNull: Boolean, Read_danyao: async () => ({ biguanxl: 0 }),
     config: { getConfig: () => ({ Master: [] }) },
+    // synchronization 现在统一走 isXiuxianAdmin（含官方群 openid 与群主身份），
+    // 这里按真实语义给一个最小等价实现，别让抽源码编译时缺符号
+    isXiuxianAdmin: e => Boolean(e?.isMaster || e?.member?.is_owner),
     FileRollbackTransaction: class { capture() {} commit() {} rollback() { stored = clone(input); } },
     getActiveZhutianAvatarName, findTalentSynchronizationMatch, getMemoryStage, getLifeSourceRepairMaximum,
     getSuiyunEffects: () => ({}), Read_najie: async () => ({}), Write_najie: async () => {}, rebuildPlayerLucky() {},
