@@ -1868,7 +1868,7 @@ async hudao(e) {
   async wudao(e) {
     if (!e.isGroup) return e.reply('修仙游戏请在群聊中游玩');
 
-    const usr_qq = e.user_id.toString().replace('qg_', '');
+    const usr_qq = String(await channel(e.user_id.toString().replace('qg_', '')));
     if (!(await existplayer(usr_qq))) return e.reply('玩家不存在，请先创建角色');
 
     const game_action = await redis.get(`xiuxian:player:${usr_qq}:game_action`);
@@ -2253,7 +2253,7 @@ async hudao(e) {
 
   async showDaoPath(e) {
     if (!e.isGroup) return e.reply('修仙游戏请在群聊中游玩');
-    const usr_qq = e.user_id.toString().replace('qg_', '');
+    const usr_qq = String(await channel(e.user_id.toString().replace('qg_', '')));
     if (!(await existplayer(usr_qq))) return e.reply('玩家不存在，请先创建角色');
 
     const player = await Read_player(usr_qq);

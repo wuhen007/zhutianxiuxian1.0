@@ -6984,18 +6984,33 @@ export async function find_tudi(A) {
     return shitu[i].师徒;
   }
 }
+const DEFAULT_DANYAO = {
+  biguan: 0, //闭关状态
+  biguanxl: 0, //增加效率
+  xingyun: 0,
+  lianti: 0,
+  ped: 0,
+  modao: 0,
+  beiyong1: 0, //ped
+  beiyong2: 0,
+  beiyong3: 0,
+  beiyong4: 0,
+  beiyong5: 0,
+};
 export async function Read_danyao(usr_qq) {
   let dir = path.join(`${__PATH.danyao_path}/${usr_qq}.json`);
-  let danyao = fs.readFileSync(dir, 'utf8', (err, data) => {
-    if (err) {
-      console.log(err);
-      return 'error';
+  try {
+    return JSON.parse(fs.readFileSync(dir, 'utf8'));
+  } catch {
+    // 存档被写成全零/半截（断电或写入中断）时自愈，否则一条坏文件会让所有读丹药的指令抛异常
+    const danyao = { ...DEFAULT_DANYAO };
+    try {
+      await Write_danyao(usr_qq, danyao);
+    } catch {
+      // 全局初始化期间不允许写盘，本次先返回默认值，下次读取会重建文件
     }
-    return data;
-  });
-  //将字符串数据转变成数组格式
-  danyao = JSON.parse(danyao);
-  return danyao;
+    return danyao;
+  }
 }
 
 export async function Write_danyao(usr_qq, danyao) {
@@ -14336,25 +14351,8 @@ if (Array.isArray(player.势力职位) && player.势力职位.length === 0) {
       player.轮回点 = Math.max(0, 10 - (Number(player.lunhui) || 0));
     }
     
-    // 初始化丹药数据
-    try {
-      await Read_danyao(usr_qq);
-    } catch {
-      const arr = {
-        biguan: 0, //闭关状态
-        biguanxl: 0, //增加效率
-        xingyun: 0,
-        lianti: 0,
-        ped: 0,
-        modao: 0,
-        beiyong1: 0, //ped
-        beiyong2: 0,
-        beiyong3: 0,
-        beiyong4: 0,
-        beiyong5: 0,
-      };
-      await Write_danyao(usr_qq, arr);
-    }
+    // 初始化丹药数据（Read_danyao 内部已按 DEFAULT_DANYAO 自愈）
+    await Read_danyao(usr_qq);
 
     // 初始化装备的帝兵字段（新增）
     if (!isNotNull(equipment.帝兵)) {

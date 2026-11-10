@@ -14,12 +14,22 @@ export function writeFileAtomically(filePath, content, fileSystem = fs) {
 
   try {
     fileSystem.writeFileSync(tempPath, content, 'utf8');
+    // 先落盘再改名：OS 崩溃时元数据可能已提交而数据未提交，会留下「大小正确、内容全零」的存档
+    if (typeof fileSystem.openSync === 'function') {
+      const fd = fileSystem.openSync(tempPath, 'r+');
+      try {
+        fileSystem.fsyncSync(fd);
+      } finally {
+        fileSystem.closeSync(fd);
+      }
+    }
     try {
       renameWithRetry(fileSystem, tempPath, filePath);
     } catch (error) {
       if (!retryableRenameErrors.has(error?.code)) throw error;
 
       // Windows scanners often allow writes but temporarily deny replacing an open file.
+      // shortcut: 这条回退是直接覆盖，非原子；仅在 rename 被占用且重试耗尽时走到
       fileSystem.writeFileSync(filePath, content, 'utf8');
     }
   } finally {
