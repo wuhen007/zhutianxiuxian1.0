@@ -18,6 +18,7 @@ import { plugin } from '../../api/api.js'
 import cfg from '../../../../lib/config/config.js'
 import { buildAt, __PATH } from '../../model/xiuxian.js'
 import { relayStore } from '../../model/relayStore.js'
+import { pushGroup } from '../../model/officialReply.js'
 
 /** 主人列表取不到时的兜底接收人 */
 const FALLBACK_MASTER = '504010020'
@@ -151,9 +152,10 @@ export class AuthorRelay extends plugin {
 
     const body = this.buildReplyText(origin, text, images)
     try {
-      const group = Bot.pickGroup(origin.groupId)
+      // 官方号优先（纯官方群也能发），失败/未配置回退协议号
       // 用数组而不是 join，否则 at 段会被字符串化成 [object Object]
-      await group.sendMsg([buildAt(origin.userId), '\n', body])
+      const res = await pushGroup(origin.groupId, [buildAt(origin.userId), '\n', body])
+      if (!res.ok) throw new Error(res.reason || '发送失败')
       return e.reply(`【回音】已转达到「${origin.groupName || origin.groupId}」的 ${origin.nickname}。`)
     } catch (err) {
       return e.reply(`【回音】转达失败：${err.message}\n（可能是机器人已不在该群）`)

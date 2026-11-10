@@ -1,4 +1,5 @@
 import { isXiuxianAdmin } from '../../model/xiuxian.js';
+import { pushGroup } from '../../model/officialReply.js';
 import plugin from '../../../../lib/plugins/plugin.js';
 import config from '../../model/Config.js';
 import {  data } from '../../api/api.js';
@@ -2539,19 +2540,12 @@ if (index === 4) { // 当前是绝灵时代
   async broadcastMessage(msg) {
     const groups = this.set.Era.notifyGroups || [];
     for (const groupId of groups) {
-      // Bot.sendGroupMsg 在 TRSS 里的签名是 (bot_id, group_id, ...)，
-      // 两参调用只有在群已进缓存时才走兼容分支，否则会等 connect.<群号> 5 分钟再报「等待 Bot 上线超时」。
-      // 这里直接用 pickGroup，群不存在立刻跳过，也不会拖住整个任务。
-      if (!Bot.pickGroup(groupId, true)) {
-        console.error(`[时代广播] 跳过群 ${groupId}：Bot 不在该群，或群列表还没同步`);
-        continue;
-      }
-      try {
-        await Bot.pickGroup(groupId).sendMsg(msg);
-        console.log(`[时代广播] 群 ${groupId}: ${msg}`);
-      } catch (e) {
-        console.error(`[时代广播] 群 ${groupId} 发送失败:`, e?.message || e);
-      }
+      // 统一走「官方优先 + 协议号兜底」：
+      //  - 纯官方群（group_openid）原来被 pickGroup 判空直接跳过，消息是丢的；
+      //  - Bot.sendGroupMsg 在 TRSS 里签名是 (bot_id, group_id, ...)，两参调用会挂 5 分钟。
+      const res = await pushGroup(groupId, msg);
+      if (res.ok) console.log(`[时代广播] 群 ${groupId}（${res.via}）: ${msg}`);
+      else console.error(`[时代广播] 群 ${groupId} 发送失败：${res.reason}`);
     }
   }
   

@@ -15,6 +15,7 @@ import {
     channel
 } from '../../model/xiuxian.js';
 import { getDailyTaskDateKey } from '../../model/dailyTask.js';
+import { pushGroup } from '../../model/officialReply.js';
 import { reserveDailyAction, resetDailyAction } from '../../model/dailyAction.js';
 import { wasFactionRewardClaimedToday } from '../../model/factionSystem.js';
 import {
@@ -979,18 +980,13 @@ async isAutoTaskEnabled(usr_qq) {
     async broadcastMessage(msg) {
         const groups = this.set.Era.notifyGroups || [];
         for (const groupId of groups) {
-            // 不要用 Bot.sendGroupMsg(群号, 消息)：TRSS 的签名是 (bot_id, group_id, ...)，
-            // 群号不在缓存里时会挂 5 分钟再抛「等待 Bot 上线超时」，并拖住整个定时任务
-            if (!Bot.pickGroup(groupId, true)) {
-                console.error(`[自动任务广播] 跳过群 ${groupId}：Bot 不在该群，或群列表还没同步`);
-                continue;
-            }
-            try {
-                await Bot.pickGroup(groupId).sendMsg(msg);
-                console.log(`[自动任务广播] 群 ${groupId}: ${msg}`);
-            } catch (e) {
-                console.error(`[自动任务广播] 群 ${groupId} 发送失败:`, e?.message || e);
-            }
+            // 统一走「官方优先 + 协议号兜底」：
+            //  - 纯官方群（group_openid）原来被 pickGroup 判空直接跳过，消息是丢的；
+            //  - Bot.sendGroupMsg 在 TRSS 里签名是 (bot_id, group_id, ...)，
+            //    两参调用会挂 5 分钟再抛「等待 Bot 上线超时」，也不能用。
+            const res = await pushGroup(groupId, msg);
+            if (res.ok) console.log(`[自动任务广播] 群 ${groupId}（${res.via}）: ${msg}`);
+            else console.error(`[自动任务广播] 群 ${groupId} 发送失败：${res.reason}`);
         }
     }
 

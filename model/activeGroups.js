@@ -349,6 +349,15 @@ export async function getAutoGroupIds() {
 /* ==================== 安装 ==================== */
 
 const TRACK_FLAG = Symbol.for('zhutianxiuxian.activeGroups.tracked');
+/**
+ * 「这条消息已经计过数」的标记。
+ *
+ * 一条指令往往不止调一个方法：命中的 fnc 算一次，内部再调几个本类辅助方法又各算一次
+ * （这层包装是给类原型上**所有**方法套的壳）。不去重的话，一条 `#修仙帮助` 就能记 2~3 次，
+ * minActions=2 直接判成「这个群在玩」——2026-11-10 祖安群（736121023）只测了一条指令
+ * 就被纳入推送名单，就是这么来的。
+ */
+const COUNTED_FLAG = Symbol.for('zhutianxiuxian.activeGroups.counted');
 
 /**
  * 给每个插件类的处理器套一层，指令一命中就记一次群活跃。
@@ -366,7 +375,24 @@ function installTracker(apps) {
       const original = desc.value;
       proto[name] = function (...args) {
         const e = args[0];
-        if (e && typeof e === 'object' && e.group_id) markActive(e.group_id);
+        // 同一条消息只计一次：标记挂在 e 上，后续方法调用直接跳过
+        if (e && typeof e === 'object' && e.group_id && !e[COUNTED_FLAG]) {
+          // 只认「这次命中的确实是修仙插件的规则」，不是所有路过的方法都算。
+          //
+          // loader 在调用 fnc 之前会写 e.logFnc = `[插件名(方法名)]`（lib/plugins/loader.js:307），
+          // 所以这里比对一下本插件名就知道这次调用是不是它的规则命中的。
+          // 不加这一步的话，普通聊天、别的插件的指令（比如抽卡 `*全部记录`）路过本插件某个方法，
+          // 也会被算成「这个群在玩修仙」——2026-11-10 祖安群（736121023）就是这么被拉进推送名单的。
+          const fnc = String(e.logFnc || '');
+          const owned = this?.name ? fnc.includes(`[${this.name}(`) : false;
+          if (!owned) return original.apply(this, args);
+          try {
+            Object.defineProperty(e, COUNTED_FLAG, { value: true, configurable: true });
+          } catch {
+            /* 冻结对象就算了，宁可多记也别抛 */
+          }
+          markActive(e.group_id);
+        }
         return original.apply(this, args);
       };
       wrapped += 1;

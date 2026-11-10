@@ -492,6 +492,48 @@ export function getStats() {
   return { ...stats };
 }
 
+/**
+ * 群广播的统一出口：**官方优先，协议号兜底**。
+ *
+ * 给「拿不到 e、没有触发消息」的事件推送用 —— 妖王刷新、秘境裂隙、天骄轮回、
+ * 至宝易主/重出、位面大事件。这些地方原来直接 `Bot.sendGroupMsg(群号, 消息)`：
+ *   - 只有官方号的群（配置里写的是 group_openid）根本发不出去，消息直接丢；
+ *   - 有协议号的群则一律以协议号身份出现，绕过官方代发。
+ * 两边都不对，所以统一走这里。
+ *
+ * 与 tryOfficialActive 的分工：它只负责「试官方」，这里负责「试完官方再兜底协议号」。
+ *
+ * @param {string} groupId 群号或 group_openid
+ * @param {any} msg 云崽消息段
+ * @param {{ scope?: 'worldChat' }} [options]
+ * @returns {Promise<{ ok: boolean, via?: 'official'|'protocol', reason?: string, res?: any }>}
+ */
+export async function pushGroup(groupId, msg, options = {}) {
+  const gid = String(groupId ?? '').trim();
+  if (!gid) return { ok: false, reason: 'no-group' };
+
+  // 1. 官方优先：配置了映射（群号→openid）或本身就是 openid 都算命中
+  if (isConfigured(gid)) {
+    try {
+      const result = await tryOfficialActive(gid, msg, options);
+      if (result?.handled) return { ok: true, via: 'official', res: result.res };
+    } catch (err) {
+      log('warn', `群 ${gid} 官方推送异常，回退协议号：${err?.message ?? err}`);
+    }
+  }
+
+  // 2. 协议号兜底。pickGroup 第二参 true = 群不在就立刻返回 null，不干等
+  try {
+    const group = globalThis.Bot?.pickGroup?.(gid, true);
+    if (!group?.sendMsg) return { ok: false, reason: 'no-protocol-group' };
+    const res = await group.sendMsg(msg);
+    return { ok: true, via: 'protocol', res };
+  } catch (err) {
+    log('warn', `群 ${gid} 协议号推送失败：${err?.message ?? err}`);
+    return { ok: false, reason: err?.message || 'send-failed' };
+  }
+}
+
 /** 仅用于自检：当前是否具备代发条件 */
 export function statusText() {
   const cfg = getSettings();

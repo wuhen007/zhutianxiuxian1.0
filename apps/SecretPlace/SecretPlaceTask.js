@@ -1,4 +1,5 @@
 import { plugin, common,  config, data } from '../../api/api.js';
+import { pushGroup } from '../../model/officialReply.js';
 import fs from 'fs';
 import {__PATH} from '../../model/xiuxian.js';
 import {
@@ -2522,36 +2523,27 @@ async applyDaoshangPunishment(player) {
 
 // 发送道伤通知给玩家
 async sendDaoshangNotification(player, message) {
+    // 道伤是玩家个人状态：只发他所在的群。
+    // 原来广播到 Era.notifyGroups 全部群，还会在每个群 @ 一遍这个玩家 ——
+    // 别的人群里根本没有这个人，@ 出来是个陌生号，纯噪音。
+    const groupId = String(this.e?.group_id || '').trim();
     try {
-        // 获取配置中的群组列表
-        const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
-        const notifyGroups = xiuxianConfig?.Era?.notifyGroups || [];
-        
-        if (notifyGroups.length > 0) {
-            // 广播到所有配置的群组
-            for (const groupId of notifyGroups) {
-                try {
-                    await Bot.pickGroup(groupId).sendMsg([
-                        segment.at(Number(player.id)),
-                        message
-                    ]);
-                    console.log(`[道伤通知] 群 ${groupId}: ${message}`);
-                } catch (groupErr) {
-                    console.error(`发送道伤通知到群 ${groupId} 失败[${player.id}]:`, groupErr);
-                }
+        if (groupId) {
+            // 官方号优先（纯官方群也能发），失败回退协议号
+            const res = await pushGroup(groupId, [segment.at(Number(player.id)), message]);
+            if (res.ok) {
+                console.log(`[道伤通知] 群 ${groupId}（${res.via}）: ${player.id}`);
+                return;
             }
-        } else {
-            // 如果没有配置群组，回退到私聊
-            await common.relpyPrivate(player.id, message);
-            console.log(`[道伤通知] 私聊 ${player.id}: ${message}`);
+            console.error(`[道伤通知] 群 ${groupId} 发送失败：${res.reason}`);
         }
+        // 拿不到群上下文（或群发失败）才私聊本人
+        await common.relpyPrivate(player.id, message);
+        console.log(`[道伤通知] 私聊 ${player.id}`);
     } catch (err) {
         console.error(`发送道伤通知失败[${player.id}]:`, err);
-        
-        // 最终回退到私聊发送
         try {
             await common.relpyPrivate(player.id, message);
-            console.log(`[道伤通知] 私聊回退 ${player.id}: ${message}`);
         } catch (fallbackErr) {
             console.error(`私聊发送道伤通知失败[${player.id}]:`, fallbackErr);
         }

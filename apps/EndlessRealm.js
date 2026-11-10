@@ -1,4 +1,5 @@
 import { data, plugin, puppeteer, Show } from '../api/api.js';
+import { pushGroup } from '../model/officialReply.js';
 import { recordMemoryDungeon } from '../model/memoryPath.js';
 import {
   Add_najie_thing,
@@ -2038,10 +2039,9 @@ export class EndlessRealm extends plugin {
     const signature = `${raid.status}:${battle?.layer || 0}:${battle?.victory ?? ''}`;
     if (!battle && !['settled', 'defeated', 'closed'].includes(raid.status)) return;
     if (record.lastPushSignature === signature) return;
-    const group = globalThis.Bot?.pickGroup?.(record.groupId);
-    if (!group?.sendMsg) return;
     try {
-      await group.sendMsg([`【${title}】`, ...formatCrossRaidSnapshot(raid)].join('\n'));
+      // 官方号优先（纯官方群也能发），失败/未配置回退协议号
+      await pushGroup(record.groupId, [`【${title}】`, ...formatCrossRaidSnapshot(raid)].join('\n'));
       record.lastPushSignature = signature;
     } catch (error) {
       logger.warn('[跨服无尽] 群内战况推送失败', error?.message || error);
@@ -2070,8 +2070,8 @@ export class EndlessRealm extends plugin {
       }
       const line = `【跨服队伍传音｜${message.chat.server_name}】${message.chat.name}：${message.chat.text}`;
       for (const groupId of groupIds) {
-        const group = globalThis.Bot?.pickGroup?.(groupId);
-        if (group?.sendMsg) await group.sendMsg(line).catch(() => {});
+        // 官方号优先（纯官方群也能发），失败/未配置回退协议号
+        await pushGroup(groupId, line).catch(() => {});
       }
       return;
     }
@@ -3386,15 +3386,14 @@ export class EndlessRealm extends plugin {
       else if (!result.victory) {
         settlement = await this.settleRun(team, run, 0.3, 'defeat');
         if (e.isEndlessWeb) {
-          const group = globalThis.Bot?.pickGroup?.(e.group_id);
-          if (group?.sendMsg) {
-            try {
-              await group.sendMsg(
-                ['【无尽劫境·网页战败通知】', ...this.formatSettlement(settlement, '战败结算')].join('\n')
-              );
-            } catch (error) {
-              logger.warn('[无尽劫境] 网页战败群通知发送失败', error);
-            }
+          try {
+            // 官方号优先（纯官方群也能发），失败/未配置回退协议号
+            await pushGroup(
+              e.group_id,
+              ['【无尽劫境·网页战败通知】', ...this.formatSettlement(settlement, '战败结算')].join('\n')
+            );
+          } catch (error) {
+            logger.warn('[无尽劫境] 网页战败群通知发送失败', error);
           }
           e.endlessTerminalState = {
             ...serializeEndlessWebState(this, team, run, userId),

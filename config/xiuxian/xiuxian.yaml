@@ -103,18 +103,23 @@ Era:
   task: 0 0 */1 * * *
   pushNotice: true
   notifyGroups:
-    - 799048038
-    # 只挂官方 Bot 的新群：直接写 group_openid（32 位十六进制）就能推
-    - '951ECE8052B4585C346B26DBA52827C4'
+    - "799048038"
+    - 951ECE8052B4585C346B26DBA52827C4
   Master: null
   current:
     index: 3
-    years: 0
-    epoch: 8
-    totalYears: 380000
+    years: 5000
+    epoch: 10
+    totalYears: 485000
   yearlyAdvance: 1000
   weimianRepairInterval: 2000
-  foreignCalamityNaturalYears: 377000
+  foreignCalamityNaturalYears: 442000
 BotType: onebot
 AutoDailyTask:
   cron: 0 18 18 * * *
+MasterScoped:
+  "1553090230":
+    - 951ECE8052B4585C346B26DBA52827C4
+    - "799048038"
+  "3678907146":
+    - 951ECE8052B4585C346B26DBA52827C4

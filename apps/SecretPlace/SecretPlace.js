@@ -45,6 +45,7 @@ import Show from "../../model/show.js";
 import puppeteer from "../../../../lib/puppeteer/puppeteer.js";
 import RealmEvents from '../tasks/RealmEvents.js';
 import { mountTianjiaoTreasure } from '../../model/tianjiaoTreasure.js';
+import { pushGroup } from '../../model/officialReply.js';
 import {
   applyInnateTravelReduction,
   claimInnateTreasure,
@@ -5246,7 +5247,8 @@ async handleTianjiaoTreasureSeized(event, winner) {
         const groups = config.getConfig('xiuxian', 'xiuxian')?.Era?.notifyGroups || [];
         for (const groupId of groups) {
             try {
-                await Bot.sendGroupMsg(groupId, message);
+                // 官方号优先（纯官方群也能发），失败/未配置回退协议号
+                await pushGroup(groupId, message);
             } catch (error) {
                 console.error(`[天骄夺宝] 群 ${groupId} 公告失败:`, error);
             }

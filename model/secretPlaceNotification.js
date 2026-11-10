@@ -1,3 +1,5 @@
+import { pushGroup } from './officialReply.js'
+
 function stringId(value) {
   if (value == null) return '';
   return String(value).trim();
@@ -97,29 +99,21 @@ function resolveBot(botRoot, botId) {
   return botRoot;
 }
 
-/**
- * 条目指定的 bot 是否就是主 bot。
- * Bot.uin 是数组（带 now 属性），兼容写成字符串的情况。
- */
-function isMainBot(botRoot, botId) {
-  if (!botId) return false;
-  try {
-    const uins = [String(botRoot?.uin), ...(Array.isArray(botRoot?.uin) ? botRoot.uin.map(String) : [])];
-    return uins.includes(String(botId));
-  } catch {
-    return false;
-  }
-}
-
 async function sendByRoute(botRoot, bot, route, message, botId) {
-  // 群消息且是主 bot 时走主实例：官方代发的接管挂在 Yunzai.prototype.pickGroup 上，
-  // 而 Bot[uin] 拿到的是适配器实例，它没有这层包装，直接用会永远走协议号。
-  const sender =
-    route.type === 'group'
-      ? isMainBot(botRoot, botId)
-        ? botRoot?.pickGroup?.(route.target)
-        : bot?.pickGroup?.(route.target)
-      : bot?.pickUser?.(route.target);
+  // 群消息统一走 pushGroup：官方号优先，失败/未配置再回退协议号。
+  //
+  // 原来这里靠 `isMainBot` + `Bot.pickGroup`（该原型方法被 scheduledSender 包了一层，
+  // 只在 isScheduledContext() 为真时接管官方发送）这两层判断。任意一环不成立
+  // —— notify_bot_id 对不上、ALS 上下文没传进来 —— 都会**静默**走协议号，
+  // 日志里连一条「回退」都不会留下。2026-11-10 19:59 的沉迷结算图就是这么漏的。
+  // 现在只认一个出口，官方发不出去会留下 warn，可查。
+  if (route.type === 'group') {
+    const res = await pushGroup(route.target, message);
+    if (!res.ok) throw new Error(res.reason || `send failed for ${route.target}`);
+    return true;
+  }
+
+  const sender = bot?.pickUser?.(route.target);
   if (!sender?.sendMsg) throw new Error(`missing ${route.type} sender for ${route.target}`);
 
   const result = await sender.sendMsg(message);

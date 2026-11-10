@@ -1,4 +1,5 @@
 import { isXiuxianAdmin } from '../../model/xiuxian.js';
+import { pushGroup } from '../../model/officialReply.js';
 import {  plugin, common, config, data } from '../../api/api.js';
 import fs from 'fs';
 import {
@@ -427,7 +428,7 @@ function isNajieEmpty(najie) {
 }
 
 // 创建纳戒掉落记录
-async function createNajieDrop(player_id, oldPlayer, oldNajie, taskId = null) {
+async function createNajieDrop(player_id, oldPlayer, oldNajie, taskId = null, groupId = '') {
   const lunhuiCount = oldPlayer.轮回转世次数 || 0;
   const location = generateDropLocation(lunhuiCount);
   
@@ -439,6 +440,8 @@ async function createNajieDrop(player_id, oldPlayer, oldNajie, taskId = null) {
     player_id: player_id,
     player_name: oldPlayer.名号,
     player_level_id: oldPlayer.level_id,
+    // 掉落来自哪个群：仙遗宝地现世公告只发这个群，不再全服广播
+    group_id: String(groupId || ''),
     najie: oldNajie,
     location: location,
     lunhuiCount: lunhuiCount,
@@ -498,23 +501,6 @@ async function getNotifyGroupList() {
   return [];
 }
 
-async function broadcastToAllGroups(msg) {
-  try {
-    const groupList = await getNotifyGroupList();
-    const bot = globalThis.Bot;
-    if (!bot) return;
-    for (const gid of groupList) {
-      try {
-        await bot.pickGroup(gid).sendMsg(msg);
-      } catch (e) {
-        console.error('[仙遗宝地] 广播发送失败:', e.message);
-      }
-    }
-  } catch (e) {
-    console.error('[仙遗宝地] 广播失败:', e.message);
-  }
-}
-
 // 检查并转化超时未捡的掉落为仙遗宝地
 async function checkRelicConversion() {
   try {
@@ -553,8 +539,15 @@ async function checkRelicConversion() {
             `历经十二时辰无人问津，终成一方独立秘境。`,
             `有缘者可循【#仙遗宝地】前往探索，夺取其中机缘！`
           ].join('\n');
-          await broadcastToAllGroups(msg);
-          console.log(`【仙遗宝地】玩家 ${freshDrop.player_id} 的遗物转化为仙遗宝地`);
+          // 仙遗宝地是「某个玩家遗物化成的秘境」：只发他遗物来源的那个群。
+          // 老数据（本次改动前生成的掉落）没有 group_id，宁可不播报也不去打别的群。
+          const relicGroup = String(freshDrop.group_id || '').trim();
+          if (relicGroup) {
+            await pushGroup(relicGroup, msg);
+            console.log(`【仙遗宝地】玩家 ${freshDrop.player_id} 的遗物转化为仙遗宝地 → 群 ${relicGroup}`);
+          } else {
+            console.log(`【仙遗宝地】玩家 ${freshDrop.player_id} 的遗物转化为仙遗宝地（无来源群，跳过群播报）`);
+          }
         }
       } catch (err) {
         console.error(`【仙遗宝地】转化失败 (${drop.key}):`, err);
@@ -1101,7 +1094,7 @@ async function forceRebirthPlayer(
 
       const hasLoot = (oldNajie && !isNajieEmpty(oldNajie)) || hasEquipment || hasPet;
       if (hasLoot) {
-        dropInfo = await createNajieDrop(player_id, oldPlayer, augmentedNajie, taskId);
+        dropInfo = await createNajieDrop(player_id, oldPlayer, augmentedNajie, taskId, e?.group_id);
         // 物主必定记得自己的掉落（原先 35% 概率随机回忆，导致大多数物主永远搜不到）
         dropInfo.remembered = rememberNajieDrop(new_player, dropInfo.dropKey);
         console.log(`【纳戒掉落】玩家 ${player_id} 的遗物掉落至 ${formatLocation(dropInfo.location)}（装备:${hasEquipment} 仙宠:${hasPet}）`);

@@ -2,7 +2,8 @@ import { beginSuiyunTribulation, protectSuiyunTribulationLoss } from '../../mode
 import { getSuiyunEffects } from '../../model/suiyun.js';
 import { getMemoryEffects } from '../../model/memoryPath.js';
 import { createMemoryTribulationState, tickMemoryTribulationRound, tryMemoryTimeRevival } from '../../model/memoryCombat.js';
-import { plugin, verc, config, data } from '../../api/api.js';
+import { plugin, verc, config, data, common } from '../../api/api.js';
+import { pushGroup } from '../../model/officialReply.js';
 import fs from 'fs';
 import path from 'path';
 import {
@@ -4332,36 +4333,34 @@ updateCooldowns(player) {
 }
 async broadcastToAll(player,startMsg) {
     try {
-        // 获取配置中的群组列表
-        const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
-        const notifyGroups = xiuxianConfig?.Era?.notifyGroups || [];
-        
-        if (notifyGroups.length > 0) {
-            // 广播到所有配置的群组
-            for (const groupId of notifyGroups) {
-                try {
-                    await Bot.pickGroup(groupId).sendMsg([
-                        startMsg
-                    ]);
-                    console.log(`[全服通知] 群 ${groupId}: ${startMsg}`);
-                } catch (groupErr) {
-                    console.error(`发送全服通知到群 ${groupId} 失败[${player.id}]:`, groupErr);
+        // 渡劫是「玩家个人事件」，只发回他渡劫的那个群。
+        // 原来无条件广播到 Era.notifyGroups 的全部群 —— 别人群里根本没人在渡劫，
+        // 却被别人的雷劫刷屏，而且群里也没有对应上下文（不知道是谁、几点开始）。
+        // this.e 在整条渡劫流程里都有效（plugin 实例持有当前事件），优先用它；
+        // 拿不到才退回私聊本人，绝不退回「广播所有群」。
+        const groupId = String(this.e?.group_id || '').trim();
+        if (groupId) {
+            try {
+                // 官方号优先（纯官方群也能发），失败回退协议号
+                const res = await pushGroup(groupId, startMsg);
+                if (res.ok) {
+                    console.log(`[渡劫通知] 群 ${groupId}（${res.via}）: ${player?.id ?? ''}`);
+                    return;
                 }
+                console.error(`[渡劫通知] 群 ${groupId} 发送失败：${res.reason}`);
+            } catch (groupErr) {
+                console.error(`发送渡劫通知到群 ${groupId} 失败[${player.id}]:`, groupErr);
             }
-        } else {
-            // 如果没有配置群组，回退到私聊
-            await common.relpyPrivate(player.id, startMsg);
-            console.log(`[全服通知] 私聊 ${player.id}: ${startMsg}`);
         }
+        // 群发不出去（或本来就没有群上下文）才私聊本人
+        await common.relpyPrivate(player.id, startMsg);
+        console.log(`[渡劫通知] 私聊 ${player.id}`);
     } catch (err) {
-        console.error(`发送全服通知失败[${player.id}]:`, err);
-        
-        // 最终回退到私聊发送
+        console.error(`发送渡劫通知失败[${player.id}]:`, err);
         try {
             await common.relpyPrivate(player.id, startMsg);
-            console.log(`[全服通知] 私聊回退 ${player.id}: ${startMsg}`);
         } catch (fallbackErr) {
-            console.error(`私聊发送全服通知失败[${player.id}]:`, fallbackErr);
+            console.error(`私聊发送渡劫通知失败[${player.id}]:`, fallbackErr);
         }
     }
 }

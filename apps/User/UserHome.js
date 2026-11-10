@@ -2,7 +2,8 @@ import { getSuiyunEffects } from '../../model/suiyun.js';
 import { getMemoryEffects } from '../../model/memoryPath.js';
 import { addMemoryLootBonus } from '../../model/suiyunLoot.js';
 import { getLearningPotentialCost } from '../../model/gongfaTeaching.js';
-import { plugin,  verc, data, config } from '../../api/api.js';
+import { plugin,  verc, data, config, common } from '../../api/api.js';
+import { pushGroup } from '../../model/officialReply.js';
 import {
   calculateMinggeCost,
   calculateMinggeYield,
@@ -1896,37 +1897,28 @@ async huodong(e) {
   }
 
 async broadcastToAll(player,message) {
+    // 体质共鸣 / 仙帝命格属于玩家个人成就，只发他自己所在的群，不再全服广播。
+    // 注意：原来「没配群组就私聊」那条分支里的 common 根本没 import，是 ReferenceError（被 catch 吞掉）。
+    const groupId = String(this.e?.group_id || '').trim();
     try {
-        // 获取配置中的群组列表
-        const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
-        const notifyGroups = xiuxianConfig?.Era?.notifyGroups || [];
-        
-        if (notifyGroups.length > 0) {
-            // 广播到所有配置的群组
-            for (const groupId of notifyGroups) {
-                try {
-                    await Bot.pickGroup(groupId).sendMsg([
-                        message
-                    ]);
-                    console.log(`[全服通知] 群 ${groupId}: ${message}`);
-                } catch (groupErr) {
-                    console.error(`发送全服通知到群 ${groupId} 失败[${player.id}]:`, groupErr);
-                }
+        if (groupId) {
+            // 官方号优先（纯官方群也能发），失败回退协议号
+            const res = await pushGroup(groupId, message);
+            if (res.ok) {
+                console.log(`[体质共鸣] 群 ${groupId}（${res.via}）: ${player?.id ?? ''}`);
+                return;
             }
-        } else {
-            // 如果没有配置群组，回退到私聊
-            await common.relpyPrivate(player.id, message);
-            console.log(`[全服通知] 私聊 ${player.id}: ${message}`);
+            console.error(`[体质共鸣] 群 ${groupId} 发送失败：${res.reason}`);
         }
+        // 拿不到群上下文（或群发失败）才私聊本人
+        await common.relpyPrivate(player.id, message);
+        console.log(`[体质共鸣] 私聊 ${player.id}`);
     } catch (err) {
-        console.error(`发送全服通知失败[${player.id}]:`, err);
-        
-        // 最终回退到私聊发送
+        console.error(`发送体质共鸣通知失败[${player.id}]:`, err);
         try {
             await common.relpyPrivate(player.id, message);
-            console.log(`[全服通知] 私聊回退 ${player.id}: ${message}`);
         } catch (fallbackErr) {
-            console.error(`私聊发送全服通知失败[${player.id}]:`, fallbackErr);
+            console.error(`私聊发送体质共鸣通知失败[${player.id}]:`, fallbackErr);
         }
     }
 }

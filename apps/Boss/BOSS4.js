@@ -1,4 +1,5 @@
 import { isXiuxianAdmin } from '../../model/xiuxian.js';
+import { pushGroup } from '../../model/officialReply.js';
 import {  hasSuiyunAuthority } from '../../model/suiyunAuthority.js';
 import fs from 'fs';
 import path from 'path';
@@ -1105,7 +1106,8 @@ export class BOSS4 extends plugin {
 
         for (const groupId of groups) {
           try {
-            await Bot.sendGroupMsg(groupId, message);
+            // 官方号优先（纯官方群也能发），失败/未配置回退协议号
+            await pushGroup(groupId, message);
           } catch (error) {
             console.error(`[天骄轮回] 群 ${groupId} 公告失败:`, error);
           }
@@ -1618,7 +1620,8 @@ export class BOSS4 extends plugin {
       const groups = config.getConfig('xiuxian', 'xiuxian')?.Era?.notifyGroups || [];
       for (const groupId of groups) {
         try {
-          await Bot.sendGroupMsg(groupId, message);
+          // 官方号优先（纯官方群也能发），失败/未配置回退协议号
+          await pushGroup(groupId, message);
         } catch (error) {
           console.error(`[至宝重出预告] 群 ${groupId} 公告失败:`, error);
         }

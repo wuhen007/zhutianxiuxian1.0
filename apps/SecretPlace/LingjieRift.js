@@ -1,4 +1,5 @@
 import { isXiuxianAdmin } from '../../model/xiuxian.js';
+import { pushGroup } from '../../model/officialReply.js';
 import {  plugin, common, config, data } from '../../api/api.js';
 import {
   Add_najie_thing,
@@ -624,7 +625,8 @@ export class LingjieRift extends plugin {
     const groups = setting?.Era?.notifyGroups?.length ? setting.Era.notifyGroups : (setting.Group || []);
     for (const groupId of groups) {
       try {
-        await Bot.sendGroupMsg(groupId, message);
+        // 官方号优先（纯官方群也能发），失败/未配置回退协议号
+        await pushGroup(groupId, message);
       } catch (error) {
         console.error(`[灵界裂缝] 群 ${groupId} 广播失败:`, error);
       }

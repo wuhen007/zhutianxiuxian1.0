@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { pushGroup } from '../../model/officialReply.js';
 import { __PATH } from '../../model/xiuxian.js';
 import { config as xiuxianConfig, data } from '../../api/api.js';
 import { Read_player, Read_najie, Write_najie } from '../../model/xiuxian.js';
@@ -1136,7 +1137,8 @@ export class RealmEvents {
         let sent = 0;
         for (const groupId of groups) {
             try {
-                await Bot.sendGroupMsg(groupId, message);
+                // 官方号优先（纯官方群也能发），失败/未配置回退协议号
+                await pushGroup(groupId, message);
                 sent++;
             } catch (error) {
                 console.error(`广播位面大事件到群${groupId}失败:`, error);
