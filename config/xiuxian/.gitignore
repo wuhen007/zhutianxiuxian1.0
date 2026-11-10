@@ -1,2 +1,10 @@
+# 这个目录默认不同步：配置里带群号、主人 QQ 这类运营数据。
+# 只放行「结构模板」，好让新部署的人知道该有哪些字段。
 *
 !.gitignore
+!xiuxian.yaml.example
+
+# 仍然忽略（本地运行时文件 / 真实配置）：
+#   xiuxian.yaml            真实主配置，各服不同
+#   xiuxian.yaml.last-good  运行时快照
+#   official-reply.yaml / notify-auto.yaml / text2image.yaml
