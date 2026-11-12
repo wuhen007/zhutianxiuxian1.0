@@ -4,6 +4,13 @@ import Help2 from '../../model/shituhelp.js';
 import Help3 from '../../model/zhutianhelp.js';
 import ActivityHelp from '../../model/huodonghelp.js';
 import { createHash } from 'node:crypto';
+import { replyOfficialButtons, isOfficialMessageEvent } from '../../model/officialMessage.js';
+
+// 官方 keyboard 上限 5 行 × 5 列
+const HELP_BUTTONS = [
+  [{ text: '修仙签到', command: '#修仙签到' }, { text: '修仙状态', command: '#修仙状态' }, { text: '基础帮助', command: '#基础帮助' }],
+  [{ text: '职业帮助', command: '#职业帮助' }, { text: '灵根帮助', command: '#灵根帮助' }, { text: '活动帮助', command: '#活动帮助' }],
+];
 
 const HELP_TEMPLATE = 'celestial-codex';
 let helpData = {
@@ -80,94 +87,95 @@ export class BotHelp extends plugin {
   async znq(e) {
     let data = await Help.get_zhounian(e);
 
-    let img = await this.cache(data);
-    await e.reply(img);
+    await this.sendHelp(e, data);
   }
   async xinghai(e) {
     let data = await Help.get_xinghai(e);
 
-    let img = await this.cache(data);
-    await e.reply(img);
+    await this.sendHelp(e, data);
   }
   async activityHelp(e) {
     let data = await ActivityHelp.huodonghelp(e);
-    let img = await this.cache(data);
-    await e.reply(img);
+    await this.sendHelp(e, data);
   }
 
   async Xiuxianhelpcopy(e) {
     if (!verc({ e })) return false;
     let data = await Help.gethelpcopy(e);
     if (!data) return false;
-    let img = await this.cache(data);
-    await e.reply(img);
+    await this.sendHelp(e, data);
   }
     async Xiuxianhelpcopy2(e) {
     if (!verc({ e })) return false;
     let data = await Help.gethelpcopy2(e);
     if (!data) return false;
-    let img = await this.cache(data);
-    await e.reply(img);
+    await this.sendHelp(e, data);
   }
   async Xiuxianhelp(e) {
 
     let data = await Help.get(e);
 
-    let img = await this.cache(data);
-    await e.reply(img);
+    await this.sendHelp(e, data);
   }
 async zhutianhelp(e) {
 
     let data = await Help3.zhutianhelp(e);
 
-    let img = await this.cache(data);
-    await e.reply(img);
+    await this.sendHelp(e, data);
   }
 
 async xiaoshijiehelp(e) {
     let data = await Help.xiaoshijiehelp(e);
-    let img = await this.cache(data);
-    await e.reply(img);
+    await this.sendHelp(e, data);
   }
   async jichuhelp(e) {
     let data = await Help.jichuhelp(e);
-    let img = await this.cache(data);
-    await e.reply(img);
+    await this.sendHelp(e, data);
   }
   async linggenhelp(e) {
     let data = await Help.linggenhelp(e);
-    let img = await this.cache(data);
-    await e.reply(img);
+    await this.sendHelp(e, data);
   }  
   async zhiyehelp(e) {
 
     let data = await Help.zhiyehelp(e);
 
-    let img = await this.cache(data);
-    await e.reply(img);
+    await this.sendHelp(e, data);
   }
   async adminsuper(e) {
     if (!verc({ e })) return false;
     let data = await Help.setup(e);
     if (!data) return false;
-    let img = await this.cache(data);
-    await e.reply(img);
+    await this.sendHelp(e, data);
   }
 
   async AssociationAdmin(e) {
     if (!verc({ e })) return false;
     let data = await Help.Association(e);
     if (!data) return false;
-    let img = await this.cache(data);
-    await e.reply(img);
+    await this.sendHelp(e, data);
   }
 
   async shituhelp(e) {
     if (!verc({ e })) return false;
     let data = await Help2.shituhelp(e);
     if (!data) return false;
-    let img = await this.cache(data);
+    await this.sendHelp(e, data);
+  }
+
+
+  /**
+   * 图片保持原来的 HTML 渲染结果（主帮助是 2 张图），后面再跟一条
+   * 「请选择：」+ 快捷按钮的 markdown 消息 —— 与 #修仙签到 的观感一致。
+   * 非官方出口只发图，不追加按钮段（协议号不认 keyboard）。
+   */
+  async sendHelp(e, data) {
+    const img = await this.cache(data);
     await e.reply(img);
+    if (isOfficialMessageEvent(e)) {
+      return replyOfficialButtons(e, { buttons: HELP_BUTTONS });
+    }
+    return true;
   }
 
   async cache(data) {

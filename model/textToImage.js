@@ -30,6 +30,7 @@ import { pathToFileURL } from 'node:url';
 import YAML from 'yaml';
 import { __dirname as PluginDir } from '../app.config.js';
 import { tryOfficialSend } from './officialReply.js';
+import { isOfficialMessageEvent } from './officialMessage.js';
 
 const CONFIG_FILE = path.join(PluginDir, 'config/xiuxian/text2image.yaml');
 const TPL_FILE = path.join(PluginDir, 'resources/html/text2img/text.html');
@@ -361,18 +362,32 @@ export function installTextToImageHook(e) {
   };
   // 事件本身来自官方 Bot 时不再代发，避免绕回自己
   const fromOfficial = String(e.self_id ?? '').startsWith('qqbot-');
+  // 只算一次：getConfig 每次读盘，别在每条 e.reply 里反复判
+  const mdCapable = isOfficialMessageEvent(e);
 
   e.reply = async function (msg, quote = false, data = {}) {
     // 自己发图时直接放行，避免递归
     if (this?.[SELF_FLAG]) return original.call(this, msg, quote, data);
 
+    // 官方出口：纯文本一律走 markdown，不再渲染成图片。
+    // 带 CQ/at/纯链接的保持原样（画进 md 会坏），图片段、markdown+button 段也保持原样。
+    const mdMode = mdCapable
+      && typeof msg === 'string'
+      && msg.trim().length > 0
+      && !KEEP_AS_TEXT.test(msg)
+      && !PURE_URL.test(msg.trim());
+
     let payload = null;
-    try {
-      payload = await buildImageReply(msg);
-    } catch (err) {
-      warn(`转图判断异常，按文本发送：${err?.message ?? err}`);
-      payload = null;
+    if (!mdMode) {
+      try {
+        payload = await buildImageReply(msg);
+      } catch (err) {
+        warn(`转图判断异常，按文本发送：${err?.message ?? err}`);
+        payload = null;
+      }
     }
+
+    const out = mdMode ? [{ type: 'markdown', data: msg }] : (payload || msg);
 
     // 官方优先：带 msg_id 属于被动消息，不吃「20 条/分钟、1000 条/天」的主动消息配额；
     // 发不出去会自动回退到下面的协议号发送。
@@ -380,14 +395,14 @@ export function installTextToImageHook(e) {
     // 之前对 quote 直接放行协议号，导致洗劫/兑换这类带引用的回复永远都是协议号身份。
     if (!fromOfficial) {
       try {
-        const route = await tryOfficialSend(trigger, payload || msg);
+        const route = await tryOfficialSend(trigger, out);
         if (route.handled) return route.res ?? true;
       } catch (err) {
         warn(`官方代发异常，回退协议号：${err?.message ?? err}`);
       }
     }
 
-    if (!payload) return original.call(this, msg, quote, data);
+    if (!payload) return original.call(this, out, quote, data);
 
     try {
       this[SELF_FLAG] = true;

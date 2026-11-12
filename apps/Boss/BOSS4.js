@@ -75,7 +75,7 @@ import { getLocationName as resolveLocationName } from '../../model/weimianTrave
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { compareAndDeleteRedisJson } from '../../utils/redisJsonCas.js';
 import { getActiveZhutianAvatarName } from '../../model/zhutianMirror.js';
-import { replyOfficialMessage } from '../../model/officialMessage.js';
+import { replyOfficialMessage, replyOfficialButtons, isOfficialMessageEvent } from '../../model/officialMessage.js';
 import { addRelicToBag, createFishKingRelic } from '../../model/relicSystem.js';
 import {
   clearTianjiaoHatred,
@@ -612,6 +612,9 @@ export class BOSS4 extends plugin {
 
   async distributeNormalBattleDrops(e, tianjiaoName, tianjiaoData, qq, multiplier, settlementId) {
     if (!Array.isArray(tianjiaoData.掉落物)) return;
+    // 一次讨伐经常同时掉好几件，逐件 e.reply 会把群里刷成一串「获得掉落：…」。
+    // 先收集，循环结束后合并成一条发。
+    const gained = [];
     for (let index = 0; index < tianjiaoData.掉落物.length; index++) {
       const item = tianjiaoData.掉落物[index];
       if (Math.random() >= item.概率) continue;
@@ -619,11 +622,16 @@ export class BOSS4 extends plugin {
       try {
         const idempotencyKey = this.getTianjiaoRewardIdempotencyKey(tianjiaoName, settlementId, qq, 'battle-drop', index);
         const display = await this.grantTianjiaoDrop(qq, item, amount, idempotencyKey);
-        if (display) await e.reply(`获得掉落：${display}`);
+        if (display) gained.push(display);
       } catch (error) {
         console.warn(`[天骄掉落] ${tianjiaoName}/${qq} 发放失败:`, error);
       }
     }
+    if (!gained.length) return;
+    // 单件保持一行；多件每件一行，用 markdown 无序列表渲染。
+    await e.reply(gained.length === 1
+      ? `获得掉落：${gained[0]}`
+      : ['获得掉落：', ...gained.map(name => `- ${name}`)].join('\n'));
   }
 
   async grantTianjiaoDrop(qq, item, amount, idempotencyKey) {
@@ -1000,6 +1008,15 @@ export class BOSS4 extends plugin {
     }
 
     await ForwardMsg(e, msg);
+    // 列表是转发图，后面补一条导航按钮；不带名字参数的天骄操作才做成按钮
+    if (isOfficialMessageEvent(e)) {
+      await replyOfficialButtons(e, { buttons: [[
+        { text: '天骄状态', command: '#天骄状态' },
+        { text: '贡献榜', command: '#天骄贡献榜' },
+        { text: '天骄仇恨', command: '#天骄仇恨' },
+        { text: '查看污损', command: '#查看污损' },
+      ]] });
+    }
     return false;
   }
 

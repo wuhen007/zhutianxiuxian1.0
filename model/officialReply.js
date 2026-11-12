@@ -135,6 +135,11 @@ function sweepSessions(now = Date.now()) {
  * 官方限制是每群 20 条/分钟、每群每天 1000 条；修仙的转世叙事一次能刷十几条，
  * 这里按分钟先掐一道，超出的回退协议号，避免把配额烧光或撞平台频控。
  */
+/** 纯文本统一走 markdown 段；图片 / 段数组（含已有按钮）原样 */
+function asMarkdown(msg) {
+  return typeof msg === 'string' && msg.trim() ? [{ type: 'markdown', data: msg }] : msg;
+}
+
 function activeAllowed(groupId, perMinute) {
   const now = Date.now();
   const key = String(groupId);
@@ -363,7 +368,7 @@ export async function tryOfficialSend(trigger, msg) {
   }
 
   const result = await withTimeout(
-    bridge.sendGroup(openid, msg, { msgId, passive: Boolean(msgId) }),
+    bridge.sendGroup(openid, asMarkdown(msg), { msgId, passive: Boolean(msgId) }),
     cfg.timeout,
   );
 
@@ -454,7 +459,7 @@ export async function tryOfficialActive(groupId, msg, options = {}) {
     return { handled: false, reason: 'local-rate-limit' };
   }
 
-  const result = await withTimeout(bridge.sendGroup(openid, msg, { passive: false }), cfg.timeout);
+  const result = await withTimeout(bridge.sendGroup(openid, asMarkdown(msg), { passive: false }), cfg.timeout);
 
   if (result?.ok) {
     stats.ok += 1;

@@ -1,5 +1,6 @@
 import { data, plugin, puppeteer, Show } from '../api/api.js';
 import { pushGroup } from '../model/officialReply.js';
+import { replyOfficialButtons, isOfficialMessageEvent } from '../model/officialMessage.js';
 import { recordMemoryDungeon } from '../model/memoryPath.js';
 import {
   Add_najie_thing,
@@ -800,7 +801,44 @@ export class EndlessRealm extends plugin {
     );
   }
 
+  /** 面板下的快捷按钮：编号只按 view 里真实存在的选项生成，不写死 1-4 */
+  endlessPanelButtons(view) {
+    const rows = [];
+    const numbered = (count, command, label) => {
+      const n = Math.min(Number(count) || 0, 5);
+      if (!n) return;
+      rows.push(Array.from({ length: n }, (_, i) => ({
+        text: `${label}${i + 1}`,
+        command: `${command}${i + 1}`,
+      })));
+    };
+    if (view?.checkpoint?.choices?.length) {
+      numbered(view.checkpoint.choices.length, '#劫后抉择', '抉择');
+    } else if (view?.choiceGroups?.[0]?.choices?.length) {
+      numbered(view.choiceGroups[0].choices.length, '#无尽选择', '选择');
+    } else if (view?.mode === 'star-map'
+      && view.starMap?.selectedName === '尚未定途'
+      && view.starMap?.options?.length) {
+      numbered(view.starMap.options.length, '#星图定途', '定途');
+    }
+    rows.push([
+      { text: '无尽队伍', command: '#无尽队伍' },
+      { text: '劫途星图', command: '#劫途星图' },
+      { text: '无尽构筑', command: '#无尽构筑' },
+      { text: '下一关', command: '#无尽下一关' },
+    ]);
+    return rows.slice(0, 5);
+  }
+
   async replyEndlessPanel(e, view, fallback) {
+    // 图片/文本发出后再补一条按钮消息。keyboard 只能挂 markdown，
+    // replyOfficialButtons 会自动补「请选择：」；协议号出口不追加（不认 button 段）。
+    const withButtons = async (res) => {
+      if (isOfficialMessageEvent(e)) {
+        await replyOfficialButtons(e, { buttons: this.endlessPanelButtons(view) });
+      }
+      return res;
+    };
     try {
       const renderData = await new Show(e).get_endlessPanelData({
         saveId: `endless_panel_${e.user_id}_${view.mode}`,
@@ -811,11 +849,11 @@ export class EndlessRealm extends plugin {
       const image = view.mode === 'help'
         ? await puppeteer.screenshots('endless_panel', renderData)
         : await puppeteer.screenshot('endless_panel', renderData);
-      if (image) return e.reply(image);
+      if (image) return withButtons(await e.reply(image));
     } catch (error) {
       logger.error(`[无尽劫境] ${view.title}面板生成失败`, error);
     }
-    return e.reply(Array.isArray(fallback) ? fallback.join('\n') : fallback);
+    return withButtons(await e.reply(Array.isArray(fallback) ? fallback.join('\n') : fallback));
   }
 
   helpPanelView() {
@@ -2711,7 +2749,24 @@ export class EndlessRealm extends plugin {
     const run = await this.getRun(team.id);
     if (!run) return e.reply('无尽劫境状态已经失效');
     const lines = this.formatRunMerchant(run);
-    return e.reply(lines ? lines.join('\n') : '当前劫途没有显化界海商队');
+    if (!lines) return e.reply('当前劫途没有显化界海商队');
+    const res = await e.reply(lines.join('\n'));
+    if (isOfficialMessageEvent(e)) {
+      const stock = getEndlessMerchantState(run)?.stock || [];
+      const n = Math.min(stock.length, 5);
+      const buttons = n
+        ? [Array.from({ length: n }, (_, i) => ({
+            text: `购买${i + 1}`,
+            command: `#劫境购买${i + 1}`,
+          }))]
+        : [];
+      buttons.push([
+        { text: '跳过/下一关', command: '#无尽下一关' },
+        { text: '无尽构筑', command: '#无尽构筑' },
+      ]);
+      await replyOfficialButtons(e, { buttons });
+    }
+    return res;
   }
 
   async buyRunMerchantItem(e) {

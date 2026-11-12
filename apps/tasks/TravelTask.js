@@ -896,7 +896,7 @@ this.FORMATION_NAMES = [
       if (group_id) {
         // 群聊中发送，带@
         await this.pushInfo(group_id, true, [
-          segment.at(Number(user_id)),
+          segment.at(user_id),
           img
         ]);
       } else {
@@ -916,7 +916,7 @@ this.FORMATION_NAMES = [
         
         if (group_id) {
           await this.pushInfo(group_id, true, [
-            segment.at(Number(user_id)),
+            segment.at(user_id),
             '【战斗过程】\n' + messageText
           ]);
         } else {
@@ -942,7 +942,7 @@ this.FORMATION_NAMES = [
       if (group_id) {
         // 群聊中发送，带@
         await this.pushInfo(group_id, true, [
-          segment.at(Number(user_id)),
+          segment.at(user_id),
           message
         ]);
       } else {
@@ -966,7 +966,7 @@ this.FORMATION_NAMES = [
         // 这个函数可能不会被get_fight_img调用，但为了兼容性保留
         if (group_id) {
           await Bot.pickGroup(group_id).sendMsg([
-            segment.at(Number(user_id)),
+            segment.at(user_id),
             ...(Array.isArray(content) ? content : [content]),
           ]);
         } else {

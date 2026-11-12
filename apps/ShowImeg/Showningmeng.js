@@ -154,13 +154,13 @@ export class Showningmeng extends plugin {
     if (!verc({ e })) return false;
     let thing_type = e.msg.replace('#灵根图鉴', '');
     let img = await get_linggen_img(e, thing_type);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: ATLAS_BUTTONS });
     return false;
   }
   async show_mingge(e) {
     if (!verc({ e })) return false;
     const img = await get_mingge_img(e);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: ATLAS_BUTTONS });
     return false;
   }
   
@@ -169,7 +169,7 @@ export class Showningmeng extends plugin {
     if (!verc({ e })) return false;
     let thing_type = e.msg.replace('#柠檬堂', '');
     let img = await get_ningmenghome_img(e, thing_type);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: ATLAS_BUTTONS });
     return false;
   }
    //瑶池仙楼
@@ -177,7 +177,7 @@ export class Showningmeng extends plugin {
     if (!verc({ e })) return false;
     let thing_type = e.msg.replace('#瑶池仙楼', '');
     let img = await get_yaochi_img(e, thing_type);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: ATLAS_BUTTONS });
     return false;
   }
    //摇光宝库
@@ -185,21 +185,21 @@ export class Showningmeng extends plugin {
     if (!verc({ e })) return false;
     let thing_type = e.msg.replace('#摇光宝库', '');
     let img = await get_yaoguang_img(e, thing_type);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: ATLAS_BUTTONS });
     return false;
   }
   async show_jianyunhai(e) {
     if (!verc({ e })) return false;
     let thing_type = e.msg.replace('#剑云海剑阁', '');
     let img = await get_jianyunhai_img(e, thing_type);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: ATLAS_BUTTONS });
     return false;
   }
   //万宝楼
   async show_valuables(e) {
     if (!verc({ e })) return false;
     let img = await get_valuables_img(e);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: ATLAS_BUTTONS });
     return false;
   }
   //仙宠楼
@@ -250,28 +250,28 @@ export class Showningmeng extends plugin {
   async Show_xigen(e) {
     if (!verc({ e })) return false;
     let img = await get_xigen_img(e);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: ATLAS_BUTTONS });
     return false;
   }
     //合成图鉴
   async Show_duihuan(e) {
     if (!verc({ e })) return false;
     let img = await get_duihuan_img(e);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: ATLAS_BUTTONS });
     return false;
   }
     //位面天骄图鉴
   async Show_wmtj(e) {
     if (!verc({ e })) return false;
     let img = await get_wmtj_img(e);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: ATLAS_BUTTONS });
     return false;
   }
     //成就图鉴
   async Show_chengjiu(e) {
     if (!verc({ e })) return false;
     let img = await get_chengjiu_img(e);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: ATLAS_BUTTONS });
     return false;
   }
     //位面图鉴
@@ -285,20 +285,20 @@ export class Showningmeng extends plugin {
     async Show_lianqipifu(e) {
     if (!verc({ e })) return false;
     let img = await get_lqpf_img(e);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: ATLAS_BUTTONS });
     return false;
   }
     //剧情人物图鉴
   async Show_character(e) {
     if (!verc({ e })) return false;
     let img = await get_character_img(e);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: ATLAS_BUTTONS });
     return false;
   }
     //更新公告
   async Show_announce(e) {
     let img = await get_announce_img(e);
-    await e.reply(img);
+    await replyImageWithButtons(e, { image: img, buttons: ATLAS_BUTTONS });
     return false;
   }
   async Show_announce_web(e) {

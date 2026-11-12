@@ -1,5 +1,6 @@
 import fs from 'fs';
 import { plugin,  verc } from '../../api/api.js';
+import { replyOfficialButtons, isOfficialMessageEvent } from '../../model/officialMessage.js';
 import { fstadd_qinmidu, sleep, __PATH } from '../../model/xiuxian.js';
 import {
   exist_najie_thing,
@@ -185,7 +186,14 @@ export class Daolv extends plugin {
     msg.push(
       `${player_A.名号}想和你缔结道侣,你愿意吗？\n回复【我愿意】or【我拒绝】`
     );
-    e.reply(msg);
+    await e.reply(msg);
+    // xuanze() 会校验 e.user_id === user_B，别人点了也只是无效操作
+    if (isOfficialMessageEvent(e)) {
+      await replyOfficialButtons(e, { buttons: [[
+        { text: '我愿意', command: '我愿意' },
+        { text: '我拒绝', command: '我拒绝' },
+      ]] });
+    }
     chaoshi(e);
     return false;
   }
@@ -310,7 +318,13 @@ export class Daolv extends plugin {
     let player_A = await Read_player(A);
     let msg = [segment.at(B), '\n'];
     msg.push(`${player_A.名号}要和你断绝姻缘\n回复【我同意】or【我拒绝】`);
-    e.reply(msg);
+    await e.reply(msg);
+    if (isOfficialMessageEvent(e)) {
+      await replyOfficialButtons(e, { buttons: [[
+        { text: '我同意', command: '我同意' },
+        { text: '我拒绝', command: '我拒绝' },
+      ]] });
+    }
     chaoshi(e);
     return false;
   }

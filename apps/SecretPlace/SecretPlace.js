@@ -131,7 +131,7 @@ import {
     buildPlaneDestroyedMessage,
     getPlaneDestructionInfo,
 } from '../../model/planeDestruction.js';
-import { replyOfficialMessage } from '../../model/officialMessage.js';
+import { replyOfficialMessage, plainStateToMarkdown, STATUS_NAV_BUTTONS } from '../../model/officialMessage.js';
 import { applySecretPlaceNotificationContext } from '../../model/secretPlaceNotification.js';
 import { isFashanActionPending } from '../../model/fashanProxy.js';
 import {
@@ -1330,8 +1330,14 @@ replyMsg.push(
     } else if (player.法身 === 1) {
         replyMsg.push(`法身空闲中`);
     }
-    
-    e.reply(replyMsg.join("\n"));
+
+    // 纯文本状态面板：官方出口走结构化 markdown + 导航，其它出口保持原文本
+    const text = replyMsg.join('\n');
+    await replyOfficialMessage(e, {
+      markdown: plainStateToMarkdown(text),
+      text,
+      buttons: STATUS_NAV_BUTTONS,
+    });
     return false;
 }
 

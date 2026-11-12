@@ -1,4 +1,5 @@
 import { plugin, verc, data } from '../../api/api.js';
+import { replyImageWithButtons, STATUS_NAV_BUTTONS } from '../../model/officialMessage.js';
 import fs from 'fs';
 import {
   existplayer,
@@ -120,7 +121,7 @@ async TOP_xiangu(e) {
 
   let img = await get_genius_img(e, rankings, userRank, userPower, thisplayer, "仙古今世法榜");
   // 发送图片
-  e.reply(img);
+  replyImageWithButtons(e, { image: img, buttons: STATUS_NAV_BUTTONS });
   return true;
 }
  // 封神榜功能
@@ -192,7 +193,7 @@ async TOP_zhetian(e) {
 
   let img = await get_genius_img(e, rankings, userRank, userPower, thisplayer, "人体秘境榜");
   // 发送图片
-  e.reply(img);
+  replyImageWithButtons(e, { image: img, buttons: STATUS_NAV_BUTTONS });
   return true;
 }
 
@@ -265,7 +266,7 @@ async TOP_Immortal(e) {
 
   let img = await get_genius_img(e, rankings, userRank, userPower, thisplayer, "封神榜");
   // 发送图片
-  e.reply(img);
+  replyImageWithButtons(e, { image: img, buttons: STATUS_NAV_BUTTONS });
   return true;
 }
 
@@ -338,7 +339,7 @@ async TOP_genius(e) {
   let img = await get_genius_img(e, rankings, userRank, userPower, thisplayer, "至尊榜");
   
   // 发送图片
-  e.reply(img);
+  replyImageWithButtons(e, { image: img, buttons: STATUS_NAV_BUTTONS });
   return true;
 }
 
@@ -387,7 +388,7 @@ async TOP_genius(e) {
     }
     let thisplayer = await data.getData('player', usr_qq);
     let img = await get_ranking_power_img(e, Data, usr_paiming, thisplayer);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: STATUS_NAV_BUTTONS });
     return false;
   }
 
@@ -442,7 +443,7 @@ async TOP_genius(e) {
       thisplayer,
       thisnajie
     );
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: STATUS_NAV_BUTTONS });
     return false;
   }
 }

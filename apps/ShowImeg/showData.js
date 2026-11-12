@@ -1,4 +1,5 @@
 import { plugin,verc, config } from "../../api/api.js";
+import { replyImageWithButtons, STATUS_NAV_BUTTONS } from '../../model/officialMessage.js';
 import {
   __PATH,
   get_equipment_img,
@@ -68,55 +69,55 @@ export class showData extends plugin {
     if (!isXiuxianAdmin(e)) return  false;
 if (!verc({ e })) return  false ;
     let img = await get_adminset_img(e);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: STATUS_NAV_BUTTONS });
     return  false;
   }
 
   async show_power(e) {
 if (!verc({ e })) return  false ;
     let img = await get_power_img(e);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: STATUS_NAV_BUTTONS });
     return  false;
   }
   async show_equipment(e) {
 if (!verc({ e })) return  false ;
     let img = await get_equipment_img(e);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: STATUS_NAV_BUTTONS });
     return  false;
   }
 
   async show_Levelzhiye(e) {
 if (!verc({ e })) return  false ;
     let img = await get_statezhiye_img(e);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: STATUS_NAV_BUTTONS });
     return  false;
   }
 
   async show_Level(e) {
 if (!verc({ e })) return  false ;
     let img = await get_state_img(e);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: STATUS_NAV_BUTTONS });
     return  false;
   }
 
   async show_LevelMax(e) {
 if (!verc({ e })) return  false ;
     let img = await get_statemax_img(e);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: STATUS_NAV_BUTTONS });
     return  false;
   }
 
   async show_mijing(e) {
 if (!verc({ e })) return  false ;
     let img = await get_mijing_img(e);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: STATUS_NAV_BUTTONS });
     return  false;
   }
 
   async show_xiangujinshi(e) {
 if (!verc({ e })) return  false ;
     let img = await get_xiangujinshi_img(e);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: STATUS_NAV_BUTTONS });
     return  false;
   }
 
@@ -124,7 +125,7 @@ if (!verc({ e })) return  false ;
   async show_association(e) {
 if (!verc({ e })) return  false ;
     let img = await get_association_img(e);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: STATUS_NAV_BUTTONS });
     return  false;
   }
 }

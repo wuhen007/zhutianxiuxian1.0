@@ -1,4 +1,5 @@
 import { plugin, verc } from '../../api/api.js';
+import { sendStatusNav } from '../../model/officialMessage.js';
 import fs from 'fs';
 import {
   existplayer,
@@ -85,6 +86,7 @@ export class PHB2 extends plugin {
       );
     }
     await ForwardMsg(e, msg);
+    await sendStatusNav(e);
     return false;
   }
 
@@ -146,6 +148,7 @@ export class PHB2 extends plugin {
       );
     }
     await ForwardMsg(e, msg);
+    await sendStatusNav(e);
     return false;
   }
 }

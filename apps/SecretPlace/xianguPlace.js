@@ -177,7 +177,14 @@ import {
 import { isXianguPlayerRoundCurrent } from '../tasks/xianguLifecycle.js';
 import { adjustDaoHeart } from '../../model/daoHeart.js';
 import { grantTitle } from '../../model/titleSystem.js';
-import { replyOfficialMessage } from '../../model/officialMessage.js';
+import { replyOfficialMessage, replyOfficialButtons } from '../../model/officialMessage.js';
+
+// 八方向移动 + 状态，官方 keyboard 上限 5 行 × 5 列，3×3 刚好。
+const XIANGU_MOVE_BUTTONS = [
+  [{ text: '↖ 左上', command: '#左上' }, { text: '↑ 上', command: '#上' }, { text: '↗ 右上', command: '#右上' }],
+  [{ text: '← 左', command: '#左' }, { text: '· 状态', command: '#秘境状态' }, { text: '→ 右', command: '#右' }],
+  [{ text: '↙ 左下', command: '#左下' }, { text: '↓ 下', command: '#下' }, { text: '↘ 右下', command: '#右下' }],
+];
 
 function getXianguNpcRealmData() {
   return {
@@ -2673,7 +2680,9 @@ export class xianguPlace extends plugin {
       console.error('初始化仙古秘境Redis会话失败:', redisError);
     }
     
-    await e.reply(message);
+    // 进入成功就给方向按钮：原来这串长文本会被 textToImage 转成图片，且没有任何按钮。
+    const text = message.join('\n');
+    await replyOfficialMessage(e, { markdown: text, text, buttons: XIANGU_MOVE_BUTTONS });
     return true;
 
   } catch (error) {
@@ -3491,7 +3500,10 @@ export class xianguPlace extends plugin {
       .flatMap(line => Array.isArray(line) ? line : [line])
       .map(stripXianguMovementLocationLines)
       .filter(Boolean);
-    if (messages.length > 0) await e.reply(messages.join('\n\n'));
+    // 走位时把八方向按钮附在最后一条上，省得每步都手打 #上/#下。
+    const text = messages.join('\n\n');
+    if (text) await replyOfficialMessage(e, { markdown: text, text, buttons: XIANGU_MOVE_BUTTONS });
+    else await replyOfficialButtons(e, { markdown: '选择移动方向', buttons: XIANGU_MOVE_BUTTONS });
     return true;
   }
 
