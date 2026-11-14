@@ -278,6 +278,34 @@ export function closeRifts(state, options = {}) {
   return { ok: true, closed };
 }
 
+/**
+ * 夜间静默结束后给「静默期间仍在计时」的裂界补时。
+ *
+ * 裂界到期时间 expiresAt 是绝对时间戳，静默 8 小时会把 23:00 开的裂界直接耗死在 03:00。
+ * 这里按「静默期间不计时」重算：已消耗时长只算窗口开始前的部分，剩余时长从窗口结束后继续。
+ * 用 rift.quietWindowStart 标记处理过的窗口，保证同一次静默只加一次，不重复顺延。
+ */
+export function extendRiftsForQuiet(window, now = Date.now()) {
+  if (!window || !(window.end > window.start)) return [];
+  const state = readRiftState();
+  const extended = [];
+  for (const rift of state.activeRifts || []) {
+    if (Number(rift.quietWindowStart) === window.start) continue;
+    const openedAt = Number(rift.openedAt) || 0;
+    const expiresAt = Number(rift.expiresAt) || 0;
+    if (!(expiresAt > window.start)) continue; // 静默开始前已闭合，不复活
+    if (openedAt >= window.end) continue;      // 静默结束后才开的裂界，不受这段静默影响
+    const lifetime = Math.max(0, expiresAt - openedAt);
+    const consumed = Math.max(0, Math.min(expiresAt, window.start) - openedAt);
+    const remaining = Math.max(0, lifetime - consumed);
+    rift.expiresAt = window.end + remaining;
+    rift.quietWindowStart = window.start;
+    extended.push({ id: rift.id, name: rift.name, expiresAt: rift.expiresAt });
+  }
+  if (extended.length) saveRiftState(state);
+  return extended;
+}
+
 export function triggerPeriodicRifts(eraIndex, years, epoch = 1, options = {}) {
   const state = readRiftState();
   const worldYear = getRealmEventWorldYear(eraIndex, years, epoch);

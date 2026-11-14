@@ -41,7 +41,8 @@ import {
   formatDarkRevoltPlaneDestruction,
   processDarkRevoltPlaneDestruction,
 } from '../Boss/DarkRevoltDestruction.js';
-import { triggerPeriodicRiftsForEra } from '../../model/planeRiftFestival.js';
+import { extendRiftsForQuiet, triggerPeriodicRiftsForEra } from '../../model/planeRiftFestival.js';
+import { getLastQuietWindow, isNightQuiet, readNightQuietConfig } from '../../model/nightQuiet.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { canAdvanceReincarnationEra, getReincarnationEraTarget } from '../../model/reincarnationWay.js';
 import {
@@ -997,6 +998,31 @@ async checkJuelingLoss(e) {
 // 在指令处理部分添加这个指令
 // 例如在某个指令路由中添加：
 // if (e.msg === "#查看损失信息") return await checkJuelingLoss(e);
+  /**
+   * 夜间静默门禁。只作用于定时任务（advanceEra 仅由 cron 调用）；
+   * 管理员 #设置时代、轮回大道手动推进走 applyEraProgress，夜间照常可用。
+   * 放行时顺带给「静默期间仍在倒计时」的裂界补时，避免 23:00 开的裂界在 03:00 静默耗死。
+   */
+  isNightQuietBlocked(now = Date.now()) {
+    const quiet = readNightQuietConfig();
+    if (!quiet.enabled || !quiet.pauseWorldClock) return false;
+    if (isNightQuiet(now, quiet)) {
+      logger.mark(`[时代推进] 夜间静默 ${quiet.startHour}:00-${quiet.endHour}:00，本轮世界时钟冻结`);
+      return true;
+    }
+    if (quiet.extendRifts) {
+      try {
+        const extended = extendRiftsForQuiet(getLastQuietWindow(now, quiet), now);
+        if (extended.length) {
+          logger.mark(`[时代推进] 夜间静默补时裂界：${extended.map(item => item.name).join('、')}`);
+        }
+      } catch (error) {
+        logger.warn(`[时代推进] 裂界补时失败：${error.message}`);
+      }
+    }
+    return false;
+  }
+
   async advanceEra(e) {
     return withEraProgressLock(() => this.advanceEraLocked(e));
   }
@@ -1004,6 +1030,10 @@ async checkJuelingLoss(e) {
   async advanceEraLocked(e) {
     this.loadEraConfig();
     if (!this.set.Era?.enabled) return;
+
+    // 夜间静默：冻结世界时钟。跳过本轮 = 灾厄不生成、绝灵不侵蚀、裂界不开、仙路不判定，
+    // 全部世界事件玩法随 tick 一起停摆，醒来后不补账、不追帧。
+    if (this.isNightQuietBlocked()) return;
     
     try {
       // 重新加载最新配置

@@ -120,6 +120,19 @@ Era:
   # 纪元推进的 cron
   task: 0 0 */1 * * *
   pushNotice: true
+  # 夜间静默：每天 startHour 至 endHour 之间停止世界事件推送，并冻结对应玩法。
+  # 期间时代推进整体跳过（不生成域外灾厄、不做绝灵侵蚀、不开限时裂界、不判定仙路），
+  # 维度镇守也不来袭；endHour 之后由原 cron 自然恢复，不补帧。
+  # 注意：世界时钟停摆意味着每天少推进 8 个 yearlyAdvance，时代会变慢。
+  nightQuiet:
+    enabled: false          # 需要时改为 true
+    startHour: 0            # 含，0 点开始
+    endHour: 8              # 不含，8 点恢复；允许 startHour > endHour 表示跨零点
+    timezoneOffset: 8       # 北京时间；不要依赖机器时区
+    pauseWorldClock: true   # 冻结时代 tick（灾厄/绝灵/裂界/仙路等全在此 tick 内）
+    pauseDimensionGuard: true # 冻结永恒大战来袭判定
+    extendRifts: true       # 给静默期间仍在倒计时的裂界补时
+    resumeGraceMinutes: 10  # 恢复后多少分钟内到期的事件顺延一个间隔，避免整点刷屏
   # 纪元/灾劫等全服公告的推送目标。
   # 可以写数字群号（走协议号），也可以写官方群的 group_openid（32 位十六进制）。
   # 同一个群只写一种，群号和它的 openid 同时出现会导致每条公告发两遍。

@@ -33,6 +33,7 @@ import { runTaskOnce } from '../../utils/taskGuard.js';
 import { getFashanActionKey, isFashanActionPending } from '../../model/fashanProxy.js';
 import { getLocationName } from '../../model/weimianTravel.js';
 import { addCappedEraAccumulation } from '../../model/selfDaoDeduction.js';
+import { getLastQuietWindow, isNightQuiet, readNightQuietConfig } from '../../model/nightQuiet.js';
 
 const STATE_FILE = path.join(__PATH.data_path, 'dimension_guard_state.json');
 const PLANE_FILE = data.filePathMap.weimianList;
@@ -279,12 +280,41 @@ export class DimensionGuard extends plugin {
     return runTaskOnce('DimensionGuard', () => this.tickOnce());
   }
 
+  /** 夜间静默期间整轮跳过：不来袭、不失守、也不结算镇守奖励。 */
+  quietSkipped() {
+    const quiet = readNightQuietConfig();
+    if (!quiet.enabled || !quiet.pauseDimensionGuard) return false;
+    return isNightQuiet(Date.now(), quiet);
+  }
+
+  /**
+   * 夜间静默结束的缓冲：静默期间到期的来袭不在 8:00 那一分钟立刻炸出来，
+   * 顺延一个完整间隔，避免和时代推进、诡异祭礼挤在同一分钟刷屏。
+   * 无状态实现：用「距上一个静默窗口结束多久」判断，进程重启也成立。
+   */
+  deferAssaultAfterQuiet(state, now, quiet) {
+    if (!quiet.enabled || !quiet.pauseDimensionGuard) return false;
+    if (!(quiet.resumeGraceMinutes > 0)) return false;
+    const window = getLastQuietWindow(now, quiet);
+    if (!window) return false;
+    const elapsed = now - window.end;
+    if (elapsed < 0 || elapsed > quiet.resumeGraceMinutes * 60 * 1000) return false;
+    const next = Number(state.nextAssaultAt) || 0;
+    if (!next || next > now) return false;
+    state.nextAssaultAt = now + ETERNAL_GUARD_INTERVAL_MS;
+    saveState(state);
+    logger.mark('[维度镇守] 夜间静默结束，首轮来袭顺延至下一个整点');
+    return true;
+  }
+
   async tickOnce() {
     if (this.ticking) return false;
+    if (this.quietSkipped()) return false;
     this.ticking = true;
     try {
       const now = Date.now();
       const state = readState();
+      this.deferAssaultAfterQuiet(state, now, readNightQuietConfig());
       await this.settleGuardRewards(state);
       const emperors = await findImmortalEmperors();
       const guardians = await syncEternalGuardActions(emperors, now);

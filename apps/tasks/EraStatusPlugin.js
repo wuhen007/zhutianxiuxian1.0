@@ -19,6 +19,7 @@ import {
   suppressAllPlayerLifespans,
 } from './juelingLifespanService.js';
 import { getPlaneDestructionInfo } from '../../model/planeDestruction.js';
+import { describeNightQuiet, readNightQuietConfig } from '../../model/nightQuiet.js';
 
 export class EraStatusPlugin extends plugin {
   constructor() {
@@ -31,6 +32,10 @@ export class EraStatusPlugin extends plugin {
         {
           reg: '^#?(查看)?(当前)?(时代|纪元)$',
           fnc: 'queryEraStatus'
+        },
+        {
+          reg: '^#夜间静默(?:状态)?$',
+          fnc: 'queryNightQuiet'
         },
         {
           reg: '^#?突破模拟$',
@@ -285,6 +290,20 @@ export class EraStatusPlugin extends plugin {
     console.log(`[时代变更广播] ${message}`);
   }
   
+  /** 只读查询夜间静默状态；开关请改 config/xiuxian/xiuxian.yaml 的 Era.nightQuiet */
+  async queryNightQuiet(e) {
+    const quiet = readNightQuietConfig(true);
+    const flag = value => (value ? '开' : '关');
+    return e.reply([
+      '【夜间静默】',
+      describeNightQuiet(Date.now(), quiet),
+      `冻结世界时钟：${flag(quiet.pauseWorldClock)}｜冻结永恒大战：${flag(quiet.pauseDimensionGuard)}`,
+      `裂界补时：${flag(quiet.extendRifts)}｜恢复缓冲：${quiet.resumeGraceMinutes} 分钟`,
+      '静默期间玩家主动指令照常可用，只是不再产生新的世界事件。',
+      '开关：config/xiuxian/xiuxian.yaml → Era.nightQuiet.enabled（改完即时生效）',
+    ].join('\n'));
+  }
+
   /** 查询当前时代状态 */
   async queryEraStatus(e) {
     try {
