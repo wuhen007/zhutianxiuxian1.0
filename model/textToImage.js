@@ -30,7 +30,7 @@ import { pathToFileURL } from 'node:url';
 import YAML from 'yaml';
 import { __dirname as PluginDir } from '../app.config.js';
 import { tryOfficialSend } from './officialReply.js';
-import { isOfficialMessageEvent } from './officialMessage.js';
+import { isOfficialMessageEvent, buildOfficialMessage } from './officialMessage.js';
 
 const CONFIG_FILE = path.join(PluginDir, 'config/xiuxian/text2image.yaml');
 const TPL_FILE = path.join(PluginDir, 'resources/html/text2img/text.html');
@@ -93,9 +93,30 @@ const SELF_FLAG = Symbol.for('zhutianxiuxian.text2image.sending');
  * 这些内容转成图片会失真，必须保持文本：
  *  - CQ 码 / 官方 Bot 的 at 标签：画到图里只会露出原始标记，@ 也不会真的生效
  *  - 纯链接：变成图就无法点开了
+ *  - 「获得掉落」清单：合并后只有几十字，画成图片反而要多点开一层
  */
-const KEEP_AS_TEXT = /\[CQ:[^\]]*\]|<qqbot-at-user[^>]*\/?>/i;
+const KEEP_AS_TEXT = /\[CQ:[^\]]*\]|<qqbot-at-user[^>]*\/?>|^\s*获得掉落/mi;
 const PURE_URL = /^https?:\/\/\S+$/i;
+
+// 回复里写有「下一步指令说明」时，把文本中的 #指令 收集成按钮。
+// 只认带引导词的回复，避免把任何提到 # 的普通文本都加上按钮。
+const CMD_HINT = /(?:发送|回复|使用|输入|前往|点击|按|请)\s*#/;
+const CMD_TOKEN = /#[\u4e00-\u9fa5A-Za-z0-9_]{2,16}/g;
+function commandButtonsFrom(text) {
+  if (!CMD_HINT.test(text)) return [];
+  const seen = new Set();
+  const cmds = [];
+  for (const m of text.matchAll(CMD_TOKEN)) {
+    const cmd = m[0];
+    if (seen.has(cmd)) continue;
+    seen.add(cmd);
+    cmds.push({ text: cmd.slice(1).slice(0, 10), command: cmd });
+    if (cmds.length >= 9) break; // 3 行 × 3 列
+  }
+  const rows = [];
+  for (let i = 0; i < cmds.length; i += 3) rows.push(cmds.slice(i, i + 3));
+  return rows;
+}
 
 function warn(message) {
   try {
@@ -362,32 +383,38 @@ export function installTextToImageHook(e) {
   };
   // 事件本身来自官方 Bot 时不再代发，避免绕回自己
   const fromOfficial = String(e.self_id ?? '').startsWith('qqbot-');
-  // 只算一次：getConfig 每次读盘，别在每条 e.reply 里反复判
-  const mdCapable = isOfficialMessageEvent(e);
+  const cmdCapable = isOfficialMessageEvent(e);
 
   e.reply = async function (msg, quote = false, data = {}) {
     // 自己发图时直接放行，避免递归
     if (this?.[SELF_FLAG]) return original.call(this, msg, quote, data);
 
-    // 官方出口：纯文本一律走 markdown，不再渲染成图片。
-    // 带 CQ/at/纯链接的保持原样（画进 md 会坏），图片段、markdown+button 段也保持原样。
-    const mdMode = mdCapable
-      && typeof msg === 'string'
-      && msg.trim().length > 0
-      && !KEEP_AS_TEXT.test(msg)
-      && !PURE_URL.test(msg.trim());
-
-    let payload = null;
-    if (!mdMode) {
-      try {
-        payload = await buildImageReply(msg);
-      } catch (err) {
-        warn(`转图判断异常，按文本发送：${err?.message ?? err}`);
-        payload = null;
+    // 带「下一步指令说明」的纯文本：正文保持纯文本气泡，后面跟一条指令按钮。
+    // 这是唯一会自动出按钮的分支，其余回复完全走下面的原路径（转图 / 纯文本）。
+    if (cmdCapable && typeof msg === 'string'
+      && !KEEP_AS_TEXT.test(msg) && !PURE_URL.test(msg.trim())) {
+      const rows = commandButtonsFrom(msg);
+      if (rows.length) {
+        const out = buildOfficialMessage('', rows, '', [{ type: 'text', text: msg }]);
+        if (!fromOfficial) {
+          try {
+            const route = await tryOfficialSend(trigger, out);
+            if (route.handled) return route.res ?? true;
+          } catch (err) {
+            warn(`指令按钮代发异常，回退协议号：${err?.message ?? err}`);
+          }
+        }
+        return original.call(this, out, quote, data);
       }
     }
 
-    const out = mdMode ? [{ type: 'markdown', data: msg }] : (payload || msg);
+    let payload = null;
+    try {
+      payload = await buildImageReply(msg);
+    } catch (err) {
+      warn(`转图判断异常，按文本发送：${err?.message ?? err}`);
+      payload = null;
+    }
 
     // 官方优先：带 msg_id 属于被动消息，不吃「20 条/分钟、1000 条/天」的主动消息配额；
     // 发不出去会自动回退到下面的协议号发送。
@@ -395,14 +422,14 @@ export function installTextToImageHook(e) {
     // 之前对 quote 直接放行协议号，导致洗劫/兑换这类带引用的回复永远都是协议号身份。
     if (!fromOfficial) {
       try {
-        const route = await tryOfficialSend(trigger, out);
+        const route = await tryOfficialSend(trigger, payload || msg);
         if (route.handled) return route.res ?? true;
       } catch (err) {
         warn(`官方代发异常，回退协议号：${err?.message ?? err}`);
       }
     }
 
-    if (!payload) return original.call(this, out, quote, data);
+    if (!payload) return original.call(this, msg, quote, data);
 
     try {
       this[SELF_FLAG] = true;

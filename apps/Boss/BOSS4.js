@@ -631,7 +631,7 @@ export class BOSS4 extends plugin {
     // 单件保持一行；多件每件一行，用 markdown 无序列表渲染。
     await e.reply(gained.length === 1
       ? `获得掉落：${gained[0]}`
-      : ['获得掉落：', ...gained.map(name => `- ${name}`)].join('\n'));
+      : ['获得掉落：', ...gained.map(name => `· ${name}`)].join('\n'));
   }
 
   async grantTianjiaoDrop(qq, item, amount, idempotencyKey) {
