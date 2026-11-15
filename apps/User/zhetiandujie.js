@@ -137,6 +137,11 @@ const TRIBULATION_METHODS = [
   'poWangChengDi',
 ];
 
+/** 无上神物：帝路崩断后的道基修补物（巡界司界源兑换 / 仙古核心区域掉落） */
+const SUPREME_DIVINE_ITEM = '无上神物';
+/** 破王成帝劫失败后的修养时长（小时），用于把世界线重试冷却一并推回过去 */
+const BREAK_KING_EMPEROR_REST_HOURS = 24;
+
 export class zhetiandujie extends plugin {
   constructor() {
     super({
@@ -172,6 +177,10 @@ export class zhetiandujie extends plugin {
         { 
           reg: '^#破王成帝(?:劫)?(?:\\s*(?:偏僻(?:无人)?(?:的)?星系|无人星系|荒芜星域|偏僻无人))?$',
           fnc: 'poWangChengDi' 
+        },
+        {
+          reg: '^#使用无上神物$',
+          fnc: 'useSupremeDivineItem'
         },
         {
           reg: '^#(打听天机\\s*渡劫|渡劫天机)$',
@@ -3878,6 +3887,61 @@ await this.broadcastToAll(player,startMsg);
     return true;
 }
 /**
+ * 使用无上神物：修补帝路崩断后的道基。
+ * 效果：清除 1 点道果瑕疵，并解除破王成帝劫的修养冷却（含帝劫余波），可立刻再战。
+ * 获取：巡界司 #界源兑换（80 界源），或仙古秘境核心区域的稀有发现。
+ */
+async useSupremeDivineItem(e) {
+  if (!verc({ e })) return false;
+  const usr_qq = e.user_id.toString().replace('qg_', '');
+  const id = String(await channel(usr_qq));
+  if (!await existplayer(id)) return e.reply('请先创建修仙角色。');
+  if (await isTribulationLocked(id)) {
+    return e.reply('【渡劫中】请等本次渡劫结算后再使用无上神物。');
+  }
+
+  const owned = Number(await exist_najie_thing(id, SUPREME_DIVINE_ITEM, '道具')) || 0;
+  if (owned <= 0) {
+    return e.reply([
+      `纳戒中没有【${SUPREME_DIVINE_ITEM}】。`,
+      '获取途径：巡界司发送 #界源兑换 用界源换取；或在仙古秘境核心区域探索时寻得。',
+    ].join('\n'));
+  }
+
+  const player = await Read_player(id);
+  const now = Date.now();
+  const cooldownAt = Number(player.破王成帝) || 0;
+  const cooling = cooldownAt * 1000 > now;
+  const flaws = Math.max(0, Number(player.道果瑕疵) || 0);
+  if (!cooling && flaws <= 0) {
+    return e.reply('【道基无瑕】你当前道基完好、帝路通达，无需动用无上神物。');
+  }
+
+  const lines = [
+    '【无上神物·道基重铸】',
+    `${player.名号}炼化神物，崩断的道基在帝光中重新弥合。`,
+  ];
+  if (flaws > 0) {
+    player.道果瑕疵 = flaws - 1;
+    lines.push(`道果瑕疵：${flaws} → ${player.道果瑕疵}`);
+  }
+  if (cooling) {
+    const waitHours = Math.max(1, Math.ceil((cooldownAt * 1000 - now) / 3600000));
+    player.破王成帝 = 0;
+    // 世界线记录里的帝劫余波（30 分钟重试冷却）一并清掉，否则仍会被拦在门外
+    const record = ensureWorldlineState(player).tribulations?.[getRealmAuthorityPath(player)];
+    if (record && Number(record.lastAttemptAt) > now - BREAK_KING_EMPEROR_REST_HOURS * 3600000) {
+      record.lastAttemptAt = now - BREAK_KING_EMPEROR_REST_HOURS * 3600000;
+    }
+    lines.push(`修养冷却已解除（原需再等 ${waitHours} 小时），此刻即可再发 #破王成帝。`);
+  }
+  await Add_najie_thing(id, SUPREME_DIVINE_ITEM, '道具', -1);
+  await Write_player(id, player);
+  lines.push(`剩余【${SUPREME_DIVINE_ITEM}】：${Math.max(0, owned - 1)}`);
+  return e.reply(lines.join('\n'));
+}
+
+/**
  * 破王成帝（生命本源版）
  * 死亡标准：生命本源 ≤ 0
  * 挑战门槛：生命本源 ≥ 50
@@ -4093,7 +4157,8 @@ const _tribSnap7 = this.enterTribulationState(player, equipment);
               `${player.名号}终究未能打破桎梏，帝路崩断！`,
               `生命本源 -50（剩余 ${player.生命本源}）`,
               ...consequence,
-              `需修养 24 时辰，以无上神物修复道基方能再战帝路！`
+              `需修养一日（24 小时）方可再战帝路；`,
+              `若觅得「无上神物」，发送 #使用无上神物 即可修补道基、立刻再战。`
             ].join('\n'));
             // ===== 渡劫结束，重算全装属性 =====
             await this.exitTribulationState(player, _tribSnap7, usr_qq, equipment);

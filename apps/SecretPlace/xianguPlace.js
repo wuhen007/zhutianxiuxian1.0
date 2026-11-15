@@ -8108,6 +8108,7 @@ function getSpecialDiscovery(location) {
     ],
     '核心区域': [
       { name: '唯一道则碎片', type: '传说', rarity: '神话', desc: '蕴含完整大道的至高之物，全图仅此一份' },
+      { name: '无上神物', type: '道具', rarity: '神话', desc: '帝路崩断者梦寐以求的至宝，可弥合道基、清除道果瑕疵' },
       { name: '仙古花蕾精华', type: '材料', rarity: '神话', desc: '仙古花蕾凝聚的至高精华' },
       { name: '鸿蒙紫气', type: '材料', rarity: '神话', desc: '开天辟地前的原始之气，价值无法估量' },
       { name: '唯一真血', type: '材料', rarity: '神话', desc: '来自不可名状存在的唯一真血，世间仅此一滴' }

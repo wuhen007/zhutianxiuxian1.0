@@ -21,6 +21,7 @@ export const RIFT_EXCHANGES = Object.freeze({
   定神丹: Object.freeze({ cost: 25, name: '定神丹', class: '丹药', amount: 1 }),
   无尽秘钥: Object.freeze({cost: 50,name: '无尽秘钥',class: '道具',amount: 1,}),
   无尽秘钥配方: Object.freeze({cost: 100,name: '无尽秘钥配方',class: '道具',amount: 1,}),
+  无上神物: Object.freeze({ cost: 80, name: '无上神物', class: '道具', amount: 1 }),
 });
 
 export function parseRiftExchangeName(message) {
