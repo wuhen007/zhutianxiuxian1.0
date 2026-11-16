@@ -455,10 +455,6 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
       }
     }
 
-    const teamName = members.map(member => member.player.名号).join('、');
-    await this.sendEncounterMessage(usr_qq, action, this.generateStageEncounter(
-      { ...leader.player, 名号: teamName }, action, enemies,
-    ));
     for (let index = 0; index < members.length; index++) {
       const formation = consumeBlackEmperorBattleFormation(members[index].player, combatants[index], primary);
       if (formation.message) openingMessages.push(formation.message);
@@ -558,29 +554,26 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
       memberResults.push({ id, player, specialEvents, penalties, proficiencyGains, era });
     }
 
-    for (const result of memberResults) {
-      const message = this.generateResultMessage(result.player, primary, {
-        ...battleResult,
-        outcome,
-        specialEvents: result.specialEvents,
-        penalties: result.penalties,
-        proficiencyGains: result.proficiencyGains,
-        eraAccumulationChange: result.era.gained,
-        eraAccumulationCap: result.era.cap,
-        newEraAccumulation: result.player.纪元积累,
-      });
-      if (isFashan) {
-        try {
-          await this.sendResultMessage(result.id, action, `【法身代行】\n${message}`);
-        } catch (error) {
-          console.error(`[法身时间长河] 战报发送失败：${error.message}`);
-        }
-      } else {
-        await this.sendResultMessage(result.id, action, message);
-      }
-    }
+    // 中间战报不推送：本段只记账，靠 scheduleTimeRiverStage 的展开把 summary 透传到终局，
+    // 组队也只由队长收取（action.timeRiverLeader）。
+    const leaderId = String(action.timeRiverLeader || usr_qq);
+    const leaderResult = memberResults.find(result => result.id === String(leader.id)) || memberResults[0];
+    this.pushStageSummary(action, this.buildStageSummary({ stage, enemy: primary, outcome, memberResults }));
+    const buildResultText = () => this.generateResultMessage(leaderResult.player, primary, {
+      ...battleResult,
+      outcome,
+      specialEvents: leaderResult.specialEvents,
+      penalties: leaderResult.penalties,
+      proficiencyGains: leaderResult.proficiencyGains,
+      eraAccumulationChange: leaderResult.era.gained,
+      eraAccumulationCap: leaderResult.era.cap,
+      newEraAccumulation: leaderResult.player.纪元积累,
+      concise: true,
+    });
+    const sendFailureReport = async () => this.deliverReport(leaderId, action, buildResultText(), isFashan);
 
     if (memberResults.some(result => result.specialEvents.futureRescue)) {
+      await sendFailureReport();
       await this.openRescueWindow(usr_qq, action, {
         retryStage: 'future_quasi',
         primaryName: '未来准仙帝',
@@ -591,6 +584,7 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
       return true;
     }
     if (memberResults.some(result => result.specialEvents.rescueWindow)) {
+      await sendFailureReport();
       await this.openRescueWindow(usr_qq, action, {
         retryStage: stage === 'initial' ? 'solo' : stage,
         primaryName: primary.名号,
@@ -605,6 +599,7 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
       return true;
     }
     if (memberResults.some(result => result.specialEvents.darkSuppression)) {
+      await sendFailureReport();
       await this.settleMemoryTimeRiver(usr_qq, action);
       return false;
     }
@@ -634,8 +629,91 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
         return true;
       }
     }
+    // 终局：胜利只给汇总；失败先给原因再附汇总。
+    const summary = this.formatFinalReport(action.summary);
+    const finalMessage = outcome === 'victory' || !summary
+      ? summary
+      : `${buildResultText()}\n\n${summary}`;
+    await this.deliverReport(leaderId, action, finalMessage, isFashan);
     await this.settleMemoryTimeRiver(usr_qq, action);
     return false;
+  }
+
+  /** 推送失败不能中断结算，否则下个 tick 会重打并重复发奖 */
+  async deliverReport(usr_qq, action, message, isFashan = false) {
+    if (!message) return;
+    try {
+      await this.sendResultMessage(usr_qq, action, isFashan ? `【法身代行】\n${message}` : message);
+    } catch (error) {
+      console.error(`[时间长河] 战报发送失败：${error.message}`);
+    }
+  }
+
+  /** 本段战果摘要，供终局一次性汇总 */
+  buildStageSummary({ stage, enemy, outcome, memberResults }) {
+    return {
+      stage,
+      enemy: enemy.名号,
+      outcome,
+      rewards: memberResults.map(result => ({
+        id: String(result.id),
+        name: result.player.名号 || String(result.id),
+        gained: Number(result.era.gained) || 0,
+        total: Number(result.player.纪元积累) || 0,
+        cap: Number(result.era.cap) || 0,
+        proficiency: result.proficiencyGains || {},
+      })),
+    };
+  }
+
+  pushStageSummary(action, entry) {
+    if (!Array.isArray(action.summary)) action.summary = [];
+    action.summary.push(entry);
+  }
+
+  formatFinalReport(summary) {
+    if (!Array.isArray(summary) || !summary.length) return '';
+    const labels = {
+      initial: '首战', solo: '续战', triad: '黑暗三帝', old_man: '古史尽头', future_quasi: '未来逆流',
+    };
+    const lines = ['【时间长河 · 探索结算】'];
+    summary.forEach((entry, index) => {
+      const label = labels[entry.stage] || `第${index + 1}战`;
+      const result = entry.outcome === 'victory' ? '胜' : entry.outcome === 'defeat' ? '败' : '平';
+      lines.push(`${index + 1}. ${label}｜${entry.enemy} —— ${result}`);
+    });
+    const totals = new Map();
+    for (const entry of summary) {
+      for (const reward of entry.rewards || []) {
+        const item = totals.get(reward.id) || { name: reward.name, gained: 0, total: 0, cap: 0, proficiency: {} };
+        item.name = reward.name || item.name;
+        item.gained += Number(reward.gained) || 0;
+        if (Number(reward.total)) item.total = Number(reward.total);
+        if (Number(reward.cap)) item.cap = Number(reward.cap);
+        for (const [skill, value] of Object.entries(reward.proficiency || {})) {
+          item.proficiency[skill] = (Number(item.proficiency[skill]) || 0) + (Number(value) || 0);
+        }
+        totals.set(reward.id, item);
+      }
+    }
+    const members = [...totals.values()];
+    lines.push('━━━━━━━━');
+    if (members.length === 1) {
+      lines.push(`纪元积累 +${members[0].gained}（${members[0].total}/${members[0].cap}）`);
+    } else {
+      lines.push('【纪元积累】');
+      for (const item of members) lines.push(`${item.name} +${item.gained}（${item.total}/${item.cap}）`);
+    }
+    const skills = new Map();
+    for (const item of members) {
+      for (const [skill, value] of Object.entries(item.proficiency)) {
+        skills.set(skill, (skills.get(skill) || 0) + value);
+      }
+    }
+    if (skills.size) {
+      lines.push(`功法参悟：${[...skills].map(([skill, value]) => `${skill} +${value}`).join('、')}`);
+    }
+    return lines.join('\n');
   }
 
   generateStageEncounter(player, action, enemies) {
@@ -706,14 +784,6 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
       }
     }
     await this.addActiveTimeRiverPlayer(usr_qq, action.isFashan ? 'fashan' : 'body');
-    const text = details.enemyState
-      ? '【血祭续战】魂血照亮断裂古史，敌方保留上一战的剩余气血，十五分钟后从败亡节点继续结算。'
-      : stage === 'triad'
-      ? '【三帝截流】苍鸿羽三帝已满状态并立，时间长河改道，诸世间崩塌！十五分钟后三帝围杀正式结算。'
-      : stage === 'old_man'
-        ? `【灭世追猎】灭世老人已经降临${details.imperialPill ? '，并赐帝丹令苍鸿羽恢复七成全属性' : ''}！十五分钟后结算。`
-        : '【血祭续战】魂血照亮断裂古史，十五分钟后重新结算这场帝战。';
-    await this.notifyPlayer(usr_qq, action, text);
   }
 
   async openRescueWindow(usr_qq, previousAction, details) {
@@ -1098,12 +1168,12 @@ async sendEncounterMessage(usr_qq, action, message) {
   generateResultMessage(player, enemy, battleResult) {
     let message = [];
     
-    // 添加战斗过程摘要
+    // 添加战斗过程摘要（concise 模式只给结论，不搬逐回合日志）
     message.push(`【战斗结果】`);
-    message.push(`战斗过程：`);
-    
-    // 添加战斗关键回合
-    if (Array.isArray(battleResult.msg)) message.push(...battleResult.msg);
+    if (!battleResult.concise) {
+      message.push(`战斗过程：`);
+      if (Array.isArray(battleResult.msg)) message.push(...battleResult.msg);
+    }
     
     // 添加结果
     if (battleResult.outcome === 'victory') {

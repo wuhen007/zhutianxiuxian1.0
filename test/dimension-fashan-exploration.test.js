@@ -452,3 +452,29 @@ test('法身离位、任务位置错误会取消结算；普通法身结算器�
   assert.equal(h.values.get(proxyKey), action);
   assert.equal(h.players.get('42').法身状态, '行动中');
 });
+
+test('长河胜利中间阶段不推送，只在终局给一条汇总', async t => {
+  const h = fixture(t);
+  const { entry, task, battles } = timeRiver(h, { enemy: '苍帝' });
+  await entry.roamFashanTimeRiver(h.e);
+  const action = JSON.parse(h.values.get(proxyKey));
+  action.end_time = 1;
+  await h.redis.set(proxyKey, JSON.stringify(action));
+  await task.checkTimeRiverActions();
+  assert.equal(battles(), 1);
+  assert.equal(h.messages.length, 1, '只有入场提示，阶段推进也不推送');
+  assert.doesNotMatch(h.messages[0], /【三帝截流】/);
+  const next = JSON.parse(h.values.get(proxyKey));
+  assert.equal(next.timeRiverStage, 'triad');
+  assert.equal(next.summary.length, 1, '本段摘要随 action 透传');
+  next.end_time = 1;
+  await h.redis.set(proxyKey, JSON.stringify(next));
+  await task.checkTimeRiverActions();
+  assert.equal(battles(), 2);
+  assert.equal(h.messages.length, 2, '入场 + 结算，中间一律静默');
+  assert.match(h.messages[1], /【时间长河 · 探索结算】/);
+  assert.match(h.messages[1], /首战｜苍帝 —— 胜/);
+  assert.match(h.messages[1], /黑暗三帝｜苍帝 —— 胜/);
+  assert.match(h.messages[1], /纪元积累 \+20/, '5 + 5×3');
+  assert.equal(h.values.has(proxyKey), false);
+});

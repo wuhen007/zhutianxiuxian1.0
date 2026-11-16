@@ -46,8 +46,8 @@ test('遨游时间长河要求玩家先抵达该时序域，并防止重复结�
   assert.match(source, /outcome === 'defeat' && !chainBattle/);
   assert.match(source, /Number\(player\.纪元积累\) \|\| 0/);
   assert.match(source, /addCappedEraAccumulation\(player, eraAccumulationChange\)/);
-  assert.match(source, /eraAccumulationChange: result\.era\.gained/);
-  assert.match(source, /eraAccumulationCap: result\.era\.cap/);
+  assert.match(source, /eraAccumulationChange: leaderResult\.era\.gained/);
+  assert.match(source, /eraAccumulationCap: leaderResult\.era\.cap/);
   assert.match(source, /battleResult\.eraAccumulationCap/);
   assert.doesNotMatch(source, /MAX_ERA_ACCUMULATION/);
   assert.match(source, /if \(!await existplayer\(usr_qq\)\)/);

@@ -281,6 +281,7 @@ export class shijianchanghe extends plugin {
       '【四帝横渡·共赴古史】',
       `${players.map(item => item.player.名号).join('、')}同时踏入时间长河！`,
       '队伍已被同一古史节点锁定，首段探索将在15分钟后统一结算。',
+      '中途战报不推送，结束或战败时统一发给队长。',
     ].join('\n'));
   }
 
@@ -342,7 +343,7 @@ export class shijianchanghe extends plugin {
         await redis.set(key, JSON.stringify(active));
       });
       await Add_renwu_progress(userId, 'jilu3');
-      return e.reply('【法身遨游时间长河】法身已逆流而上，首段探索15分钟后结算；真身保持原有行动。本玩法仅开放单次出发，帝战后续阶段仍按原规则推进。');
+      return e.reply('【法身遨游时间长河】法身已逆流而上，首段探索15分钟后结算；真身保持原有行动。中途战报不推送，结束或战败时统一推送。本玩法仅开放单次出发，帝战后续阶段仍按原规则推进。');
     });
   }
 
@@ -427,7 +428,8 @@ export class shijianchanghe extends plugin {
        // 回复玩家
       e.reply([
           `你的真身踏入了时间长河，逆流而上！`,
-          `首段探索将在15分钟后结束，请耐心等待。`
+          `首段探索将在15分钟后结束，请耐心等待。`,
+          `中途战报不单独推送，结束或战败时会统一推送结算。`
       ].join('\n'));
       
       return true;
