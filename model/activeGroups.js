@@ -41,6 +41,10 @@ const DEFAULTS = {
   refreshSeconds: 60,
   /** 两次写盘的最小间隔（秒），避免频繁改写 xiuxian.yaml */
   minWriteSeconds: 60,
+  /** 入名单前是否要求该群已开启「获取群内全部消息」（官方通道的群才检查） */
+  requireFullVolume: true,
+  /** 入名单时是否往群里发一条提示（顺带当作可达性探测，并告知怎么退出） */
+  notifyOnJoin: true,
 };
 
 /** 累计指令次数 */
@@ -206,6 +210,62 @@ async function refresh() {
   activeCache = next;
 }
 
+/** 体检结果缓存：失败的群别每分钟都往群里发一次探测消息 */
+const verifyCache = new Map();
+const VERIFY_TTL = 60 * 60 * 1000;
+
+/**
+ * 入名单前的体检。两类问题会让之后每条推送都报错，所以在门口拦掉：
+ *   1. 官方通道的群没开「获取群内全部消息」——官方收不到群消息，桥接形同虚设；
+ *   2. 消息根本发不出去（群解散 / 机器人被踢 / 既无主动消息权限又没有协议号兜底）。
+ * 第 2 项只有真发一条才知道，正好把「已加入 + 怎么退出」一并告诉群里。
+ */
+export async function verifyPushTarget(gid) {
+  const hit = verifyCache.get(gid);
+  if (hit && Date.now() - hit.at < VERIFY_TTL) return hit;
+  const verdict = await probePushTarget(gid);
+  verifyCache.set(gid, { at: Date.now(), ...verdict });
+  return verdict;
+}
+
+async function probePushTarget(gid) {
+  let official = null;
+  try {
+    // 动态导入：officialReply 静态依赖本模块，直接 import 会成环
+    official = await import('./officialReply.js');
+  } catch (err) {
+    say('warn', `[自动推送] 读取官方代发配置失败，跳过体检：${err.message}`);
+  }
+
+  if (settings.requireFullVolume && official?.resolveOpenid) {
+    const openid = official.resolveOpenid(gid);
+    // 标记集合为空说明 qqbot-api 还没升级到会落标记的版本，此时不做全量校验，避免误杀
+    const marked = Number(await redisCmd(['SCARD', 'qqbot:fullvolume:groups'])) || 0;
+    if (openid && marked > 0
+      && Number(await redisCmd(['SISMEMBER', 'qqbot:fullvolume:groups', openid])) !== 1) {
+      return { ok: false, reason: '该群未开启「获取群内全部消息」，官方通道收不到群消息' };
+    }
+  }
+
+  if (!settings.notifyOnJoin || !official?.pushGroup) return { ok: true };
+  const text = [
+    '【诸天推送】本群已加入跨服播报（公告／纪元／妖王等）。',
+    '如不需要，群主或管理员发送「#关闭本群修仙推送」即可退出。',
+  ].join('\n');
+  const res = await official.pushGroup(gid, text);
+  if (!res?.ok) return { ok: false, reason: `推送测试失败：${res?.reason || '未知原因'}` };
+  return { ok: true };
+}
+
+/** 同一群 24 小时内只私聊主人一次，避免刷屏 */
+async function notifyMasterOnce(gid, text) {
+  try {
+    const first = await redisCmd(['SET', `xiuxian:groups:verify_notice:${gid}`, '1', 'EX', 86400, 'NX']);
+    if (String(first) !== 'OK') return;
+    await globalThis.Bot?.sendMasterMsg?.(text);
+  } catch { /* 通知失败不影响主流程 */ }
+}
+
 /**
  * 把活跃群并入 Era.notifyGroups。
  * 只写有差异的部分，并做写盘节流——每次写都会重新序列化整份 xiuxian.yaml，
@@ -245,6 +305,16 @@ async function sync() {
       remove.push(gid);
     }
 
+    if (!add.length && !remove.length) return;
+
+    // 入名单前先体检：没开全量消息、或根本推不出去的群先不进，免得之后每条推送都报错
+    for (const gid of [...add]) {
+      const verdict = await verifyPushTarget(gid);
+      if (verdict.ok) continue;
+      add.splice(add.indexOf(gid), 1);
+      say('warn', `[自动推送] 群 ${gid} 暂不纳入推送名单：${verdict.reason}`);
+      await notifyMasterOnce(gid, `[自动推送] 群 ${gid} 暂不纳入推送名单：${verdict.reason}`);
+    }
     if (!add.length && !remove.length) return;
 
     const now = Date.now();

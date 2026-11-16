@@ -107,6 +107,11 @@ export class AdminSuper extends plugin {
     fnc: 'removeGlobalPush'
 },
 {
+    // 群内自助关闭：群主/管理员即可，不用等全服管理员
+    reg: '^#关闭本群修仙推送$',
+    fnc: 'disableGroupPush'
+},
+{
     reg: '^#查看全局推送$',
     fnc: 'viewGlobalPush'
 },
@@ -519,6 +524,56 @@ ${xiuxianConfig.Era.notifyGroups.length > 0 ? xiuxianConfig.Era.notifyGroups.joi
     } catch (error) {
         console.error('删除全局推送消息失败:', error);
         e.reply('删除失败，请检查日志');
+        return true;
+    }
+}
+
+/**
+ * 群内自助关闭跨服推送。
+ *
+ * 和 #删除全局推送 的区别：那条要全服管理员、还得知道群号；这条只在本群生效，
+ * 群主或群管理员一句话就能关，适合被自动注册「顺手拉进来」的群。
+ * 关掉后记进黑名单，否则下次有人在群里发指令，自动注册又会把本群加回去。
+ */
+async disableGroupPush(e) {
+    if (!e.isGroup) {
+        e.reply('这个指令只能在群里用');
+        return true;
+    }
+    const allowed = Boolean(e.isMaster || e.member?.is_owner || e.member?.is_admin);
+    if (!allowed) {
+        e.reply('只有本群群主或管理员可以关闭本群推送');
+        return true;
+    }
+
+    const gid = String(e.group_id ?? '').trim();
+    if (!gid) {
+        e.reply('没取到本群标识，关闭失败，请联系管理员');
+        return true;
+    }
+
+    try {
+        const cfg = config.getConfig('xiuxian', 'xiuxian');
+        const list = Array.isArray(cfg?.Era?.notifyGroups) ? cfg.Era.notifyGroups : [];
+        // 官方群标识是 32 位 hex，配置里大小写不一定一致，按忽略大小写比对
+        const hit = list.findIndex(item => String(item).trim().toLowerCase() === gid.toLowerCase());
+
+        if (hit >= 0) {
+            list.splice(hit, 1);
+            cfg.Era.notifyGroups = list;
+            config.setConfig('xiuxian', 'xiuxian', cfg);
+        }
+        await blockGroup(gid);
+
+        e.reply([
+            hit >= 0 ? '✅ 已关闭本群的跨服推送（公告／纪元／妖王／世界频道等）' : '本群本来就不在推送名单里，已记下不再自动加入',
+            '恢复方式：联系管理员发送「#全局推送消息 群号」',
+            '注：星阁拍卖是独立名单，需要另发「#取消星阁体系」',
+        ].join('\n'));
+        return true;
+    } catch (err) {
+        console.error('[关闭本群推送] 失败:', err);
+        e.reply('关闭失败，请稍后重试或联系管理员');
         return true;
     }
 }
