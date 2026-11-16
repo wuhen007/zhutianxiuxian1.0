@@ -208,7 +208,11 @@ function reverseLifeFixture(active, failWrite = false) {
     Read_equipment: async () => ({}),
     applyQuestionFortuneCost: (_player, value) => value,
     bigNumberTransform: String,
-    ForwardMsg: async () => {},
+    // 逆活战报走 ForwardMsg（合并转发图），和 e.reply 一样记进 replies 便于断言顺序
+    ForwardMsg: async (_event, data) => replies.push({
+      message: (Array.isArray(data) ? data.join('\n') : String(data)),
+      writes,
+    }),
     zhetiandujie: class {
       enterTribulationState() {}
       calcMaxTheoreticalAtk() { return 1; }
