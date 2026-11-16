@@ -249,6 +249,7 @@ export class shijianchanghe extends plugin {
     const endTime = now + TIME_RIVER_PHASE_DURATION_MS;
     const action = {
       action: '组队遨游时间长河',
+      at_openid: String(e.qqbot_user_id || ''), // 只发队长，@ 队长
       start_time: now,
       end_time: endTime,
       time: TIME_RIVER_PHASE_DURATION_MS,
@@ -315,6 +316,7 @@ export class shijianchanghe extends plugin {
       const action = {
         taskId: `fashan-time-river:${userId}:${now}`,
         action: '遨游时间长河',
+        at_openid: String(e.qqbot_user_id || ''), // 官方群结算时用来拼真 @
         actor: 'fashan',
         isFashan: true,
         actorPlane: PLACE_LOCATION_MAP.时间长河,
@@ -391,6 +393,7 @@ export class shijianchanghe extends plugin {
       let action_time = TIME_RIVER_PHASE_DURATION_MS;
       let arr = {
         action: '遨游时间长河', //动作
+        at_openid: String(e.qqbot_user_id || ''), // 官方群结算时用来拼真 @
        end_time: new Date().getTime() + action_time,//结束时间
         time: action_time, //持续时间
         shutup: '1', //闭关

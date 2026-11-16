@@ -24,6 +24,7 @@ import {
   channel,
   existplayer,
   getTargetQQFromEvent,
+  buildAt,
 } from '../../model/xiuxian.js';
 import { AppName } from '../../app.config.js';
 import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
@@ -570,7 +571,9 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
       newEraAccumulation: leaderResult.player.纪元积累,
       concise: true,
     });
-    const sendFailureReport = async () => this.deliverReport(leaderId, action, buildResultText(), isFashan);
+    const sendFailureReport = async () => this.deliverReport(
+      leaderId, action, buildResultText(), isFashan, leaderResult.player.名号,
+    );
 
     if (memberResults.some(result => result.specialEvents.futureRescue)) {
       await sendFailureReport();
@@ -634,16 +637,30 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
     const finalMessage = outcome === 'victory' || !summary
       ? summary
       : `${buildResultText()}\n\n${summary}`;
-    await this.deliverReport(leaderId, action, finalMessage, isFashan);
+    await this.deliverReport(leaderId, action, finalMessage, isFashan, leaderResult.player.名号);
     await this.settleMemoryTimeRiver(usr_qq, action);
     return false;
   }
 
-  /** 推送失败不能中断结算，否则下个 tick 会重打并重复发奖 */
-  async deliverReport(usr_qq, action, message, isFashan = false) {
+  /**
+   * 推送失败不能中断结算，否则下个 tick 会重打并重复发奖。
+   * 官方群走 markdown 单条：官方 API 里 @ 只在 markdown 中渲染，且富媒体消息不能带正文，
+   * 所以「真 @ + 结算」只能是一条文字气泡，装不进战报图。
+   */
+  async deliverReport(usr_qq, action, message, isFashan = false, mention = '') {
     if (!message) return;
+    const body = [isFashan ? '【法身代行】' : '', message].filter(Boolean).join('\n');
     try {
-      await this.sendResultMessage(usr_qq, action, isFashan ? `【法身代行】\n${message}` : message);
+      if (action.at_openid && action.group_id) {
+        const content = `${buildAt(action.at_openid)}\n${body}`;
+        await Bot.pickGroup(action.group_id).sendMsg([{ type: 'markdown', data: { content } }]);
+        return;
+      }
+      // 协议号群有真 @ 段，就别再往卡片里塞一行 @名号
+      const openidGroup = /^[0-9A-Fa-f]{32}$/.test(String(action.group_id || ''));
+      await this.sendResultMessage(usr_qq, action, [
+        openidGroup && mention ? `@${mention}` : '', body,
+      ].filter(Boolean).join('\n'));
     } catch (error) {
       console.error(`[时间长河] 战报发送失败：${error.message}`);
     }
@@ -1386,12 +1403,14 @@ if (battleResult.specialEvents.pastBodyExposed && battleResult.penalties.pastBod
 
   // 修改后的发送结果消息方法
 async sendResultMessage(usr_qq, action, resultMessage) {
+  // 官方群 group_id 是 32 位 openid：@ 段会被拆成独立一条，改由 deliverReport 走 markdown
+  const officialGroup = /^[0-9A-Fa-f]{32}$/.test(String(action.group_id || ''));
   try {
     // 创建模拟事件对象
     const mockEvent = {
       reply: async (content) => {
         if (action.group_id) {
-          await Bot.pickGroup(action.group_id).sendMsg([segment.at(usr_qq), content]);
+          await Bot.pickGroup(action.group_id).sendMsg(officialGroup ? content : [segment.at(usr_qq), content]);
         } else {
           await Bot.sendPrivateMsg(usr_qq, content);
         }
@@ -1420,7 +1439,7 @@ async sendResultMessage(usr_qq, action, resultMessage) {
       resultMessage
     ].join('\n');
     if (action.group_id) {
-      await Bot.pickGroup(action.group_id).sendMsg([segment.at(usr_qq), fallbackMessage]);
+      await Bot.pickGroup(action.group_id).sendMsg(officialGroup ? fallbackMessage : [segment.at(usr_qq), fallbackMessage]);
     } else {
       await Bot.sendPrivateMsg(usr_qq, fallbackMessage);
     }
