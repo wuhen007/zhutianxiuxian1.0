@@ -215,10 +215,11 @@ const verifyCache = new Map();
 const VERIFY_TTL = 60 * 60 * 1000;
 
 /**
- * 入名单前的体检。两类问题会让之后每条推送都报错，所以在门口拦掉：
- *   1. 官方通道的群没开「获取群内全部消息」——官方收不到群消息，桥接形同虚设；
- *   2. 消息根本发不出去（群解散 / 机器人被踢 / 既无主动消息权限又没有协议号兜底）。
+ * 入名单前的体检。官方群有两项独立开关，缺一项推送都会白跑：
+ *   1. 「获取群内全部消息」——没开的话官方收不到群消息，桥接形同虚设；
+ *   2. 「主动消息」——没开的话主动推（定时任务/公告/纪元）必然 40034105。
  * 第 2 项只有真发一条才知道，正好把「已加入 + 怎么退出」一并告诉群里。
+ * 协议号群不涉及这两个开关，只做一次可达性探测。
  */
 export async function verifyPushTarget(gid) {
   const hit = verifyCache.get(gid);
@@ -226,6 +227,15 @@ export async function verifyPushTarget(gid) {
   const verdict = await probePushTarget(gid);
   verifyCache.set(gid, { at: Date.now(), ...verdict });
   return verdict;
+}
+
+/** 主动消息被拒时给出能看懂的原因；不是权限问题返回空串 */
+export function describeActiveFailure(reason) {
+  const text = String(reason || '');
+  if (/40034105|主动消息失败[,，]\s*无权限|无权限/.test(text)) {
+    return '该群未开启「主动消息」推送权限（40034105），主动推必然失败';
+  }
+  return '';
 }
 
 async function probePushTarget(gid) {
@@ -237,24 +247,39 @@ async function probePushTarget(gid) {
     say('warn', `[自动推送] 读取官方代发配置失败，跳过体检：${err.message}`);
   }
 
-  if (settings.requireFullVolume && official?.resolveOpenid) {
-    const openid = official.resolveOpenid(gid);
+  const openid = official?.resolveOpenid?.(gid) || '';
+
+  if (openid && settings.requireFullVolume) {
     // 标记集合为空说明 qqbot-api 还没升级到会落标记的版本，此时不做全量校验，避免误杀
     const marked = Number(await redisCmd(['SCARD', 'qqbot:fullvolume:groups'])) || 0;
-    if (openid && marked > 0
+    if (marked > 0
       && Number(await redisCmd(['SISMEMBER', 'qqbot:fullvolume:groups', openid])) !== 1) {
       return { ok: false, reason: '该群未开启「获取群内全部消息」，官方通道收不到群消息' };
     }
   }
 
-  if (!settings.notifyOnJoin || !official?.pushGroup) return { ok: true };
+  if (!settings.notifyOnJoin) return { ok: true };
   const text = [
     '【诸天推送】本群已加入跨服播报（公告／纪元／妖王等）。',
     '如不需要，群主或管理员发送「#关闭本群修仙推送」即可退出。',
   ].join('\n');
-  const res = await official.pushGroup(gid, text);
+
+  // 官方群：直接打主动消息，不走协议号兜底，才能看清「主动消息权限」到底开没开
+  if (openid && official?.tryOfficialActive) {
+    const res = await official.tryOfficialActive(gid, text);
+    if (res?.handled) return { ok: true, via: 'official' };
+    const reason = String(res?.reason || '');
+    // 本地限流只说明这一分钟发得太密，不代表群有问题
+    if (reason === 'local-rate-limit') return { ok: true, via: 'official' };
+    const activeReason = describeActiveFailure(reason);
+    if (activeReason) return { ok: false, reason: activeReason };
+    return { ok: false, reason: `官方主动消息发送失败：${reason || '未知原因'}` };
+  }
+
+  // 协议号群：没有官方通道，只探能不能发出去
+  const res = await official?.pushGroup?.(gid, text);
   if (!res?.ok) return { ok: false, reason: `推送测试失败：${res?.reason || '未知原因'}` };
-  return { ok: true };
+  return { ok: true, via: res.via };
 }
 
 /** 同一群 24 小时内只私聊主人一次，避免刷屏 */
