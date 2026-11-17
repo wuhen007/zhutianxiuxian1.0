@@ -309,7 +309,8 @@ async sendToRebirth(e) {
   const player = await Read_player(targetQQ);
   const player_name = player.名号;
   const group_id = e.group_id || null;
-  const admin_name = e.sender.nickname;
+  // 群名片优先：官方群 2026-11-16 起下发 member_nickname，桥接层放进了 e.sender.card
+  const admin_name = e.sender.card || e.sender.nickname;
   const admin_qq = userQQ;
   
   try {
@@ -668,7 +669,7 @@ async viewGlobalPush(e) {
     // 构建天牢文案
     const messages = [
         `⚖️【天道审判·打入天牢】⚖️`,
-        `管理员 ${e.sender.nickname} 施展天道伟力，`,
+        `管理员 ${e.sender.card || e.sender.nickname} 施展天道伟力，`,
         `将 ${target.名号} 打入万仙盟天牢！`,
         `天牢位置：九幽之地第十八层`,
         `禁闭时间：${minutes}分钟`,
