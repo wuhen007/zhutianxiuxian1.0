@@ -32,7 +32,7 @@ const DEFAULTS = {
   /** 总开关，关掉后只读配置里手写的名单，不再自动增删 */
   enable: true,
   /** 同一个群累计多少次修仙指令才算「在玩」（1 = 第一次就纳入） */
-  minActions: 2,
+  minActions: 3,
   /** 多少天没活跃就移出名单；0 = 永不过期 */
   idleDays: 30,
   /** 官方通道连续发送失败多少次就移出名单 */
@@ -177,16 +177,25 @@ export function markActive(groupId) {
   }
 }
 
+/** 最近一次触发计数的事件，用来在新群跨过门槛时就地回一条提示 */
+const inviteEvents = new Map();
+
 async function flush() {
   if (!pending.size) return;
   const batch = [...pending.entries()];
   pending.clear();
   const now = Date.now();
+  const min = Number(settings.minActions) || 3;
   for (const [gid, n] of batch) {
     await redisCmd(['HINCRBY', COUNT_KEY, gid, n]);
     await redisCmd(['HSET', LAST_KEY, gid, now]);
+    const total = Number(await redisCmd(['HGET', COUNT_KEY, gid])) || 0;
+    // 刚好跨过门槛：在群里提示一次（不自动入名单）
+    if (total >= min && total - n < min) {
+      await inviteGroup(gid, inviteEvents.get(gid)).catch(() => { });
+    }
+    inviteEvents.delete(gid);
   }
-  // 新群可能刚够阈值，尽快纳入名单
   await sync().catch(() => { });
 }
 
@@ -210,86 +219,47 @@ async function refresh() {
   activeCache = next;
 }
 
-/** 体检结果缓存：失败的群别每分钟都往群里发一次探测消息 */
-const verifyCache = new Map();
-const VERIFY_TTL = 60 * 60 * 1000;
+/**
+ * 新群邀请文案。
+ * 不自动入名单，只在群里提示一次，由群主/管理员决定要不要开。
+ */
+export function buildInviteText(n) {
+  const times = Number(n) || 3;
+  return [
+    '【修仙推送·可选开启｜请群主确认】',
+    `检测到本群最近有人在玩修仙（已累计 ${times} 次修仙指令），判断本群可能在玩修仙游戏。`,
+    '本群目前不会收到任何修仙推送，以下内容暂时看不到：',
+    '· 纪元更替 / 界域事件 / 天骄与至宝刷新',
+    '· 秘境开启与结算 / 渡劫播报',
+    '· 妖王、域外灾厄等全服事件',
+    '开启后平均每小时 1~3 条，活动期会多几条。',
+    '',
+    '群主或管理员可发送：',
+    '  #开启本群修仙推送   开启',
+    '  #关闭本群修仙推送   关闭',
+    '如果你判断有误（本群并不玩修仙），忽略本条即可，不会推送任何内容。',
+  ].join('\n');
+}
+
+/** 同群 30 天内只提示一次，避免群主已忽略还被反复打扰 */
+const INVITE_KEY = gid => `xiuxian:push:invite:${gid}`;
 
 /**
- * 入名单前的体检。官方群有两项独立开关，缺一项推送都会白跑：
- *   1. 「获取群内全部消息」——没开的话官方收不到群消息，桥接形同虚设；
- *   2. 「主动消息」——没开的话主动推（定时任务/公告/纪元）必然 40034105。
- * 第 2 项只有真发一条才知道，正好把「已加入 + 怎么退出」一并告诉群里。
- * 协议号群不涉及这两个开关，只做一次可达性探测。
+ * 达到门槛时在群里提示一次（走被动回复，不占主动消息配额）。
+ * 已经在名单里的群、被管理员关过的群都不提示。
  */
-export async function verifyPushTarget(gid) {
-  const hit = verifyCache.get(gid);
-  if (hit && Date.now() - hit.at < VERIFY_TTL) return hit;
-  const verdict = await probePushTarget(gid);
-  verifyCache.set(gid, { at: Date.now(), ...verdict });
-  return verdict;
+async function inviteGroup(gid, e) {
+  if (!settings.enable || !e?.reply) return;
+  const cfg = config.getConfig('xiuxian', 'xiuxian');
+  const list = Array.isArray(cfg?.Era?.notifyGroups) ? cfg.Era.notifyGroups : [];
+  const inList = list.some(item => (normalizeGroupId(item) || String(item)) === gid);
+  if (inList || blockedSet.has(gid)) return;
+  const first = await redisCmd(['SET', INVITE_KEY(gid), '1', 'EX', 30 * 86400, 'NX']);
+  if (String(first) !== 'OK') return;
+  say('info', `[自动推送] 群 ${gid} 疑似在玩修仙，已在群内提示开启（不自动入名单）`);
+  await e.reply(buildInviteText(settings.minActions));
 }
 
-/** 主动消息被拒时给出能看懂的原因；不是权限问题返回空串 */
-export function describeActiveFailure(reason) {
-  const text = String(reason || '');
-  if (/40034105|主动消息失败[,，]\s*无权限|无权限/.test(text)) {
-    return '该群未开启「主动消息」推送权限（40034105），主动推必然失败';
-  }
-  return '';
-}
-
-async function probePushTarget(gid) {
-  let official = null;
-  try {
-    // 动态导入：officialReply 静态依赖本模块，直接 import 会成环
-    official = await import('./officialReply.js');
-  } catch (err) {
-    say('warn', `[自动推送] 读取官方代发配置失败，跳过体检：${err.message}`);
-  }
-
-  const openid = official?.resolveOpenid?.(gid) || '';
-
-  if (openid && settings.requireFullVolume) {
-    // 标记集合为空说明 qqbot-api 还没升级到会落标记的版本，此时不做全量校验，避免误杀
-    const marked = Number(await redisCmd(['SCARD', 'qqbot:fullvolume:groups'])) || 0;
-    if (marked > 0
-      && Number(await redisCmd(['SISMEMBER', 'qqbot:fullvolume:groups', openid])) !== 1) {
-      return { ok: false, reason: '该群未开启「获取群内全部消息」，官方通道收不到群消息' };
-    }
-  }
-
-  if (!settings.notifyOnJoin) return { ok: true };
-  const text = [
-    '【诸天推送】本群已加入跨服播报（公告／纪元／妖王等）。',
-    '如不需要，群主或管理员发送「#关闭本群修仙推送」即可退出。',
-  ].join('\n');
-
-  // 官方群：直接打主动消息，不走协议号兜底，才能看清「主动消息权限」到底开没开
-  if (openid && official?.tryOfficialActive) {
-    const res = await official.tryOfficialActive(gid, text);
-    if (res?.handled) return { ok: true, via: 'official' };
-    const reason = String(res?.reason || '');
-    // 本地限流只说明这一分钟发得太密，不代表群有问题
-    if (reason === 'local-rate-limit') return { ok: true, via: 'official' };
-    const activeReason = describeActiveFailure(reason);
-    if (activeReason) return { ok: false, reason: activeReason };
-    return { ok: false, reason: `官方主动消息发送失败：${reason || '未知原因'}` };
-  }
-
-  // 协议号群：没有官方通道，只探能不能发出去
-  const res = await official?.pushGroup?.(gid, text);
-  if (!res?.ok) return { ok: false, reason: `推送测试失败：${res?.reason || '未知原因'}` };
-  return { ok: true, via: res.via };
-}
-
-/** 同一群 24 小时内只私聊主人一次，避免刷屏 */
-async function notifyMasterOnce(gid, text) {
-  try {
-    const first = await redisCmd(['SET', `xiuxian:groups:verify_notice:${gid}`, '1', 'EX', 86400, 'NX']);
-    if (String(first) !== 'OK') return;
-    await globalThis.Bot?.sendMasterMsg?.(text);
-  } catch { /* 通知失败不影响主流程 */ }
-}
 
 /**
  * 把活跃群并入 Era.notifyGroups。
@@ -314,14 +284,6 @@ async function sync() {
     const currentSet = new Set(current.map(g => normalizeGroupId(g) || g));
     const autoSet = new Set(await sMembers(AUTO_KEY));
 
-    const add = [];
-    for (const [gid, info] of activeCache) {
-      if (info.count < Number(settings.minActions)) continue;
-      if (currentSet.has(gid)) continue;
-      if (blockedSet.has(gid)) continue;
-      add.push(gid);
-    }
-
     // 只回收「本模块加进去、现在又不活跃」的群；管理员手写的永远不动
     const remove = [];
     for (const gid of autoSet) {
@@ -330,36 +292,18 @@ async function sync() {
       remove.push(gid);
     }
 
-    if (!add.length && !remove.length) return;
-
-    // 入名单前先体检：没开全量消息、或根本推不出去的群先不进，免得之后每条推送都报错
-    for (const gid of [...add]) {
-      const verdict = await verifyPushTarget(gid);
-      if (verdict.ok) continue;
-      add.splice(add.indexOf(gid), 1);
-      say('warn', `[自动推送] 群 ${gid} 暂不纳入推送名单：${verdict.reason}`);
-      await notifyMasterOnce(gid, `[自动推送] 群 ${gid} 暂不纳入推送名单：${verdict.reason}`);
-    }
-    if (!add.length && !remove.length) return;
+    if (!remove.length) return;
 
     const now = Date.now();
     if (now - lastWriteAt < Number(settings.minWriteSeconds) * 1000) return;
     lastWriteAt = now;
 
     const removed = new Set(remove);
-    era.notifyGroups = current
-      .filter(g => !removed.has(normalizeGroupId(g) || g))
-      .concat(add);
+    era.notifyGroups = current.filter(g => !removed.has(normalizeGroupId(g) || g));
     config.setConfig('xiuxian', 'xiuxian', cfg);
 
-    if (add.length) {
-      await redisCmd(['SADD', AUTO_KEY, ...add]);
-      say('info', `[自动推送] 新群纳入推送名单：${add.join(', ')}（累计 ${era.notifyGroups.length} 个）`);
-    }
-    if (remove.length) {
-      await redisCmd(['SREM', AUTO_KEY, ...remove]);
-      say('info', `[自动推送] 长期无活跃，移出推送名单：${remove.join(', ')}`);
-    }
+    await redisCmd(['SREM', AUTO_KEY, ...remove]);
+    say('info', `[自动推送] 长期无活跃，移出推送名单：${remove.join(', ')}`);
   } catch (err) {
     say('warn', `[自动推送] 同步推送名单失败：${err.message}`);
   } finally {
@@ -454,6 +398,12 @@ const TRACK_FLAG = Symbol.for('zhutianxiuxian.activeGroups.tracked');
  */
 const COUNTED_FLAG = Symbol.for('zhutianxiuxian.activeGroups.counted');
 
+/** 索引里的调用标记（`[插件名(方法名)]`）是否属于全量兜底守卫 */
+export function isCatchAllHandler(logFnc) {
+  // 只认方法名恰好是 guard 的；guardForge 这类具体指令不算
+  return /\(guard\)/.test(String(logFnc || ''));
+}
+
 /**
  * 给每个插件类的处理器套一层，指令一命中就记一次群活跃。
  * 与 textToImage 的包装互不冲突：谁在外层都一样，这里只读 e.group_id。
@@ -480,13 +430,17 @@ function installTracker(apps) {
           // 也会被算成「这个群在玩修仙」——2026-11-10 祖安群（736121023）就是这么被拉进推送名单的。
           const fnc = String(e.logFnc || '');
           const owned = this?.name ? fnc.includes(`[${this.name}(`) : false;
-          if (!owned) return original.apply(this, args);
+          // 兜底守卫（rule 是 ^#）对所有井号指令都会跑，哪怕那条指令属于别的插件，
+          // 不能据此判定「这个群在玩修仙」——2026-11-17 的误登记就是这么来的。
+          if (!owned || isCatchAllHandler(fnc)) return original.apply(this, args);
           try {
             Object.defineProperty(e, COUNTED_FLAG, { value: true, configurable: true });
           } catch {
             /* 冻结对象就算了，宁可多记也别抛 */
           }
-          markActive(e.group_id);
+          const gid = normalizeGroupId(e.group_id);
+          if (gid) inviteEvents.set(gid, e);
+          markActive(gid);
         }
         return original.apply(this, args);
       };

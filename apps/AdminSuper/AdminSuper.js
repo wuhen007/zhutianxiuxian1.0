@@ -112,6 +112,11 @@ export class AdminSuper extends plugin {
     fnc: 'disableGroupPush'
 },
 {
+    // 与上面配对：新群只会收到提示，不会自动入名单，群主确认后才加
+    reg: '^#开启本群修仙推送$',
+    fnc: 'enableGroupPush'
+},
+{
     reg: '^#查看全局推送$',
     fnc: 'viewGlobalPush'
 },
@@ -525,6 +530,56 @@ ${xiuxianConfig.Era.notifyGroups.length > 0 ? xiuxianConfig.Era.notifyGroups.joi
     } catch (error) {
         console.error('删除全局推送消息失败:', error);
         e.reply('删除失败，请检查日志');
+        return true;
+    }
+}
+
+/**
+ * 群内自助开启跨服推送（与 #关闭本群修仙推送 配对）。
+ *
+ * 自动推送只在群里提示、不自动入名单，所以群主要确认就得靠这条。
+ * 权限和关闭一样：群主 / 群管理员 / 云崽主人。
+ */
+async enableGroupPush(e) {
+    if (!e.isGroup) {
+        e.reply('这个指令只能在群里用');
+        return true;
+    }
+    const allowed = Boolean(e.isMaster || e.member?.is_owner || e.member?.is_admin);
+    if (!allowed) {
+        e.reply('只有本群群主或管理员可以开启本群推送');
+        return true;
+    }
+
+    const gid = String(e.group_id ?? '').trim();
+    if (!gid) {
+        e.reply('没取到本群标识，开启失败，请联系管理员');
+        return true;
+    }
+
+    try {
+        const cfg = config.getConfig('xiuxian', 'xiuxian');
+        if (!cfg.Era) cfg.Era = {};
+        const list = Array.isArray(cfg.Era.notifyGroups) ? cfg.Era.notifyGroups : [];
+        const exists = list.some(item => String(item).trim().toLowerCase() === gid.toLowerCase());
+        if (!exists) {
+            list.push(gid);
+            cfg.Era.notifyGroups = list;
+            config.setConfig('xiuxian', 'xiuxian', cfg);
+        }
+        // 解除黑名单：以后长期无活跃被自动移出时，还能跟着活跃度回来
+        await unblockGroup(gid);
+
+        e.reply([
+            exists ? '✅ 本群已经在推送名单里了' : '✅ 已开启本群修仙推送',
+            '接下来会收到：纪元／界域事件、天骄与至宝刷新、秘境开启与结算、渡劫播报、妖王与域外灾厄等。',
+            '平均每小时 1~3 条，活动期会多一些。',
+            '随时发送「#关闭本群修仙推送」即可关闭。',
+        ].join('\n'));
+        return true;
+    } catch (err) {
+        console.error('[开启本群推送] 失败:', err);
+        e.reply('开启失败，请稍后重试或联系管理员');
         return true;
     }
 }
