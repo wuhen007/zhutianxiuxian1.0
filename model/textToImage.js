@@ -98,21 +98,80 @@ const SELF_FLAG = Symbol.for('zhutianxiuxian.text2image.sending');
 const KEEP_AS_TEXT = /\[CQ:[^\]]*\]|<qqbot-at-user[^>]*\/?>|^\s*获得掉落/mi;
 const PURE_URL = /^https?:\/\/\S+$/i;
 
-// 回复里写有「下一步指令说明」时，把文本中的 #指令 收集成按钮。
-// 只认带引导词的回复，避免把任何提到 # 的普通文本都加上按钮。
-const CMD_HINT = /(?:发送|回复|使用|输入|前往|点击|按|请)\s*#/;
+// 回复里写有「下一步指令」时，把文本中的 #指令 收集成按钮，同时不再转图。
+// 只认这几种明确形态，避免把正文里随口提到的 # 也做成按钮：
+//   1. 【#指令 选项A/选项B】——括号包起来的指令块
+//   2. 行首指令：`下一步：#推演红尘仙`、`#立下世愿 化凡/争渡/逆天`
+//   3. 老写法：`请发送 #修仙帮助` 这类带引导词的散落指令
+const CMD_HINT = /(?:发送|回复|使用|输入|前往|点击|按|请)\s*[【\[「(（]?\s*#|【\s*#/;
 const CMD_TOKEN = /#[\u4e00-\u9fa5A-Za-z0-9_]{2,16}/g;
-function commandButtonsFrom(text) {
-  if (!CMD_HINT.test(text)) return [];
-  const seen = new Set();
+const CMD_BLOCK = /【\s*#([^】]{1,60})】/g;
+// 行首（允许「下一步：」「可执行：」这种短标签，冒号必须有，避免把正文吞进来）
+const CMD_LINE = /^[^\S\n]*(?:[^\n#：:]{1,10}[:：]\s*)?(#[^\s#][^\n]*?)[^\S\n]*$/gm;
+
+export function commandButtonsFrom(text) {
+  const src = String(text || '');
+  if (!src.trim()) return [];
+
   const cmds = [];
-  for (const m of text.matchAll(CMD_TOKEN)) {
-    const cmd = m[0];
-    if (seen.has(cmd)) continue;
+  const seen = new Set();
+  const push = (label, command) => {
+    const cmd = String(command || '').trim();
+    if (!cmd || seen.has(cmd)) return;
     seen.add(cmd);
-    cmds.push({ text: cmd.slice(1).slice(0, 10), command: cmd });
-    if (cmds.length >= 9) break; // 3 行 × 3 列
+    cmds.push({ text: String(label || cmd).slice(0, 10), command: cmd });
+  };
+
+  // 把「指令 参数A/参数B/参数C」拆成每个参数一个按钮；
+  // 没有斜杠参数时只收指令本身，忽略后面跟的说明文字。
+  // 一行里用「、」并列多条指令（`可执行：#a、#b`）会各自出按钮。
+  const pushExpanded = (body) => {
+    const chunks = String(body || '')
+      .replace(/[。！？!?…]+$/, '')
+      .split(/[、，,]\s*(?=#)/)
+      .map(s => s.trim())
+      .filter(Boolean);
+    for (const chunk of chunks) {
+      // 一行里空格并列的多个指令（`#a #b`）也要各自出按钮
+      for (const piece of chunk.split(/\s+(?=#)/)) {
+        const cleaned = piece.trim().replace(/\s+/g, ' ');
+        const [cmd, ...rest] = cleaned.split(' ');
+        if (!cmd.startsWith('#')) continue;
+        const options = rest.join(' ')
+          .split('/')
+          .map(s => s.replace(/[（(].*$/, '').replace(/[。！？!?…]+$/, '').trim())
+          .filter(Boolean);
+        if (options.length > 1) {
+          for (const opt of options) push(opt, `${cmd} ${opt}`);
+          seen.add(cmd); // 占住光杆指令，避免再补一个点了没用的按钮
+        } else {
+          push(cmd.slice(1), cmd);
+        }
+        if (cmds.length >= 9) return;
+      }
+    }
+  };
+
+  for (const m of src.matchAll(CMD_BLOCK)) {
+    pushExpanded(`#${m[1]}`);
+    if (cmds.length >= 9) break;
   }
+
+  if (cmds.length < 9) {
+    for (const m of src.matchAll(CMD_LINE)) {
+      pushExpanded(m[1]);
+      if (cmds.length >= 9) break;
+    }
+  }
+
+  // 3) 老写法：带引导词的散落指令（前面两种都没命中时才扫）
+  if (!cmds.length && CMD_HINT.test(src)) {
+    for (const m of src.matchAll(CMD_TOKEN)) {
+      push(m[0].slice(1), m[0]);
+      if (cmds.length >= 9) break;
+    }
+  }
+
   const rows = [];
   for (let i = 0; i < cmds.length; i += 3) rows.push(cmds.slice(i, i + 3));
   return rows;
