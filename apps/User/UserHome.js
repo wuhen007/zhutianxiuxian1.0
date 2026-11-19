@@ -2212,6 +2212,20 @@ if (func == "打开") {
     // 记忆条目暂停使用，旧纳戒物品保留，通用使用命令同样拦截。
     if (['奇怪的数据', '记忆之诗篇', '六相冰封'].includes(thing_name)) return e.reply('该记忆命途物品已暂停使用。');
     let thing_exist = await foundthing(thing_name);
+    // 名称查不到就直接说清楚，别再往下走：thing_exist.class 会是 undefined，
+    // 玩家看到的就是「你没有【XXX】这样的【undefined】」。
+    if (!thing_exist) {
+      // 纪元积累是数值资源，不是纳戒物品：格式写歪时会掉到这里，直接给正确写法
+      if (/纪元积累/.test(thing_name)) {
+        e.reply('【纪元积累】不是纳戒物品，不能这样消耗。\n转化请发送：#消耗纪元积累*2（星号用 * 或 × 都可以）');
+        return false;
+      }
+      e.reply([
+        `没有叫【${thing_name}】的物品，请确认名称是否正确。`,
+        '「#消耗」只能用于纳戒里的物品，可先发送「#纳戒」查看物品全名。',
+      ].join('\n'));
+      return false;
+    }
     const activeAvatar = getActiveZhutianAvatarName(player);
     const mutatesRoot =
       (func == '消耗' && (thing_exist?.type == '洗髓' || ROOT_MUTATION_ITEMS.has(thing_name))) ||
@@ -2237,7 +2251,9 @@ if (func == "打开") {
       return false;
     }
     if (!x) {
-      e.reply(`你没有【${thing_name}】这样的【${thing_exist.class}】`);
+      e.reply(thing_exist.class
+        ? `你没有【${thing_name}】这样的【${thing_exist.class}】`
+        : `纳戒里没有【${thing_name}】`);
       return false;
     }
     if (func == '消耗' && thing_name === '神主触屏') {

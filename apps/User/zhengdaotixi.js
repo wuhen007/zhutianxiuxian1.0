@@ -181,7 +181,9 @@ fnc: 'tianyi_yidao'
     fnc: 'suppressPlayer'
 },
   {
-          reg: '^#(?:消耗|转化)纪元积累(?:\\s*(\\d+)|\\*(\\d+))?$',
+          // 兼容半角/全角星号、乘号、x，以及「积累 8」「积累*8」两种写法；
+          // 之前只认半角 *，玩家打了个全角 ＊ 就会掉到通用 #消耗 里报「没有这个物品」
+          reg: '^#(?:消耗|转化)纪元积累(?:\\s*[*＊×xX]?\\s*([0-9０-９]+))?$',
           fnc: 'jiyuanjilei',
         },
         {
@@ -677,9 +679,14 @@ async jiyuanjilei(e) {
     return;
   }
 
-  // 解析指令（支持 #消耗纪元积累*3 这样的格式）
-  const match = e.msg.match(/^#(?:消耗|转化)纪元积累(?:\s*(\d+)|\*(\d+))?$/);
-  const consumeCount = parseInt(match[1] || match[2] || '1');
+  // 解析指令（支持 #消耗纪元积累*3 / ＊3 / ×3 / 3，全角数字也认）
+  const match = e.msg.match(/^#(?:消耗|转化)纪元积累(?:\s*[*＊×xX]?\s*([0-9０-９]+))?$/);
+  const digits = String(match?.[1] || '1').replace(/[０-９]/g, d => String.fromCharCode(d.charCodeAt(0) - 0xFEE0));
+  const consumeCount = Number.parseInt(digits, 10) || 1;
+  if (consumeCount < 1) {
+    e.reply('消耗数量至少为 1，例如：#消耗纪元积累*2');
+    return;
+  }
 
   let usr_qq = e.user_id.toString().replace('qg_', '');
   let ifexistplay = await existplayer(usr_qq);
@@ -1498,7 +1505,7 @@ async jingxue(e) {
     const player = await Read_player(usr_qq);
     
     // 解析数量参数
-    const match = e.msg.match(/#凝聚精血\*(\d+)$/);
+    const match = e.msg.match(/#凝聚精血\*([0-9０-９]+)$/);
     let amount = 1;
     if (match && match[1]) {
         amount = parseInt(match[1]);
@@ -2732,7 +2739,7 @@ async createEverythingLocked(e, player_qq) {
     
     }
     // 解析命令
-    const match = e.msg.match(/^#神城兑换源石 (.*?)(?: (\d+))?$/);
+    const match = e.msg.match(/^#神城兑换源石 (.*?)(?: ([0-9０-９]+))?$/);
     if (!match) return false;
     
     const stoneName = match[1].trim();
@@ -5170,7 +5177,7 @@ async ciyujingjie(e) {
     if (!target) return e.reply('目标玩家不存在');
 
     // ==== 指令解析 ====
-    const match = e.msg.match(/赐予(练气|炼体)升(\d+)级/);
+    const match = e.msg.match(/赐予(练气|炼体)升([0-9０-９]+)级/);
     if (!match) return e.reply('格式：赐予练气升5级 或 赐予炼体升5级');
     const [_, realmType, levelStr] = match;
     const levelIncrease = parseInt(levelStr);
@@ -5586,7 +5593,7 @@ async guanding(e) {
     if (!target) return e.reply('目标玩家不存在');
 
     // ==== 指令解析 ====
-    const match = e.msg.match(/灌顶至(\d+)级/);
+    const match = e.msg.match(/灌顶至([0-9０-９]+)级/);
     if (!match) return e.reply('格式：灌顶至5级');
     
     const [_, targetLevelStr] = match;
