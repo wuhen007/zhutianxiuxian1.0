@@ -103,13 +103,17 @@ export class ItemGrant extends plugin {
         segment.at(target),
         ` 群主给你发了：${o.itemName} ×${o.qty}（${o.id}）`,
         `理由：${o.reason}`,
-        `回复「#领取」到账，7 天内有效。`,
+        `请本人私聊我发「#领取」到账，7 天内有效。`,
         '本服公益免费，收费即骗子——道具本来就该免费给你。',
       ].join('\n')
     );
   }
 
   async claim(e) {
+    // 领取一律走私聊：群里发货会刷屏，流水也不该被围观
+    if (e.isGroup) {
+      return e.reply('领取要私聊我，群里不发货。\n私聊发「#领取」就行，别人代不了。');
+    }
     const r = await grantStore().claim(e.user_id, deliverToPlayer);
     if (!r.ok) return e.reply(r.msg);
 
@@ -132,7 +136,7 @@ export class ItemGrant extends plugin {
     const lines = list
       .slice(0, 5)
       .map(x => `${x.itemName} ×${x.qty}（${x.id}，群 ${x.groupId || '-'} 发的）`);
-    return e.reply(['待领取：', ...lines, '发「#领取」到账。'].join('\n'));
+    return e.reply(['待领取：', ...lines, '私聊我发「#领取」到账。'].join('\n'));
   }
 
   async revoke(e) {
