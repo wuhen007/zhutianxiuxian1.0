@@ -5,7 +5,7 @@
  * 卖单（收钱才给发单）和代领都会留痕迹；领取时固定弹公益防诈提示。
  *
  * 指令：
- *   #发单 @某人 返命丹 [x2] 卡在筑基七天   群主/管理员，群里发
+ *   #派单 @某人 返命丹 [x2] 卡在筑基七天   群主/管理员，群里发
  *   #领取                                  玩家本人，私聊或群里都行
  *   #我的单                                查自己还有哪些待领
  *   #撤单 N-1A2B3C                         撤自己发出去还没被领的单
@@ -39,7 +39,7 @@ export class ItemGrant extends plugin {
       event: 'message',
       priority: 520,
       rule: [
-        { reg: '^#发单\\s', fnc: 'grant' },
+        { reg: '^#派单\\s', fnc: 'grant' },
         { reg: '^#领取$', fnc: 'claim' },
         { reg: '^#我的单$', fnc: 'myOrders' },
         { reg: '^#撤单\\s', fnc: 'revoke' },
@@ -64,7 +64,7 @@ export class ItemGrant extends plugin {
     if (!this.isAdmin(e)) return e.reply('只有群主 / 管理员可以发单。');
 
     const target = e.at;
-    if (!target) return e.reply('要 @ 一位玩家。格式：#发单 @某人 返命丹 卡在筑基七天');
+    if (!target) return e.reply('要 @ 一位玩家。格式：#派单 @某人 返命丹 卡在筑基七天');
 
     // 参数：道具名 [xN] 理由
     const parts = args(e, '发单').split(' ').filter(Boolean);
@@ -79,7 +79,7 @@ export class ItemGrant extends plugin {
     }
     qty = Math.min(Math.max(qty || 1, 1), MAX_QTY);
     const reason = parts.join(' ').trim() || '未填写';
-    if (!itemName) return e.reply('格式：#发单 @某人 道具名 [x数量] 理由');
+    if (!itemName) return e.reply('格式：#派单 @某人 道具名 [x数量] 理由');
 
     const found = await resolveItem(itemName);
     if (!found.ok) return e.reply(found.msg);

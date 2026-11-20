@@ -38,6 +38,7 @@ import {
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { getDimensionTradeCompatibility } from '../../model/weimianTravel.js';
 import { getSuiyunStage } from '../../model/suiyun.js';
+import { deprecatedGrantNotice } from '../../model/itemGrant.js';
 export class MoneyOperation extends plugin {
   constructor() {
     super({
@@ -149,6 +150,8 @@ export class MoneyOperation extends plugin {
   }
   async wup(e) {
     if (!verc({ e })) return false;
+    // 旧的 #发 直发改走派单：不再发放，只回操作说明
+    if (deprecatedGrantNotice(e)) return false;
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
@@ -273,6 +276,8 @@ export class MoneyOperation extends plugin {
 
   async wup_all(e) {
     if (!verc({ e })) return false;
+    // 旧的 #全体发 同上：不给全群直发，只回操作说明
+    if (deprecatedGrantNotice(e)) return false;
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');

@@ -30,6 +30,7 @@ import {
 } from '../../model/wenxianling.js';
 import { deletePlayerDataBundle } from './playerDeletion.js';
 import { getDailyTaskDateKey } from '../../model/dailyTask.js';
+import { deprecatedGrantNotice } from '../../model/itemGrant.js';
 import { buildUniqueItemRarityMap } from '../../model/najieRaritySync.js';
 import { backfillXianguEternalClaims } from '../../model/xianguEternalBackfill.js';
 import { reviveFromYongJi } from '../Boss/YongJiList.js';
@@ -1666,6 +1667,8 @@ async relieveFashanAction(e) {
   // 档3：+ 10超越宝盒 + 3众生仙钓（超越宝盒共15）
   // 档4：+ 500洗根水 + 1锁灵仙符
   async sendInvitationReward(e) {
+    // 旧的 #发拉新奖励 不再直发，只回派单说明
+    if (deprecatedGrantNotice(e)) return false;
     // 权限检查
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];

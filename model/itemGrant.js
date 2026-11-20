@@ -9,11 +9,45 @@ import {
   Add_najie_thing,
   Read_player,
   foundthing,
+  isXiuxianAdmin,
   re_najie_thing,
 } from './xiuxian.js';
 import { GrantStore } from './itemGrantStore.js';
 
 let store = null;
+
+/** 老发放指令被拦下来时回的这一份说明（唯一文案源，别在别处再抄一遍） */
+export const GRANT_GUIDE = [
+  '【发放方式已变更】道具不再直接到账，改为「群主派单 + 玩家本人领取」。',
+  '',
+  '群主发单（群里发，要 @ 人）：',
+  '#派单 @某人 返命丹 卡在筑基七天',
+  '#派单 @某人 洗髓丹 x2 缺材料',
+  '数量最多 3 件，每人每周 10 单，理由必填且玩家可见。',
+  '',
+  '玩家领取：',
+  '#领取              本人领取，一次结清名下所有待领单',
+  '#我的单            查还有哪些没领（7 天不领自动作废）',
+  '#撤单 N-1A2B3C     撤未领取的单，额度退回',
+  '',
+  '派单只是生成待领单，玩家不领就不算发放，别对玩家说“已经给了”。',
+  '领取后道具自动锁定，不能出售、赠送、交换，只能自己用。',
+].join('\n');
+
+/**
+ * 老的 #发 / #全体发 / #发拉新奖励 一律不再发放，只回说明。
+ * 普通玩家照旧静默（和改造前一致），只有原本有权限的人才会看到这段。
+ * @returns {boolean} true 表示已处理，调用方应 return false 中断
+ */
+export function deprecatedGrantNotice(e) {
+  try {
+    if (!isXiuxianAdmin(e)) return false;
+  } catch {
+    return false;
+  }
+  e.reply(GRANT_GUIDE);
+  return true;
+}
 
 export function grantStore() {
   if (!store) store = new GrantStore(path.join(__PATH.data_path, 'item_grant.json'));
