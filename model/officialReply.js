@@ -482,7 +482,11 @@ export async function tryOfficialActive(groupId, msg, options = {}) {
 
   stats.fallback += 1;
   const reason = result?.error?.message || 'unknown';
-  log('warn', `定时任务官方发送失败，回退协议号：${reason}`);
+  // 群没开主动消息 / 已退群这类，qqbot-api 已经报过一次并在本次运行内熔断；
+  // 这里不再每条都写一行 warn，否则一轮定时任务能刷满屏。
+  if (!(result?.error?.silent || result?.error?.breaker)) {
+    log('warn', `定时任务官方发送失败，回退协议号：${reason}`);
+  }
   noteSendResult(groupId, false, reason).catch(() => { });
   return { handled: false, reason, error: result?.error };
 }
@@ -529,7 +533,8 @@ export async function pushGroup(groupId, msg, options = {}) {
     const res = await group.sendMsg(msg);
     return { ok: true, via: 'protocol', res };
   } catch (err) {
-    log('warn', `群 ${gid} 协议号推送失败：${err?.message ?? err}`);
+    // 熔断期内是预期失败，不再重复刷日志
+    if (!(err?.silent || err?.breaker)) log('warn', `群 ${gid} 协议号推送失败：${err?.message ?? err}`);
     return { ok: false, reason: err?.message || 'send-failed' };
   }
 }
