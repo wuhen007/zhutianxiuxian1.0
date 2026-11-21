@@ -73,3 +73,14 @@ gateway-data/
 # 管理员/权限类文档只在本地留存，不入库（本仓库公开）
 docs/*.docx
 docs/管理员指令总表.md
+
+# 全服运行时状态（每轮游戏都会改，且含玩家绑定等隐私，不入库）
+resources/data/位面.json
+resources/data/dimension_guard_state.json
+resources/data/forbidden_event_state.json
+resources/data/foreign_imperial_pass.json
+resources/data/identity_map.json
+resources/data/innate_treasure_state.json
+resources/data/plane_rift_festival.json
+resources/data/strange_sacrifice_state.json
+resources/data/weimian_events.json
