@@ -27,6 +27,7 @@
       position: relative;
       display: inline-block;
       width: 720px;
+      min-height: 300px;
       padding: 40px 42px 38px;
       background:
         radial-gradient(120% 90% at 100% 100%, rgba(77, 107, 254, 0.1) 0%, rgba(77, 107, 254, 0) 62%),
@@ -50,18 +51,37 @@
       z-index: 2;
     }
 
-    /* DeepSeek 蓝鲸：右下角淡印，纯装饰，不参与排版 */
+    /* 鲸鱼娘立绘：右侧站满整块高度，左侧用渐变压一层白，保证文字可读 */
     #whale {
       position: absolute;
-      right: -34px;
-      bottom: -26px;
-      width: 470px;
-      height: 353px;
+      right: 0;
+      top: 0;
+      bottom: 0;
+      width: 46%;
       background-image: url("{{whaleUrl}}");
       background-repeat: no-repeat;
-      background-position: center;
+      background-position: right bottom;
       background-size: contain;
-      opacity: 0.15;
+      opacity: 0.95;
+      /* 立绘是白底 webp，multiply 让白色融进卡片渐变，避免出现白块边界 */
+      mix-blend-mode: multiply;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    /* 文字区的白色蒙版：左侧接近不透明，往右渐隐，让立绘透出来 */
+    #container::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(
+        90deg,
+        rgba(250, 252, 255, 0.97) 0%,
+        rgba(250, 252, 255, 0.94) 46%,
+        rgba(250, 252, 255, 0.55) 66%,
+        rgba(250, 252, 255, 0.12) 84%,
+        rgba(250, 252, 255, 0.02) 100%
+      );
       z-index: 0;
       pointer-events: none;
     }
@@ -70,6 +90,8 @@
     #text {
       position: relative;
       z-index: 1;
+      /* 给右侧立绘让位，文字不压到角色身上 */
+      padding-right: 210px;
       font-size: 27px;
       line-height: 1.85;
       letter-spacing: 0.4px;

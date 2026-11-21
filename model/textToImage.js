@@ -35,7 +35,7 @@ import { isOfficialMessageEvent, buildOfficialMessage } from './officialMessage.
 const CONFIG_FILE = path.join(PluginDir, 'config/xiuxian/text2image.yaml');
 const TPL_FILE = path.join(PluginDir, 'resources/html/text2img/text.html');
 /** 背景图：换成别的图只要替换这个文件（或改这里指向的路径），重启后生效 */
-const WHALE_FILE = path.join(PluginDir, 'resources/html/text2img/deepseek-whale.svg');
+const WHALE_FILE = path.join(PluginDir, 'resources/html/text2img/whale-maid.webp');
 const RENDER_NAME = 'xxhs-text2img';
 
 let whaleUrlCache = null;
