@@ -31,6 +31,7 @@ import { assertTrialWriteCurrent } from './trialUniverse.js';
 import { assertSwordMagicWriteCurrent } from './swordMagic.js';
 import { rememberImmortalEmperorHistory } from './realmAuthority.js';
 import { advanceSuiyunToRealm } from './suiyun.js';
+import { readAllXianchong } from './xianchongStore.js';
 
 /*
   数据封装
@@ -327,9 +328,7 @@ this.gongfa_list = JSON.parse(
     this.tupoxianchon = JSON.parse(
       fs.readFileSync(`${this.lib_path}/突破仙宠.json`)
     );
-    this.xianchon = JSON.parse(
-      fs.readFileSync(`${this.lib_path}/仙宠列表.json`)
-    );
+    this.xianchon = readAllXianchong();
     this.xianchonkouliang = JSON.parse(
       fs.readFileSync(`${this.lib_path}/仙宠口粮列表.json`)
     );

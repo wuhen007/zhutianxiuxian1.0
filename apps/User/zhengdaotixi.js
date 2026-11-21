@@ -1,5 +1,6 @@
 import { getMemoryEffects } from '../../model/memoryPath.js';
 import { getSuiyunStage } from '../../model/suiyun.js';
+import { readAllXianchong, readCustomXianchong, writeCustomXianchong } from '../../model/xianchongStore.js';
 import { plugin, verc, config, data } from '../../api/api.js';
 import fs from 'fs';
 import path from 'path';
@@ -441,29 +442,18 @@ async removeProtector(e) {
 
   // ==== 仙宠保存方法 ====
   async saveXianchong(pet) {
-    const filePath = path.join(data.lib_path, '仙宠列表.json');
-    let petList = [];
-    
-    // 读取现有列表
-    if (fs.existsSync(filePath)) {
-      petList = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    }
-    
+    // 玩家创造的仙宠只写自创那份文件，内置仙宠列表不动
+    const petList = readCustomXianchong();
+
     // 检查同名仙宠
     if (petList.some(p => p.name === pet.name)) {
       throw new Error(`已存在同名仙宠: ${pet.name}`);
     }
-    
-    // 添加新仙宠
-    petList.push(pet);
-    
-    // 保存文件
-    fs.writeFileSync(filePath, JSON.stringify(petList, null, 2));
-    
+
+    writeCustomXianchong([...petList, pet]);
+
     // 更新内存数据
-    if (data.xianchon) {
-      data.xianchon = petList;
-    }
+    data.xianchon = readAllXianchong();
   }
 
   // ==== 仙宠读取方法 ====
@@ -504,27 +494,18 @@ async removeProtector(e) {
    * 获取仙宠列表
    */
   getXianchongList() {
-    const filePath = path.join(this.lib_path, '仙宠列表.json');
-    try {
-      if (!fs.existsSync(filePath)) {
-        fs.writeFileSync(filePath, '[]');
-        return [];
-      }
-      return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    } catch (err) {
-      console.error('读取仙宠列表失败:', err);
-      return [];
-    }
+    // 内置 + 玩家自创合并；玩家创造的那份不进版本库
+    return readAllXianchong();
   }
 
   /**
    * 保存仙宠列表
    */
   saveXianchongList(petList) {
-    const filePath = path.join(this.lib_path, '仙宠列表.json');
     try {
-      fs.writeFileSync(filePath, JSON.stringify(petList, null, 2));
-      this.xianchon = petList; // 更新内存数据
+      // 只落盘玩家自创的，内置仙宠列表保持只读，避免玩家造宠污染仓库
+      writeCustomXianchong(Array.isArray(petList) ? petList : []);
+      this.xianchon = readAllXianchong(); // 更新内存数据
     } catch (err) {
       console.error('保存仙宠列表失败:', err);
       throw err;

@@ -233,10 +233,25 @@ function purgeCustomXianchong() {
   const kept = list.filter(
     p => !(p && p.desc && typeof p.desc === 'string' && p.desc.includes('创造的专属仙宠'))
   );
-  const removed = before - kept.length;
+  let removed = before - kept.length;
   if (removed > 0) {
     writeJson(file, kept);
     if (data.xianchon) data.xianchon = kept;
+  }
+
+  // 玩家自创仙宠现在单独存一份文件，一并清掉，否则 #诸天初始化 清不干净
+  const customFile = path.join(__PATH.lib_path, '玩家自创仙宠.json');
+  if (fs.existsSync(customFile)) {
+    try {
+      const custom = JSON.parse(fs.readFileSync(customFile, 'utf-8'));
+      if (Array.isArray(custom) && custom.length) {
+        removed += custom.length;
+        writeJson(customFile, []);
+        data.xianchon = kept;
+      }
+    } catch (err) {
+      logger.error('[诸天初始化] 读取玩家自创仙宠失败', err);
+    }
   }
   return removed;
 }
