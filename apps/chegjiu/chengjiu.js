@@ -30,6 +30,9 @@ const ASSISTANT_BUTTONS = [
         { text: '位面图鉴', command: '#位面图鉴', permission: false },
         { text: '我的小世界', command: '#我的小世界', permission: false },
     ],
+    [
+        { text: '更新内容', command: '#更新内容', permission: false },
+    ],
 ];
 
 
