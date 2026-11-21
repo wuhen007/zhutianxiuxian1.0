@@ -1277,8 +1277,12 @@ if (isLucky || player.灵根.type === "圆环之理" || getSuiyunEffects(player)
 
     // 读取已领取礼物的记录文件
     let dir = path.join(__PATH.chengzhang, 'chengzhang.json');
-    let logfile = fs.readFileSync(dir, 'utf8');
-    let allqq = JSON.parse(logfile);
+    // 记录文件不进版本库，首次运行/新装环境可能不存在，按空数组处理
+    let allqq = [];
+    try {
+      allqq = JSON.parse(fs.readFileSync(dir, 'utf8'));
+      if (!Array.isArray(allqq)) allqq = [];
+    } catch { allqq = []; }
     // 查找当前玩家的记录在allqq数组中的索引
     let suoyin = allqq.findIndex((entry) => entry.id === player.id);
     // 如果找不到该玩家的记录，则创建一个新的记录并写入文件

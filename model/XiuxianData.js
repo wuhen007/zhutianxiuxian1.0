@@ -7,6 +7,19 @@ import {
   markTribulationSnapshot,
 } from './tribulationLock.js';
 import { writeJsonAtomically } from '../utils/atomicJson.js';
+
+/**
+ * 玩家产出的数据文件（自创帝经 / 小世界 / 位面天骄）不进公开仓库，
+ * 新装环境没有这些文件，读不到时按空数组处理，避免启动直接抛错。
+ */
+function readListOrEmpty(file) {
+  try {
+    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
 import { assertGlobalInitIdle } from '../utils/globalInitGuard.js';
 import {
   assertZhutianAvatarRootWriteAllowed,
@@ -164,7 +177,7 @@ class XiuxianData {
         //加载mc合成列表
         this.hecheng_list = JSON.parse(fs.readFileSync(`${this.lib_path}/合成列表.json`));
                 //加载位面boss列表
-        this.weimiantianjiao_list = JSON.parse(fs.readFileSync(`${this.lib_path}/位面boss列表.json`));
+        this.weimiantianjiao_list = readListOrEmpty(`${this.lib_path}/位面boss列表.json`);
                //加载剧情人物列表
         this.juqingrenwu_list = JSON.parse(fs.readFileSync(`${this.lib_path}/剧情人物列表.json`));
               //加载成就列表
@@ -184,8 +197,7 @@ this.gongfa_list = JSON.parse(
     this.talent_list = JSON.parse(
       fs.readFileSync(`${this.lib_path}/灵根列表.json`)
     );
-  this.dijingList =  JSON.parse(
-      fs.readFileSync(`${this.lib_path}/玩家自创帝经.json`));
+  this.dijingList = readListOrEmpty(`${this.lib_path}/玩家自创帝经.json`);
 
     //加载草药列表
     this.caoyao_list = JSON.parse(
@@ -288,8 +300,7 @@ this.gongfa_list = JSON.parse(
       fs.readFileSync(`${this.lib_path}/星阁内场拍卖行.json`)
     );
     //加载小世界列表
-    this.xiaoshijie = JSON.parse(
-      fs.readFileSync(`${this.lib_path}/小世界列表.json`));
+    this.xiaoshijie = readListOrEmpty(`${this.lib_path}/小世界列表.json`);
     //天地
     this.tianditang = JSON.parse(
       fs.readFileSync(`${this.lib_path}/商店/天地堂.json`)
@@ -440,7 +451,7 @@ this.gongfa_list = JSON.parse(
       const data = fs.readFileSync(filePath, 'utf8');
       return JSON.parse(data);
     } catch (error) {
-      console.error('读取道法仙术列表失败:', error);
+      if (error.code !== 'ENOENT') console.error('读取道法仙术列表失败:', error);
       return {};
     }
   }
@@ -636,7 +647,7 @@ this.gongfa_list = JSON.parse(
       const data = fs.readFileSync(filePath, 'utf8');
       return JSON.parse(data);
     } catch (error) {
-      console.error('加载玩家自创帝经失败:', error);
+      if (error.code !== 'ENOENT') console.error('加载玩家自创帝经失败:', error);
       return [];
     }
   }

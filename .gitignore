@@ -84,3 +84,9 @@ resources/data/innate_treasure_state.json
 resources/data/plane_rift_festival.json
 resources/data/strange_sacrifice_state.json
 resources/data/weimian_events.json
+
+# 玩家产出的数据，不进公开仓库（含 QQ 号/昵称，且会被运行时改写）
+resources/data/daofa_list.json
+resources/data/item/玩家自创帝经.json
+resources/data/item/小世界列表.json
+resources/data/chengzhang/chengzhang.json
