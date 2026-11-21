@@ -7075,17 +7075,15 @@ export async function Write_renwu(renwu) {
   return;
 }
 export async function Read_renwu() {
-  let dir = path.join(`${__PATH.renwu}/renwu.json`);
-  let renwu = fs.readFileSync(dir, 'utf8', (err, data) => {
-      if (err) {
-          console.log(err)
-          return "error";
-      }
-      return data;
-  })
-  //将字符串数据转变成数组格式
-  renwu = JSON.parse(renwu);
-  return renwu;
+  // 任务进度含玩家 QQ，不进版本库；新装环境没有这个文件时按空数组处理
+  const dir = path.join(__PATH.renwu, 'renwu.json');
+  try {
+    const renwu = JSON.parse(fs.readFileSync(dir, 'utf8'));
+    return Array.isArray(renwu) ? renwu : [];
+  } catch (err) {
+    if (err.code !== 'ENOENT') console.log(err);
+    return [];
+  }
 }
 
 export async function Add_renwu_progress(A, field, amount = 1) {

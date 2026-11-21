@@ -32,6 +32,7 @@ import { assertSwordMagicWriteCurrent } from './swordMagic.js';
 import { rememberImmortalEmperorHistory } from './realmAuthority.js';
 import { advanceSuiyunToRealm } from './suiyun.js';
 import { readAllXianchong } from './xianchongStore.js';
+import { readAllTianjiao } from './tianjiaoStore.js';
 
 /*
   数据封装
@@ -178,7 +179,7 @@ class XiuxianData {
         //加载mc合成列表
         this.hecheng_list = JSON.parse(fs.readFileSync(`${this.lib_path}/合成列表.json`));
                 //加载位面boss列表
-        this.weimiantianjiao_list = readListOrEmpty(`${this.lib_path}/位面boss列表.json`);
+        this.weimiantianjiao_list = readAllTianjiao();
                //加载剧情人物列表
         this.juqingrenwu_list = JSON.parse(fs.readFileSync(`${this.lib_path}/剧情人物列表.json`));
               //加载成就列表

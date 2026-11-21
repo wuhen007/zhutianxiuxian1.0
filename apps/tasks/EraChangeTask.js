@@ -1,4 +1,5 @@
 import { isXiuxianAdmin } from '../../model/xiuxian.js';
+import { writeRuntimeTianjiao } from '../../model/tianjiaoStore.js';
 import { pushGroup } from '../../model/officialReply.js';
 import plugin from '../../../../lib/plugins/plugin.js';
 import config from '../../model/Config.js';
@@ -1713,8 +1714,8 @@ if (index === 4) { // 当前是绝灵时代
       }
 
       if (tianjiaoDataChanged) {
-        const bossListPath = path.join(data.filePathMap.lib, '位面boss列表.json');
-        fs.writeFileSync(bossListPath, JSON.stringify(tianjiaoList, null, 2), 'utf8');
+        // 只回写玩家晋升的天骄，原著列表只读
+        writeRuntimeTianjiao(tianjiaoList);
       }
 
       if (tianjiaoDataChanged || recoveryReports.length > 0) {

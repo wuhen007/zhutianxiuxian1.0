@@ -1,4 +1,5 @@
 import { isXiuxianAdmin } from '../../model/xiuxian.js';
+import { writeRuntimeTianjiao } from '../../model/tianjiaoStore.js';
 import { pushGroup } from '../../model/officialReply.js';
 import {  hasSuiyunAuthority } from '../../model/suiyunAuthority.js';
 import fs from 'fs';
@@ -1066,8 +1067,8 @@ export class BOSS4 extends plugin {
 
   persistTianjiaoList() {
     try {
-      const bossListPath = path.join(data.filePathMap.lib, '位面boss列表.json');
-      fs.writeFileSync(bossListPath, JSON.stringify(data.weimiantianjiao_list, null, 2), 'utf8');
+      // 只回写玩家晋升的天骄，原著列表保持只读
+      writeRuntimeTianjiao(data.weimiantianjiao_list);
     } catch (error) {
       console.error('保存天骄列表失败:', error);
     }

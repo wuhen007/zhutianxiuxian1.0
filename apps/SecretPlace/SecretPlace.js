@@ -5238,7 +5238,8 @@ async handleTianjiaoTreasureSeized(event, winner) {
         const bossListPath = path.join(data.filePathMap?.lib || '', '位面boss列表.json');
         if (bossListPath) {
             try {
-                fs.writeFileSync(bossListPath, JSON.stringify(data.weimiantianjiao_list, null, 2), 'utf8');
+                // 只回写玩家晋升的天骄，原著列表只读
+                writeRuntimeTianjiao(data.weimiantianjiao_list);
             } catch (error) {
                 console.error(`[天骄夺宝] 保存天骄列表失败:`, error);
             }

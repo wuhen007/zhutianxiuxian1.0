@@ -91,3 +91,15 @@ resources/data/item/玩家自创帝经.json
 resources/data/item/小世界列表.json
 resources/data/chengzhang/chengzhang.json
 resources/data/item/玩家自创仙宠.json
+resources/data/位面天骄玩家.json
+resources/data/renwu/renwu.json
+
+# 其余运行时产物（含玩家号/绑定备份/公告图）统一忽略
+resources/data/announce/
+resources/data/dao_treasure_state.json
+resources/data/relay_map.json
+resources/data/suiyun_unique.*.json
+resources/data/worldline_causal_state.json
+resources/data/*.bak-*
+# 玩家自创技能（含创造者昵称，运行时生成）
+resources/data/item/技能列表/
