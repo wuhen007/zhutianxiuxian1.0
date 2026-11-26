@@ -1,0 +1,409 @@
+:root {
+  font-family: "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+  font-synthesis: none;
+  --topbar-height: 76px;
+  --canvas: #091315;
+  --surface: #101e22;
+  --surface-strong: #142429;
+  --surface-subtle: #1a2c30;
+  --input: #0d1b1f;
+  --text: #edf4f0;
+  --muted: #a0b5af;
+  --accent: #d6bd80;
+  --accent-strong: #ebd8a4;
+  --accent-soft: #302f25;
+  --accent-ink: #20251d;
+  --line: #2a3c3f;
+  --line-strong: #776b48;
+  --success: #91c9ac;
+  --danger: #efaaa1;
+  --shadow: rgba(3, 12, 15, .22);
+  --theme-art: url("/world/assets/zhutian.jpg");
+  --overview-tint: rgba(12, 27, 31, .48);
+  color: var(--text);
+  background: var(--canvas);
+}
+
+/* One shared layout; themes change materials and colors, never navigation.
+   Layers: backdrop -1, header 10, return button 15, mobile nav 20, toast 30.
+   Shapes: panels 18px, controls and message bubbles 10px, badges 6px. */
+* { box-sizing: border-box; }
+html { min-width: 320px; }
+body { min-width: 320px; min-height: 100dvh; margin: 0; isolation: isolate; color: var(--text); background: var(--canvas); font-size: 14px; line-height: 1.6; color-scheme: dark; }
+button, input, textarea, select { font: inherit; }
+button, select { cursor: pointer; }
+button { color: inherit; }
+button, a, input, textarea, select { -webkit-tap-highlight-color: transparent; }
+button, a { transition: color .15s, background-color .15s, border-color .15s; }
+button:active:not(:disabled) { transform: translateY(1px); }
+button:disabled { cursor: not-allowed; }
+:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 3px; }
+input, textarea, select { color: var(--text); background: var(--input); }
+input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
+input[type="number"] { font-variant-numeric: tabular-nums; }
+img { display: block; max-width: 100%; }
+a { color: inherit; }
+svg { width: 18px; height: 18px; flex-shrink: 0; stroke-width: 1.7; }
+[hidden] { display: none !important; }
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.skip-link { position: fixed; top: 8px; left: 12px; z-index: 40; padding: 10px 14px; color: var(--accent-ink); border-radius: 8px; background: var(--accent); transform: translateY(-150%); }
+.skip-link:focus { transform: none; }
+.world-backdrop { position: fixed; inset: 0; z-index: -1; pointer-events: none; background: var(--theme-art) center 48% / cover; opacity: .15; filter: saturate(.5); }
+
+.world-topbar { position: sticky; top: 0; z-index: 10; height: var(--topbar-height); padding: 0 max(24px, calc((100vw - 1600px) / 2)); display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 26px; border-bottom: 1px solid var(--line); background: var(--surface); }
+.world-brand { display: flex; align-items: center; gap: 12px; text-decoration: none; }
+.brand-seal { width: 40px; height: 44px; display: grid; place-items: center; color: var(--accent-strong); border: 1px solid var(--line-strong); border-radius: 8px; background: var(--accent-soft); font-family: "STKaiti", "KaiTi", serif; font-size: 24px; }
+.world-brand b, .world-brand small { display: block; }
+.world-brand b { font-family: "STKaiti", "KaiTi", serif; font-size: 23px; line-height: 1.25; white-space: nowrap; }
+.world-brand small { margin-top: 2px; color: var(--muted); font-size: 10px; letter-spacing: .12em; }
+.primary-nav { display: flex; justify-content: center; gap: 6px; }
+.nav-command { min-height: 42px; padding: 0 15px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; color: var(--muted); border: 1px solid transparent; border-radius: 10px; background: transparent; font-size: 13px; white-space: nowrap; }
+.nav-command:hover { color: var(--text); background: var(--surface-subtle); }
+.nav-command.is-active { color: var(--accent-strong); border-color: var(--line-strong); background: var(--accent-soft); }
+.nav-command svg { width: 17px; height: 17px; }
+.topbar-actions { display: flex; align-items: center; gap: 10px; }
+.theme-select { position: relative; display: flex; align-items: center; }
+.theme-select > svg { position: absolute; left: 12px; width: 16px; height: 16px; color: var(--accent-strong); pointer-events: none; }
+.theme-select select { max-width: 150px; min-height: 40px; padding: 0 9px 0 34px; border: 1px solid var(--line); border-radius: 10px; font-size: 12px; }
+.icon-button { width: 40px; height: 40px; padding: 0; display: inline-grid; place-items: center; color: var(--muted); border: 1px solid var(--line); border-radius: 10px; background: var(--input); }
+.icon-button:hover { color: var(--accent-strong); border-color: var(--line-strong); background: var(--surface-subtle); }
+.icon-button.subtle { border-color: transparent; background: transparent; }
+.realm-identity { max-width: 160px; margin-left: 4px; padding-left: 16px; display: grid; grid-template-columns: 7px minmax(0,1fr); align-items: center; gap: 10px; border-left: 1px solid var(--line); }
+.online-dot, .status-beacon { width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
+.realm-identity b, .realm-identity small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.realm-identity b { font-size: 12px; }
+.realm-identity small { color: var(--muted); font-size: 12px; }
+.realm-identity.is-offline .online-dot, .status-beacon.is-idle { background: var(--danger); }
+.connection-copy.is-offline { color: var(--danger); }
+
+.world-shell { width: min(1600px, calc(100% - 48px)); height: calc(100dvh - var(--topbar-height) - 44px); min-height: 420px; margin: 22px auto; display: grid; grid-template-columns: 238px minmax(0,1fr) 340px; grid-template-areas: "realm main inventory"; gap: 18px; }
+.panel { min-width: 0; min-height: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); box-shadow: 0 10px 30px var(--shadow); }
+.panel-head { flex-shrink: 0; min-height: 80px; padding: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); }
+.panel-title { min-width: 0; display: flex; align-items: center; gap: 10px; }
+.panel-title > svg { color: var(--accent-strong); }
+.panel-head h1, .panel-head h2 { margin: 0; font-family: "STKaiti", "KaiTi", serif; font-size: 23px; line-height: 1.3; }
+.capacity, .panel-tag { flex-shrink: 0; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.capacity { padding: 3px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-subtle); }
+.panel-tag { display: none; }
+
+.realm-rail { grid-area: realm; display: flex; flex-direction: column; overflow-y: auto; }
+.realm-rail > * { flex-shrink: 0; }
+.realm-overview { min-height: 148px; margin: 14px; padding: 18px; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 12px; background: linear-gradient(90deg, var(--surface-strong), var(--overview-tint)), var(--theme-art) center 45% / cover; }
+.realm-overview > span { grid-column: 1 / -1; color: var(--muted); font-size: 12px; }
+.realm-overview strong { grid-row: 2; color: var(--accent-strong); font-size: 44px; line-height: 1; font-weight: 500; font-variant-numeric: tabular-nums; }
+.realm-overview small { grid-column: 1 / -1; color: var(--muted); font-size: 12px; }
+.realm-list { padding: 0 12px 16px; }
+.realm-row { min-width: 0; width: 100%; min-height: 80px; margin-top: 6px; padding: 12px 10px; display: grid; grid-template-columns: 36px minmax(0,1fr) 7px; align-items: center; gap: 10px; border: 1px solid transparent; border-radius: 10px; background: transparent; }
+.realm-row.is-current { border-color: var(--line-strong); background: var(--accent-soft); }
+.realm-glyph, .item-rune { width: 36px; height: 38px; display: grid; place-items: center; color: var(--accent-strong); border: 1px solid var(--line); border-radius: 8px; background: var(--surface-subtle); font-family: "STKaiti", "KaiTi", serif; font-size: 19px; }
+.realm-row b, .realm-row small { display: block; overflow-wrap: anywhere; }
+.realm-row b { font-size: 13px; font-weight: 600; line-height: 1.5; }
+.realm-row small { margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.raid-brief { margin: auto 14px 16px; padding: 18px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-strong); }
+.rule-heading { display: flex; align-items: center; gap: 8px; }
+.rule-heading svg { color: var(--accent-strong); }
+.rule-heading h3 { margin: 0; font-size: 14px; font-weight: 600; }
+.raid-brief p { margin: 10px 0 14px; color: var(--muted); font-size: 12px; line-height: 1.9; }
+.text-link, .text-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: var(--accent-strong); text-decoration: none; font-size: 12px; }
+.text-link:hover { text-decoration: underline; text-underline-offset: 4px; }
+.text-link svg, .text-button svg { width: 15px; height: 15px; }
+.text-button { min-height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: transparent; white-space: nowrap; }
+.text-button:hover { border-color: var(--line-strong); background: var(--accent-soft); }
+
+.chat-stage { position: relative; grid-area: main; display: flex; flex-direction: column; }
+.chat-stage > :not(.message-stream) { flex-shrink: 0; }
+.chat-head { min-height: 112px; padding: 24px; }
+.chat-head h1 { margin-top: 7px; font-size: 28px; }
+.kicker { color: var(--accent-strong); font-size: 10px; font-weight: 600; letter-spacing: .08em; }
+.chat-subtitle { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+.channel-filters, .market-tabs, .want-kind { flex-shrink: 0; padding: 4px; display: inline-flex; gap: 4px; border: 1px solid var(--line); border-radius: 10px; background: var(--input); }
+.channel-filters button, .market-tabs button, .want-kind button { min-height: 34px; padding: 0 13px; color: var(--muted); border: 0; border-radius: 7px; background: transparent; font-size: 12px; white-space: nowrap; }
+.channel-filters button:hover, .market-tabs button:hover, .want-kind button:hover { color: var(--text); background: var(--surface-subtle); }
+.channel-filters button.is-active, .market-tabs button.is-active, .want-kind button.is-active { color: var(--accent-ink); background: var(--accent); font-weight: 600; }
+.world-notice { min-height: 48px; padding: 11px 24px; display: flex; align-items: center; gap: 10px; color: var(--muted); border-bottom: 1px solid var(--line); background: var(--surface-strong); }
+.world-notice > svg { width: 15px; height: 15px; color: var(--accent-strong); }
+.world-notice p { margin: 0; display: flex; flex-wrap: wrap; gap: 3px 12px; font-size: 12px; }
+.world-notice a { color: var(--accent-strong); text-underline-offset: 4px; }
+.sync-label { margin-left: auto; font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.message-stream { flex: 1 1 0; min-height: 0; padding: 4px 24px 24px; overflow-y: auto; overflow-anchor: none; overscroll-behavior: contain; }
+.message-date-divider { min-height: 54px; padding: 14px 0; display: flex; align-items: center; gap: 16px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.message-date-divider::before, .message-date-divider::after { content: ""; height: 1px; flex: 1; background: var(--line); }
+.message-date-divider time { white-space: nowrap; }
+.message { padding: 14px 0; display: grid; grid-template-columns: 40px minmax(0,1fr); gap: 12px; }
+.sender-seal { width: 40px; height: 44px; display: grid; place-items: center; color: var(--accent-strong); border: 1px solid var(--line-strong); border-radius: 10px; background: var(--accent-soft); font-family: "STKaiti", "KaiTi", serif; font-size: 20px; }
+.message-body { min-width: 0; }
+.message-body > header { min-height: 24px; display: flex; align-items: center; flex-wrap: wrap; gap: 5px 12px; }
+.message-sender { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 5px 8px; }
+.message-sender b { font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+.message-realm { max-width: 100%; padding: 2px 7px; color: var(--accent-strong); border-radius: 6px; background: var(--accent-soft); font-size: 12px; overflow-wrap: anywhere; }
+.message-time { margin-left: auto; color: var(--muted); font-size: 12px; line-height: 1.6; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.message-body > p { width: fit-content; max-width: 100%; margin: 8px 0 0; padding: 11px 14px; border: 1px solid var(--line); border-radius: 2px 12px 12px 12px; background: var(--surface-strong); font-size: 14px; line-height: 1.85; white-space: pre-wrap; overflow-wrap: anywhere; }
+.message-image-list { margin-top: 9px; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(120px,100%),280px)); gap: 8px; }
+.world-message-image { margin: 0; min-width: 0; aspect-ratio: 4 / 3; display: grid; place-items: center; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-strong); }
+.message-image-list img { width: 100%; height: 100%; max-height: 210px; object-fit: contain; }
+.image-unavailable { padding: 18px; color: var(--muted); font-size: 12px; text-align: center; }
+.latest-message { position: absolute; right: 22px; bottom: 94px; z-index: 15; min-height: 40px; padding: 0 14px; display: inline-flex; align-items: center; gap: 7px; color: var(--accent-strong); border: 1px solid var(--line-strong); border-radius: 20px; background: var(--surface-strong); box-shadow: 0 6px 20px var(--shadow); font-size: 12px; white-space: nowrap; }
+.latest-message:hover { border-color: var(--accent); background: var(--accent-soft); }
+.latest-message svg { width: 15px; height: 15px; }
+.chat-composer { min-height: 82px; padding: 16px; display: grid; grid-template-columns: 36px minmax(0,1fr) auto auto; align-items: center; gap: 10px; border-top: 1px solid var(--line); background: var(--surface-strong); }
+.chat-composer label { min-width: 0; }
+.chat-composer textarea { display: block; width: 100%; min-height: 46px; max-height: 110px; padding: 11px 13px; resize: vertical; border: 1px solid var(--line); border-radius: 10px; font-size: 14px; line-height: 1.5; }
+.chat-composer textarea:focus { border-color: var(--accent); }
+.composer-count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.send-button, .primary-button { min-height: 44px; padding: 0 16px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; color: var(--accent-ink); border: 1px solid transparent; border-radius: 10px; background: var(--accent); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.send-button:hover, .primary-button:hover { background: var(--accent-strong); }
+.send-button:disabled, .primary-button:disabled, .trade-actions button:disabled { cursor: wait; opacity: .65; }
+
+.inventory-panel { grid-area: inventory; display: flex; flex-direction: column; overflow-y: auto; }
+.inventory-panel > * { flex-shrink: 0; }
+.inventory-browser { min-width: 0; padding: 18px; }
+.currency-strip { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.currency-strip button { min-width: 0; padding: 13px; text-align: left; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-strong); }
+.currency-strip button:hover, .currency-strip button.is-selected { border-color: var(--line-strong); background: var(--accent-soft); }
+.currency-strip span { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 12px; }
+.currency-strip svg { width: 14px; height: 14px; color: var(--accent-strong); }
+.currency-strip b { display: block; margin-top: 6px; color: var(--accent-strong); font-size: 18px; font-weight: 500; line-height: 1.5; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.inventory-caption { margin: 22px 0 10px; display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 10px; }
+.inventory-caption > span { font-size: 13px; font-weight: 600; }
+.inventory-caption small { margin-left: auto; color: var(--muted); font-size: 12px; }
+.inventory-search { min-height: 42px; padding: 0 12px; display: flex; align-items: center; gap: 9px; color: var(--muted); border: 1px solid var(--line); border-radius: 10px; background: var(--input); }
+.inventory-search:focus-within { border-color: var(--accent); }
+.inventory-search svg { width: 16px; height: 16px; }
+.inventory-search input { width: 100%; min-width: 0; min-height: 40px; padding: 0; border: 0; background: transparent; font-size: 13px; }
+.inventory-list { max-height: 258px; margin-top: 10px; overflow-y: auto; }
+.inventory-item { width: 100%; min-height: 68px; padding: 10px 8px; display: grid; grid-template-columns: 36px minmax(0,1fr) auto; align-items: center; gap: 10px; text-align: left; border: 1px solid transparent; border-radius: 10px; background: transparent; }
+.inventory-item:hover:not(:disabled) { background: var(--surface-subtle); }
+.inventory-item.is-selected { border-color: var(--line-strong); background: var(--accent-soft); }
+.inventory-item b, .inventory-item small { display: block; overflow-wrap: anywhere; }
+.inventory-item b { font-size: 13px; font-weight: 500; }
+.inventory-item small { margin-top: 2px; color: var(--muted); font-size: 12px; }
+.inventory-item > strong { max-width: 90px; color: var(--accent-strong); font-size: 14px; font-weight: 500; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.inventory-item.is-locked .item-rune { color: var(--muted); }
+.search-empty { margin: 16px 0; padding: 14px; color: var(--muted); border: 1px dashed var(--line); border-radius: 10px; font-size: 13px; text-align: center; }
+.trade-maker { min-width: 0; margin-top: auto; padding: 22px 18px; border-top: 1px solid var(--line); background: var(--surface-strong); }
+.trade-maker-title { margin-bottom: 16px; display: flex; align-items: flex-start; gap: 10px; }
+.trade-maker-title > svg { margin-top: 3px; color: var(--accent-strong); }
+.trade-maker-title h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.trade-maker-title p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+.trade-maker label { min-width: 0; display: block; margin-top: 14px; }
+.trade-maker label > span { display: block; margin-bottom: 7px; color: var(--muted); font-size: 12px; }
+.trade-maker input, .trade-maker select { width: 100%; min-width: 0; min-height: 42px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; }
+.trade-maker input:focus, .trade-maker select:focus { border-color: var(--accent); }
+.trade-maker input[readonly] { color: var(--accent-strong); }
+.trade-fields { display: grid; grid-template-columns: minmax(0,1fr) 88px; gap: 10px; }
+.trade-swap { height: 32px; margin-top: 8px; display: flex; align-items: center; justify-content: center; gap: 7px; color: var(--muted); font-size: 12px; }
+.trade-swap svg { width: 14px; height: 14px; color: var(--accent-strong); }
+.want-kind { width: 100%; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); }
+.want-kind button { padding-inline: 5px; }
+.trade-maker .trade-identity { margin-top: 18px; padding: 12px; display: grid; grid-template-columns: 16px 1fr; align-items: center; gap: 3px 9px; border: 1px solid var(--line); border-radius: 10px; background: var(--input); }
+.trade-identity input { width: 16px; min-height: 16px; height: 16px; margin: 0; padding: 0; accent-color: var(--accent); }
+.trade-maker .trade-identity > span { margin: 0; color: var(--text); font-size: 13px; }
+.trade-identity small { grid-column: 2; color: var(--muted); font-size: 12px; }
+.primary-button { width: 100%; margin-top: 18px; }
+
+.market-panel { grid-area: main; display: none; flex-direction: column; }
+.market-toolbar { flex-shrink: 0; padding: 20px 22px 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.market-note { flex-shrink: 0; margin: 0; padding: 4px 22px 18px; display: flex; align-items: flex-start; gap: 8px; color: var(--muted); font-size: 12px; line-height: 1.8; }
+.market-note svg { margin-top: 2px; width: 16px; height: 16px; color: var(--accent-strong); }
+.trade-grid { min-height: 0; padding: 0 22px 22px; overflow-y: auto; }
+.trade-card { min-width: 0; margin-bottom: 14px; padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-strong); }
+.trade-card:last-child { margin-bottom: 0; }
+.trade-card > header { display: grid; grid-template-columns: 38px minmax(0,1fr) auto; align-items: center; gap: 10px; }
+.trade-card > header b, .trade-card > header small { display: block; overflow-wrap: anywhere; }
+.trade-card > header b { font-size: 14px; font-weight: 600; }
+.trade-card > header small { margin-top: 2px; color: var(--muted); font-size: 12px; }
+.trade-card code { max-width: 120px; padding: 4px 7px; color: var(--accent-strong); border: 1px solid var(--line); border-radius: 6px; background: var(--input); font: 12px/1.6 Consolas, monospace; overflow-wrap: anywhere; }
+.trade-people { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 5px 18px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.exchange-line { margin-top: 16px; padding: 16px; display: grid; grid-template-columns: minmax(0,1fr) 20px minmax(0,1fr); align-items: center; gap: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--input); }
+.exchange-line > svg { color: var(--accent-strong); }
+.exchange-line small, .exchange-line b { display: block; }
+.exchange-line small { color: var(--muted); font-size: 12px; }
+.exchange-line b { margin-top: 5px; font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.trade-card footer { margin-top: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.trade-card footer > span { color: var(--success); font-size: 12px; overflow-wrap: anywhere; }
+.trade-card.is-outgoing footer > span { color: var(--accent-strong); }
+.trade-card[data-status="failed"] footer > span { color: var(--danger); }
+.trade-card[data-status="cancelled"] footer > span, .trade-card[data-status="expired"] footer > span { color: var(--muted); }
+.trade-actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px; }
+.trade-actions button { min-height: 38px; padding: 0 12px; color: var(--accent-ink); border: 1px solid transparent; border-radius: 8px; background: var(--accent); font-size: 12px; white-space: nowrap; }
+.trade-actions button + button { color: var(--accent-strong); border-color: var(--line-strong); background: transparent; }
+.trade-actions button:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-strong); }
+
+.prototype-page[data-view="market"] .chat-stage,
+.prototype-page[data-view="inventory"] .chat-stage,
+.prototype-page[data-view="realms"] .chat-stage { display: none; }
+.prototype-page[data-view="market"] .market-panel { display: flex; }
+.prototype-page[data-view="inventory"] .world-shell { grid-template-columns: 238px minmax(0,1fr); grid-template-areas: "realm inventory"; }
+.prototype-page[data-view="inventory"] .inventory-panel { display: grid; grid-template-columns: minmax(0,1.1fr) minmax(300px,1fr); grid-template-rows: auto minmax(0,1fr); overflow: hidden; }
+.prototype-page[data-view="inventory"] .inventory-panel > .panel-head { grid-column: 1 / -1; }
+.prototype-page[data-view="inventory"] .inventory-browser { padding: 26px; overflow-y: auto; }
+.prototype-page[data-view="inventory"] .inventory-list { max-height: none; }
+.prototype-page[data-view="inventory"] .trade-maker { margin: 0; padding: 26px; overflow-y: auto; border-top: 0; border-left: 1px solid var(--line); }
+.prototype-page[data-view="realms"] .world-shell { max-width: 1200px; display: block; }
+.prototype-page[data-view="realms"] .realm-rail { height: auto; max-height: 100%; }
+.prototype-page[data-view="realms"] .inventory-panel { display: none; }
+.prototype-page[data-view="realms"] .panel-tag { display: inline; }
+.prototype-page[data-view="realms"] .realm-overview { min-height: 170px; margin: 22px; padding: 26px; background-position: center 60%; }
+.prototype-page[data-view="realms"] .realm-list { padding: 0 22px 22px; display: grid; grid-template-columns: repeat(auto-fit,minmax(240px,1fr)); gap: 12px; }
+.prototype-page[data-view="realms"] .realm-row { margin: 0; min-height: 100px; padding: 18px; border-color: var(--line); background: var(--surface-strong); }
+.prototype-page[data-view="realms"] .realm-row.is-current { border-color: var(--line-strong); background: var(--accent-soft); }
+.prototype-page[data-view="realms"] .raid-brief { margin: auto 22px 22px; }
+.mobile-nav { display: none; }
+.loading-state, .empty-state { min-height: 180px; padding: 28px 18px; display: grid; align-content: center; justify-items: center; gap: 14px; color: var(--muted); font-size: 13px; line-height: 1.9; text-align: center; white-space: pre-line; }
+.empty-state::before { content: "诸"; width: 46px; height: 50px; display: grid; place-items: center; color: var(--accent-strong); border: 1px solid var(--line-strong); border-radius: 10px; background: var(--accent-soft); font-family: "STKaiti", "KaiTi", serif; font-size: 24px; }
+.loading-state::before { content: ""; width: 64px; height: 6px; border-radius: 3px; background: var(--line-strong); }
+.world-error { margin: 0; padding: 12px 20px; color: var(--danger); border-bottom: 1px solid var(--line); background: var(--surface-strong); font-size: 12px; }
+.toast { position: fixed; right: 24px; bottom: 24px; z-index: 30; max-width: min(400px,calc(100vw - 32px)); padding: 14px 18px; color: var(--text); border: 1px solid var(--line-strong); border-radius: 12px; background: var(--surface-strong); box-shadow: 0 12px 36px var(--shadow); opacity: 0; transform: translateY(8px); pointer-events: none; transition: opacity .18s, transform .18s; font-size: 13px; }
+.toast.is-visible { opacity: 1; transform: none; }
+.realm-rail, .inventory-panel, .inventory-browser, .inventory-list, .trade-maker, .trade-grid, .message-stream { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; overscroll-behavior: contain; }
+
+.prototype-page[data-theme="celestial"] { color-scheme: dark; }
+.prototype-page[data-theme="forge"] {
+  --canvas: #15130f;
+  --surface: #211e18;
+  --surface-strong: #2b271f;
+  --surface-subtle: #342e24;
+  --input: #1c1914;
+  --text: #f2ecdf;
+  --muted: #c0b5a1;
+  --accent: #d4ad70;
+  --accent-strong: #f0cf95;
+  --accent-soft: #3a3021;
+  --accent-ink: #282016;
+  --line: #443b2d;
+  --line-strong: #8c7147;
+  --success: #b0c99e;
+  --danger: #edb2a5;
+  --shadow: rgba(16,11,5,.2);
+  --theme-art: url("/world/assets/najie.jpg");
+  --overview-tint: rgba(30,23,13,.5);
+  color-scheme: dark;
+}
+.prototype-page[data-theme="scroll"] {
+  --canvas: #e8eeea;
+  --surface: #f7f9f5;
+  --surface-strong: #eef2ed;
+  --surface-subtle: #e6ece6;
+  --input: #fbfcf9;
+  --text: #253c34;
+  --muted: #5c7066;
+  --accent: #a24b40;
+  --accent-strong: #873c33;
+  --accent-soft: #f0e3dc;
+  --accent-ink: #fff9f3;
+  --line: #d3ddd4;
+  --line-strong: #b28e7e;
+  --success: #3e6950;
+  --danger: #a83f35;
+  --shadow: rgba(44,68,54,.07);
+  --theme-art: url("/world/assets/scroll.jpg");
+  --overview-tint: rgba(238,244,236,.65);
+  color-scheme: light;
+}
+
+@media (max-width: 1399px) {
+  .world-topbar { gap: 16px; padding-inline: 20px; }
+  .realm-identity { display: none; }
+  .world-shell { width: calc(100% - 32px); grid-template-columns: 210px minmax(0,1fr) 310px; gap: 14px; }
+  .prototype-page[data-view="inventory"] .world-shell { grid-template-columns: 210px minmax(0,1fr); }
+  .panel-head { padding-inline: 18px; }
+  .realm-overview { margin-inline: 12px; padding: 16px 12px; }
+  .realm-list { padding-inline: 8px; }
+  .realm-row { gap: 8px; padding-inline: 8px; }
+  .realm-row small { font-size: 12px; }
+  .inventory-browser, .trade-maker { padding-inline: 16px; }
+}
+@media (min-width: 961px) and (max-width: 1199px) {
+  .world-shell { grid-template-columns: minmax(0,1fr) 310px; grid-template-areas: "main inventory"; }
+  .realm-rail { display: none; }
+  .prototype-page[data-view="inventory"] .world-shell { grid-template-columns: minmax(0,1fr); grid-template-areas: "inventory"; }
+  .prototype-page[data-view="realms"] .realm-rail { display: flex; }
+}
+@media (max-width: 960px) {
+  :root { --topbar-height: 64px; }
+  .world-topbar { padding: 0 20px; grid-template-columns: minmax(0,1fr) auto; gap: 12px; }
+  .primary-nav { display: none; }
+  .world-brand b { font-size: 21px; }
+  .world-brand small { display: none; }
+  .brand-seal { width: 36px; height: 40px; font-size: 22px; }
+  .world-shell, .prototype-page[data-view="inventory"] .world-shell { width: calc(100% - 28px); height: calc(100dvh - var(--topbar-height) - 110px - env(safe-area-inset-bottom)); min-height: 250px; margin: 14px auto; display: block; }
+  .prototype-page [data-panel] { display: none; height: 100%; }
+  .prototype-page[data-view="chat"] [data-panel="chat"],
+  .prototype-page[data-view="market"] [data-panel="market"],
+  .prototype-page[data-view="inventory"] [data-panel="inventory"],
+  .prototype-page[data-view="realms"] [data-panel="realms"] { display: flex; flex-direction: column; }
+  .prototype-page[data-view="inventory"] .inventory-panel { overflow-y: auto; }
+  .prototype-page[data-view="inventory"] .inventory-browser { padding: 22px; overflow: visible; }
+  .prototype-page[data-view="inventory"] .trade-maker { padding: 24px 22px; overflow: visible; border-top: 1px solid var(--line); border-left: 0; }
+  .prototype-page[data-view="realms"] .realm-list { grid-template-columns: repeat(auto-fill,minmax(220px,1fr)); }
+  .mobile-nav { position: fixed; left: 14px; right: 14px; bottom: calc(10px + env(safe-area-inset-bottom)); z-index: 20; min-height: 66px; padding: 4px; display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 4px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: 0 8px 28px var(--shadow); }
+  .mobile-nav button { min-width: 0; min-height: 56px; padding: 6px; display: grid; justify-items: center; align-content: center; gap: 3px; color: var(--muted); border: 0; border-radius: 11px; background: transparent; font-size: 12px; }
+  .mobile-nav button.is-active { color: var(--accent-strong); background: var(--accent-soft); }
+  .mobile-nav svg { width: 20px; height: 20px; }
+  .toast { right: 16px; bottom: calc(92px + env(safe-area-inset-bottom)); }
+}
+@media (max-width: 600px) {
+  .world-topbar { padding-inline: 14px; gap: 8px; }
+  .world-brand { gap: 8px; }
+  .world-brand b { font-size: 19px; }
+  .brand-seal { width: 31px; height: 36px; font-size: 20px; }
+  .topbar-actions { gap: 7px; }
+  .theme-select > svg { display: none; }
+  .theme-select select { width: 108px; min-height: 38px; padding: 0 6px; font-size: 12px; }
+  .topbar-actions .icon-button { width: 36px; height: 38px; }
+  .world-shell, .prototype-page[data-view="inventory"] .world-shell { width: calc(100% - 20px); margin-block: 10px; height: calc(100dvh - var(--topbar-height) - 102px - env(safe-area-inset-bottom)); }
+  .panel { border-radius: 15px; }
+  .panel-head { min-height: 74px; padding: 18px; }
+  .panel-head h2 { font-size: 22px; }
+  .chat-head { min-height: 104px; gap: 8px; }
+  .chat-head h1 { font-size: 25px; }
+  .chat-subtitle { max-width: 180px; font-size: 12px; }
+  .kicker { font-size: 9px; letter-spacing: 0; }
+  .channel-filters { padding: 3px; gap: 2px; }
+  .channel-filters button { min-height: 33px; padding-inline: 10px; }
+  .world-notice { padding: 10px 16px; gap: 8px; }
+  .world-notice .sync-label { display: none; }
+  .world-notice p { gap: 2px 10px; }
+  .message-stream { padding: 2px 16px 20px; }
+  .message { grid-template-columns: 34px minmax(0,1fr); gap: 9px; padding-block: 12px; }
+  .sender-seal { width: 34px; height: 39px; font-size: 18px; }
+  .message-body > header { gap: 4px; }
+  .message-body > header time { flex-basis: 100%; margin-left: 0; text-align: left; }
+  .message-sender b { font-size: 13px; }
+  .message-realm { padding-inline: 6px; }
+  .message-body > p { padding: 10px 12px; font-size: 14px; }
+  .message-date-divider { min-height: 48px; gap: 12px; }
+  .message-image-list { grid-template-columns: repeat(auto-fit,minmax(min(120px,100%),1fr)); }
+  .chat-composer { min-height: 76px; padding: 12px 10px; grid-template-columns: 30px minmax(0,1fr) auto; gap: 7px; }
+  .chat-composer > .icon-button { width: 30px; }
+  .chat-composer textarea { padding-inline: 10px; font-size: 16px; }
+  .composer-count { display: none; }
+  .send-button { width: 42px; min-height: 44px; padding: 0; }
+  .send-button span { display: none; }
+  .latest-message { right: 16px; bottom: 88px; }
+  .prototype-page[data-view="inventory"] .inventory-browser { padding: 18px; }
+  .prototype-page[data-view="inventory"] .trade-maker { padding: 24px 18px; }
+  .inventory-list { max-height: none; }
+  .trade-maker input, .trade-maker select, .inventory-search input { font-size: 16px; }
+  .currency-strip b { font-size: 22px; }
+  .inventory-item { min-height: 74px; }
+  .market-toolbar { padding: 16px 16px 10px; }
+  .market-tabs button { padding-inline: 12px; }
+  .market-toolbar .text-button { padding-inline: 8px; }
+  .market-note { padding-inline: 16px; }
+  .trade-grid { padding: 0 16px 20px; }
+  .trade-card { padding: 16px; }
+  .trade-card > header { grid-template-columns: 36px minmax(0,1fr); }
+  .trade-card code { grid-column: 2; justify-self: start; max-width: 100%; }
+  .trade-people { flex-direction: column; gap: 4px; }
+  .exchange-line { gap: 10px; padding: 12px; }
+  .trade-actions { width: 100%; }
+  .trade-actions button { flex: 1; min-height: 42px; }
+  .prototype-page[data-view="realms"] .realm-overview { margin: 16px; padding: 22px; }
+  .prototype-page[data-view="realms"] .realm-list { padding: 0 16px 16px; grid-template-columns: minmax(0,1fr); }
+  .prototype-page[data-view="realms"] .raid-brief { margin: auto 16px 16px; }
+  .mobile-nav { left: 10px; right: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
+}

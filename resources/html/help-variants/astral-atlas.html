@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="{{pluResPath}}/html/help/icons.css" />
+    <link rel="stylesheet" href="{{pluResPath}}/html/help-variants/astral-atlas.css" />
+  </head>
+  <body>
+    <main id="container" class="astral-atlas">
+      <header class="atlas-hero">
+        <div class="atlas-orbit"><i></i><i></i><i></i><b>诸</b></div>
+        <div class="atlas-kicker"><span>ZHUTIAN / REALM NAVIGATION</span><span>观测历 · {{version}}</span></div>
+        <div class="atlas-copy">
+          <small>横渡星海 · 勘定万界</small>
+          <h1>诸天星图</h1>
+          <p>万界指令观测档案</p>
+        </div>
+        <div class="atlas-coordinates"><span>界域总览</span><b>{{helpData.length}}</b><small>REALM SECTORS</small></div>
+        <div class="atlas-axis"><span>太初</span><i></i><span>现世</span><i></i><span>彼岸</span></div>
+      </header>
+
+      <section class="atlas-body">
+        {{each helpData val groupIndex}}
+        <article class="sector">
+          <header class="sector-heading">
+            <div class="sector-code">SECTOR / {{groupIndex < 9 ? '0' + (groupIndex + 1) : groupIndex + 1}}</div>
+            <h2>{{val.group}}</h2>
+            <span>{{val.list.length}} 条可用航路</span>
+          </header>
+          <div class="route-grid">
+            {{each val.list item itemIndex}}
+            <div class="route">
+              <div class="route-icon"><span class="help-icon {{item.icon}}"></span></div>
+              <div class="route-copy"><strong>{{item.title}}</strong><p>{{item.desc}}</p></div>
+              <div class="route-mark">{{itemIndex < 9 ? '0' + (itemIndex + 1) : itemIndex + 1}}</div>
+            </div>
+            {{/each}}
+          </div>
+        </article>
+        {{/each}}
+      </section>
+
+      <footer class="atlas-footer"><span>OBSERVATORY ONLINE</span><b>坐标已校准 · 可横渡诸天</b><span>YUNZAI / V{{version}}</span></footer>
+    </main>
+  </body>
+</html>

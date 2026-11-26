@@ -1,0 +1,455 @@
+:root {
+  font-family: "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+  color: #eef3f1;
+  background: #081012;
+  font-synthesis: none;
+  letter-spacing: 0;
+  --topbar-height: 72px;
+  --accent: #d9bd72;
+  --accent-strong: #f0d486;
+  --accent-soft: rgba(217, 189, 114, .12);
+  --surface: rgba(11, 20, 23, .88);
+  --surface-strong: rgba(14, 25, 28, .96);
+  --surface-subtle: rgba(255, 255, 255, .035);
+  --line: rgba(221, 232, 228, .13);
+  --line-strong: rgba(217, 189, 114, .32);
+  --text: #eef3f1;
+  --muted: #91a29d;
+  --quiet: #687974;
+  --danger: #d06d63;
+  --success: #64ac88;
+  --radius: 4px;
+}
+
+* { box-sizing: border-box; letter-spacing: 0; }
+html { min-width: 320px; scroll-behavior: smooth; }
+body { min-width: 320px; min-height: 100dvh; margin: 0; }
+button, input, textarea, select { font: inherit; letter-spacing: 0; }
+button, select { cursor: pointer; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+button:active, .review-link:active { transform: translateY(1px); }
+img { display: block; max-width: 100%; }
+a { color: inherit; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.skip-link { position: fixed; top: 8px; left: 8px; z-index: 100; padding: 9px 12px; color: #071012; background: var(--accent-strong); transform: translateY(-160%); }
+.skip-link:focus { transform: translateY(0); }
+.eyebrow, .kicker { color: var(--accent); font-size: 10px; font-weight: 700; line-height: 1; }
+
+/* Template approval */
+.approval-page { color: #e8eeeb; background: #0a1113; }
+.approval-page::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; background: linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px) 0 0 / 96px 96px, linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px) 0 0 / 96px 96px; }
+.approval-head { min-height: 280px; padding: 68px max(28px, calc((100vw - 1320px) / 2)); display: flex; justify-content: space-between; align-items: flex-end; gap: 40px; border-bottom: 1px solid rgba(255,255,255,.12); background: linear-gradient(90deg, rgba(9,18,20,.96), rgba(9,18,20,.65)), url("../../img/help/zhutian.jpg") center 52% / cover; }
+.approval-head h1 { margin: 12px 0 13px; color: #f4f3ec; font-family: "STKaiti", "KaiTi", serif; font-size: 48px; line-height: 1; font-weight: 700; }
+.approval-head p { max-width: 650px; margin: 0; color: #a7b5b0; font-size: 14px; line-height: 1.8; }
+.approval-mark { width: 96px; height: 120px; display: grid; place-items: center; flex: 0 0 auto; color: #ead082; border: 1px solid rgba(234,208,130,.65); box-shadow: inset 0 0 0 7px rgba(8,16,18,.75), inset 0 0 0 8px rgba(234,208,130,.2); font-family: "STKaiti", "KaiTi", serif; font-size: 48px; }
+.approval-list { max-width: 1320px; margin: 0 auto; }
+.approval-option { min-height: 360px; display: grid; grid-template-columns: minmax(360px, .9fr) minmax(420px, 1.1fr); border-bottom: 1px solid rgba(255,255,255,.12); }
+.approval-option:nth-child(even) { grid-template-columns: minmax(420px, 1.1fr) minmax(360px, .9fr); }
+.approval-option:nth-child(even) .approval-visual { order: 2; }
+.approval-visual { position: relative; min-height: 360px; overflow: hidden; }
+.approval-visual::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(90deg, transparent 55%, #0a1113); }
+.approval-option:nth-child(even) .approval-visual::after { background: linear-gradient(-90deg, transparent 55%, #0a1113); }
+.approval-visual img { width: 100%; height: 100%; object-fit: cover; transition: transform .45s ease; }
+.approval-option:hover .approval-visual img { transform: scale(1.025); }
+.option-forge .approval-visual img { object-position: center 34%; }
+.option-scroll .approval-visual img { object-position: center; }
+.approval-visual > span { position: absolute; left: 22px; bottom: 20px; z-index: 1; width: 46px; height: 58px; display: grid; place-items: center; color: #f2d98f; border: 1px solid rgba(242,217,143,.65); background: rgba(8,14,16,.72); font-family: "STKaiti", "KaiTi", serif; font-size: 24px; }
+.approval-copy { padding: 54px clamp(34px, 6vw, 84px); display: flex; flex-direction: column; justify-content: center; }
+.approval-copy h2 { margin: 10px 0 14px; color: #f2f3ee; font-family: "STKaiti", "KaiTi", serif; font-size: 34px; line-height: 1; }
+.approval-copy > p:not(.eyebrow) { max-width: 520px; margin: 0; color: #9eada8; font-size: 14px; line-height: 1.8; }
+.approval-copy dl { margin: 25px 0 28px; border-top: 1px solid rgba(255,255,255,.1); }
+.approval-copy dl div { padding: 10px 0; display: grid; grid-template-columns: 74px 1fr; border-bottom: 1px solid rgba(255,255,255,.07); font-size: 12px; }
+.approval-copy dt { color: #687873; }
+.approval-copy dd { margin: 0; color: #cbd4d1; }
+.review-link { width: fit-content; min-height: 42px; padding: 0 16px; display: inline-flex; align-items: center; gap: 14px; color: #111714; background: #d9bd72; text-decoration: none; font-size: 12px; font-weight: 700; }
+.review-link:hover { background: #eed58d; }
+.approval-foot { max-width: 1320px; min-height: 76px; margin: 0 auto; padding: 0 20px; display: flex; justify-content: space-between; align-items: center; color: #73827d; font-size: 11px; }
+.approval-foot a { color: #d9bd72; text-decoration: none; }
+
+/* World prototype base */
+.prototype-page { overflow-x: hidden; color: var(--text); background: #081012; }
+.world-backdrop { position: fixed; inset: 0; z-index: -2; background-position: center; background-size: cover; }
+.world-backdrop::after { content: ""; position: absolute; inset: 0; background: rgba(5, 11, 13, .72); }
+.world-topbar { position: sticky; top: 0; z-index: 20; min-height: var(--topbar-height); padding: 0 24px; display: grid; grid-template-columns: 260px 1fr auto; align-items: center; gap: 24px; border-bottom: 1px solid var(--line); background: rgba(7, 14, 16, .92); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
+.world-brand { min-width: 0; display: flex; align-items: center; gap: 11px; text-decoration: none; }
+.brand-seal { width: 38px; height: 46px; display: grid; place-items: center; color: var(--accent-strong); border: 1px solid var(--line-strong); box-shadow: inset 0 0 0 4px rgba(0,0,0,.15); font-family: "STKaiti", "KaiTi", serif; font-size: 21px; }
+.world-brand b, .world-brand small { display: block; }
+.world-brand b { color: var(--text); font-family: "STKaiti", "KaiTi", serif; font-size: 20px; line-height: 1; }
+.world-brand small { margin-top: 6px; color: var(--quiet); font-size: 8px; }
+.primary-nav { height: var(--topbar-height); display: flex; justify-content: center; align-items: stretch; gap: 2px; }
+.nav-command { position: relative; min-width: 96px; padding: 0 15px; display: inline-flex; justify-content: center; align-items: center; gap: 7px; color: var(--muted); border: 0; background: transparent; font-size: 12px; }
+.nav-command::after { content: ""; position: absolute; left: 15px; right: 15px; bottom: 0; height: 2px; background: transparent; }
+.nav-command:hover { color: var(--text); background: var(--surface-subtle); }
+.nav-command.is-active { color: var(--accent-strong); }
+.nav-command.is-active::after { background: var(--accent); }
+.nav-command svg { width: 15px; height: 15px; stroke-width: 1.7; }
+.topbar-actions { display: flex; align-items: center; justify-content: flex-end; gap: 11px; }
+.theme-select select { min-height: 34px; padding: 0 28px 0 10px; color: var(--muted); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-strong); font-size: 10px; }
+.icon-button { position: relative; width: 36px; height: 36px; padding: 0; display: inline-grid; place-items: center; color: var(--muted); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-subtle); }
+.icon-button:hover { color: var(--accent-strong); border-color: var(--line-strong); }
+.icon-button svg { width: 16px; height: 16px; stroke-width: 1.7; }
+.icon-button.subtle { border-color: transparent; background: transparent; }
+.notification-dot { position: absolute; top: 7px; right: 7px; width: 5px; height: 5px; border-radius: 50%; background: #db7a68; box-shadow: 0 0 0 2px var(--surface-strong); }
+.realm-identity { min-width: 170px; padding-left: 4px; display: grid; grid-template-columns: 8px 1fr; align-items: center; gap: 8px; }
+.online-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 4px rgba(100,172,136,.1); }
+.realm-identity b, .realm-identity small { display: block; }
+.realm-identity b { overflow: hidden; text-overflow: ellipsis; color: var(--text); font-size: 11px; white-space: nowrap; }
+.realm-identity small { margin-top: 4px; color: var(--quiet); font-size: 9px; }
+
+.world-shell { width: min(100%, 1680px); min-height: calc(100dvh - var(--topbar-height)); margin: 0 auto; display: grid; gap: 1px; background: var(--line); }
+.panel { min-width: 0; background: var(--surface); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
+.panel-head { min-height: 64px; padding: 14px 17px; display: flex; justify-content: space-between; align-items: center; gap: 14px; border-bottom: 1px solid var(--line); }
+.panel-head h1, .panel-head h2 { margin: 6px 0 0; color: var(--text); font-family: "STKaiti", "KaiTi", serif; font-size: 21px; line-height: 1; }
+.panel-head h1 { font-size: 24px; }
+.capacity { color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+
+.realm-rail { grid-area: realm; min-height: calc(100dvh - var(--topbar-height)); }
+.realm-overview { min-height: 108px; padding: 20px 18px; display: grid; grid-template-columns: 1fr auto; align-items: end; border-bottom: 1px solid var(--line); }
+.realm-overview span { align-self: start; color: var(--muted); font-size: 10px; }
+.realm-overview strong { grid-row: 1 / 3; grid-column: 2; color: var(--accent-strong); font-family: Georgia, serif; font-size: 44px; line-height: 1; font-weight: 400; }
+.realm-overview small { color: var(--quiet); font-size: 9px; }
+.realm-list { padding: 8px 0; }
+.realm-row { width: 100%; min-height: 58px; padding: 8px 15px; display: grid; grid-template-columns: 34px 1fr 8px; align-items: center; gap: 10px; text-align: left; color: var(--muted); border: 0; border-left: 2px solid transparent; background: transparent; }
+.realm-row:hover { background: var(--surface-subtle); }
+.realm-row.is-current { color: var(--text); border-left-color: var(--accent); background: var(--accent-soft); }
+.realm-glyph { width: 32px; height: 32px; display: grid; place-items: center; flex: 0 0 auto; color: var(--accent-strong); border: 1px solid var(--line-strong); background: var(--accent-soft); font-family: "STKaiti", "KaiTi", serif; font-size: 15px; }
+.realm-row b, .realm-row small { display: block; }
+.realm-row b { overflow: hidden; text-overflow: ellipsis; color: inherit; font-size: 11px; white-space: nowrap; }
+.realm-row small { margin-top: 5px; color: var(--quiet); font-size: 9px; }
+.status-beacon { width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
+.status-beacon.is-idle { background: #9d8361; }
+.raid-brief { margin: 10px 15px 18px; padding: 16px 14px 14px; border-top: 2px solid var(--accent); background: var(--surface-subtle); }
+.raid-brief-icon { float: right; width: 38px; height: 38px; display: grid; place-items: center; color: var(--accent); border: 1px solid var(--line-strong); }
+.raid-brief-icon svg { width: 18px; stroke-width: 1.5; }
+.raid-brief > span { color: var(--accent); font-size: 9px; }
+.raid-brief h3 { margin: 9px 0 7px; color: var(--text); font-family: "STKaiti", "KaiTi", serif; font-size: 17px; }
+.raid-brief p { margin: 0; color: var(--quiet); font-size: 9px; }
+.text-button { margin-top: 14px; padding: 0; display: inline-flex; align-items: center; gap: 4px; color: var(--accent-strong); border: 0; background: transparent; font-size: 10px; }
+.text-button svg { width: 12px; }
+
+.chat-stage { grid-area: chat; min-height: 720px; display: flex; flex-direction: column; }
+.chat-head { min-height: 76px; }
+.channel-filters, .market-tabs { padding: 3px; display: flex; gap: 2px; border: 1px solid var(--line); background: rgba(0,0,0,.1); }
+.channel-filters button, .market-tabs button { min-width: 48px; height: 27px; padding: 0 10px; color: var(--quiet); border: 0; background: transparent; font-size: 9px; }
+.channel-filters button:hover, .market-tabs button:hover { color: var(--text); }
+.channel-filters button.is-active, .market-tabs button.is-active { color: #111713; background: var(--accent); }
+.world-notice { min-height: 43px; padding: 9px 17px; display: grid; grid-template-columns: 18px 1fr auto; align-items: center; gap: 9px; color: var(--muted); border-bottom: 1px solid var(--line); background: var(--accent-soft); }
+.world-notice svg { width: 14px; color: var(--accent-strong); stroke-width: 1.5; }
+.world-notice p { margin: 0; font-size: 10px; line-height: 1.5; }
+.world-notice b { color: var(--accent-strong); }
+.world-notice time { color: var(--quiet); font-size: 9px; }
+.message-stream { flex: 1; min-height: 420px; max-height: calc(100dvh - 253px); padding: 7px 20px 18px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+.message { padding: 16px 0; display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 11px; border-bottom: 1px solid var(--line); }
+.message[hidden] { display: none; }
+.sender-seal { width: 36px; height: 42px; display: grid; place-items: center; color: #0d1715; background: var(--accent); box-shadow: inset 0 0 0 1px rgba(255,255,255,.3), inset 0 0 0 5px rgba(0,0,0,.12); font-family: "STKaiti", "KaiTi", serif; font-size: 16px; }
+.seal-jade { background: #7cae98; }
+.seal-gold { background: #d9bd72; }
+.seal-cinnabar { color: #fff1e9; background: #a94f45; }
+.seal-blue { color: #ecf5f7; background: #537e8b; }
+.message-body { min-width: 0; }
+.message-body > header { min-height: 20px; display: flex; align-items: baseline; gap: 8px; }
+.message-body > header b { color: var(--text); font-size: 11px; }
+.message-body > header span { color: var(--accent); font-size: 9px; }
+.message-body > header time { margin-left: auto; color: var(--quiet); font-size: 8px; }
+.message-body > p { margin: 7px 0 0; color: #cbd5d2; font-size: 12px; line-height: 1.75; overflow-wrap: anywhere; }
+.message-actions { margin-top: 8px; display: flex; gap: 10px; opacity: 0; transition: opacity .18s ease; }
+.message:hover .message-actions, .message:focus-within .message-actions { opacity: 1; }
+.message-actions button { padding: 0; color: var(--quiet); border: 0; background: transparent; font-size: 9px; }
+.message-actions button:hover { color: var(--accent-strong); }
+.inline-trade { min-height: 77px; margin-top: 9px; padding: 11px 12px; display: grid; grid-template-columns: 1fr 24px 1fr auto; align-items: center; gap: 10px; border-left: 2px solid var(--accent); background: var(--surface-subtle); }
+.inline-trade > svg, .exchange-line > svg { width: 15px; color: var(--accent); stroke-width: 1.5; }
+.inline-trade small, .inline-trade strong { display: block; }
+.inline-trade small { color: var(--quiet); font-size: 8px; }
+.inline-trade strong { margin-top: 6px; color: var(--text); font-size: 11px; }
+.inline-trade em { color: var(--accent-strong); font-style: normal; }
+.inline-trade button, .trade-card footer button, .raid-call button { min-height: 32px; padding: 0 11px; color: #101713; border: 0; border-radius: var(--radius); background: var(--accent); font-size: 9px; font-weight: 700; }
+.inline-trade button:hover, .trade-card footer button:hover, .raid-call button:hover { background: var(--accent-strong); }
+.message-image { position: relative; width: min(300px, 100%); aspect-ratio: 16 / 8; margin: 10px 0 0; overflow: hidden; border: 1px solid var(--line); }
+.message-image img { width: 100%; height: 100%; object-fit: cover; object-position: center 55%; }
+.message-image figcaption { position: absolute; left: 0; right: 0; bottom: 0; padding: 20px 10px 7px; color: #eef3f1; background: linear-gradient(transparent, rgba(4,9,11,.85)); font-size: 8px; }
+.raid-call { margin-top: 8px; padding: 12px; border-top: 2px solid #698d95; background: rgba(83,126,139,.1); }
+.raid-call > span { color: #8eb5be; font-size: 8px; }
+.raid-call > strong { display: block; margin-top: 5px; color: var(--text); font-family: "STKaiti", "KaiTi", serif; font-size: 16px; }
+.raid-call p { margin: 6px 0 11px; color: var(--quiet); font-size: 9px; }
+.raid-call .quiet-button { margin-left: 6px; color: #a9c2c7; border: 1px solid rgba(142,181,190,.35); background: transparent; }
+.chat-composer { min-height: 66px; padding: 10px 13px; display: grid; grid-template-columns: 36px minmax(0, 1fr) auto auto; align-items: center; gap: 8px; border-top: 1px solid var(--line-strong); background: var(--surface-strong); }
+.chat-composer label { min-width: 0; }
+.chat-composer textarea { width: 100%; min-height: 40px; max-height: 100px; padding: 10px 11px; resize: vertical; color: var(--text); border: 1px solid var(--line); border-radius: var(--radius); outline: 0; background: rgba(255,255,255,.035); font-size: 11px; line-height: 1.5; }
+.chat-composer textarea:focus { border-color: var(--line-strong); }
+.chat-composer textarea::placeholder { color: var(--quiet); }
+.composer-count { color: var(--quiet); font-size: 8px; font-variant-numeric: tabular-nums; }
+.send-button { min-width: 72px; height: 40px; display: inline-flex; justify-content: center; align-items: center; gap: 6px; color: #111713; border: 0; border-radius: var(--radius); background: var(--accent); font-size: 10px; font-weight: 700; }
+.send-button:hover { background: var(--accent-strong); }
+.send-button svg { width: 14px; stroke-width: 1.8; }
+
+.inventory-panel { grid-area: inv; min-height: calc(100dvh - var(--topbar-height)); }
+.inventory-search { height: 37px; margin: 12px 15px; padding: 0 10px; display: grid; grid-template-columns: 16px 1fr; align-items: center; gap: 7px; color: var(--quiet); border: 1px solid var(--line); border-radius: var(--radius); background: rgba(0,0,0,.1); }
+.inventory-search svg { width: 14px; stroke-width: 1.5; }
+.inventory-search input { min-width: 0; color: var(--text); border: 0; outline: 0; background: transparent; font-size: 10px; }
+.inventory-search input::placeholder { color: var(--quiet); }
+.currency-strip { margin: 0 15px 10px; display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line); }
+.currency-strip div { min-width: 0; padding: 10px; }
+.currency-strip div + div { border-left: 1px solid var(--line); }
+.currency-strip span, .currency-strip b { display: block; }
+.currency-strip span { color: var(--quiet); font-size: 8px; }
+.currency-strip b { margin-top: 5px; overflow: hidden; text-overflow: ellipsis; color: var(--accent-strong); font-family: Georgia, serif; font-size: 14px; font-weight: 400; white-space: nowrap; }
+.inventory-list { max-height: 274px; padding: 0 15px 10px; overflow-y: auto; }
+.inventory-item { width: 100%; min-height: 51px; padding: 6px 8px; display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 9px; text-align: left; color: var(--muted); border: 1px solid transparent; border-bottom-color: var(--line); background: transparent; }
+.inventory-item:hover { background: var(--surface-subtle); }
+.inventory-item.is-selected { color: var(--text); border-color: var(--line-strong); background: var(--accent-soft); }
+.item-rune { width: 31px; height: 31px; display: grid; place-items: center; color: var(--accent-strong); border: 1px solid var(--line-strong); background: rgba(0,0,0,.12); font-family: "STKaiti", "KaiTi", serif; font-size: 14px; }
+.item-rune svg { width: 12px; }
+.inventory-item b, .inventory-item small { display: block; }
+.inventory-item b { overflow: hidden; text-overflow: ellipsis; color: inherit; font-size: 10px; white-space: nowrap; }
+.inventory-item small { margin-top: 4px; color: var(--quiet); font-size: 8px; }
+.inventory-item > strong { color: var(--accent-strong); font-family: Georgia, serif; font-size: 12px; font-weight: 400; }
+.inventory-item.is-locked { cursor: not-allowed; opacity: .45; }
+.trade-maker { margin-top: 4px; padding: 15px; border-top: 1px solid var(--line-strong); background: rgba(0,0,0,.1); }
+.trade-maker-title { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.trade-maker-title span { color: var(--text); font-family: "STKaiti", "KaiTi", serif; font-size: 17px; }
+.trade-maker-title small { color: var(--success); font-size: 8px; }
+.trade-maker label { display: block; margin-top: 10px; }
+.trade-maker label > span { display: block; margin-bottom: 5px; color: var(--quiet); font-size: 8px; }
+.trade-maker input, .trade-maker select { width: 100%; min-width: 0; height: 35px; padding: 0 9px; color: var(--text); border: 1px solid var(--line); border-radius: var(--radius); outline: 0; background: rgba(255,255,255,.035); font-size: 10px; }
+.trade-maker input:focus, .trade-maker select:focus { border-color: var(--line-strong); }
+.trade-fields { display: grid; grid-template-columns: 1fr 80px; gap: 8px; }
+.trade-swap { height: 26px; display: flex; justify-content: center; align-items: center; gap: 6px; color: var(--quiet); font-size: 8px; }
+.trade-swap svg { width: 13px; color: var(--accent); }
+.want-kind { margin-top: 2px; padding: 3px; display: grid; grid-template-columns: 1fr 1fr; gap: 2px; border: 1px solid var(--line); background: rgba(0,0,0,.08); }
+.want-kind button { min-height: 30px; padding: 0 7px; color: var(--quiet); border: 0; border-radius: calc(var(--radius) - 1px); background: transparent; font-size: 9px; }
+.want-kind button:hover { color: var(--text); }
+.want-kind button.is-active { color: #111713; background: var(--accent); font-weight: 700; }
+.trade-fields[hidden] { display: none; }
+.primary-button { width: 100%; min-height: 39px; margin-top: 12px; display: inline-flex; justify-content: center; align-items: center; gap: 7px; color: #101713; border: 0; border-radius: var(--radius); background: var(--accent); font-size: 10px; font-weight: 700; }
+.primary-button:hover { background: var(--accent-strong); }
+.primary-button svg { width: 14px; }
+
+.market-panel { grid-area: market; }
+.market-tabs { margin-left: auto; }
+.trade-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.trade-card { min-width: 0; padding: 14px 16px 13px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.trade-card:nth-child(even) { border-right: 0; }
+.trade-card > header { display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 9px; }
+.trade-card > header b, .trade-card > header small { display: block; }
+.trade-card > header b { color: var(--text); font-size: 10px; }
+.trade-card > header small { margin-top: 4px; color: var(--quiet); font-size: 8px; }
+.trade-card code { color: var(--accent); font-family: Consolas, monospace; font-size: 9px; }
+.exchange-line { min-height: 62px; margin-top: 11px; padding: 9px 10px; display: grid; grid-template-columns: 1fr 20px 1fr; align-items: center; gap: 8px; background: var(--surface-subtle); }
+.exchange-line small, .exchange-line b { display: block; }
+.exchange-line small { color: var(--quiet); font-size: 8px; }
+.exchange-line b { margin-top: 5px; color: var(--text); font-size: 10px; }
+.trade-card footer { margin-top: 10px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.trade-card footer span { color: var(--success); font-size: 8px; }
+
+.mobile-nav { display: none; }
+.toast { position: fixed; right: 20px; bottom: 20px; z-index: 60; max-width: min(380px, calc(100vw - 40px)); padding: 12px 14px; color: var(--text); border-left: 3px solid var(--accent); background: var(--surface-strong); box-shadow: 0 18px 48px rgba(0,0,0,.3); opacity: 0; transform: translateY(9px); pointer-events: none; transition: opacity .2s ease, transform .2s ease; font-size: 11px; line-height: 1.55; }
+.toast.is-visible { opacity: 1; transform: translateY(0); }
+
+/* A: Celestial Gate */
+.prototype-page[data-theme="celestial"] {
+  --accent: #d9bd72;
+  --accent-strong: #f0d486;
+  --accent-soft: rgba(217, 189, 114, .11);
+  --surface: rgba(8, 18, 22, .86);
+  --surface-strong: rgba(7, 17, 20, .96);
+  --line: rgba(167, 201, 203, .14);
+  --line-strong: rgba(217, 189, 114, .34);
+  --text: #edf4f2;
+  --muted: #96aaa6;
+  --quiet: #607571;
+}
+.prototype-page[data-theme="celestial"] .world-backdrop { background-image: url("../../img/help/zhutian.jpg"); background-position: center 58%; }
+.prototype-page[data-theme="celestial"] .world-backdrop::after { background: linear-gradient(90deg, rgba(3,10,14,.82), rgba(5,14,18,.64) 48%, rgba(3,10,14,.84)); }
+.prototype-page[data-theme="celestial"] .world-shell {
+  grid-template-columns: 230px minmax(480px, 1fr) 330px;
+  grid-template-areas:
+    "realm chat inv"
+    "realm market inv";
+}
+
+/* B: Obsidian Bazaar */
+.prototype-page[data-theme="forge"] {
+  --accent: #c6a15e;
+  --accent-strong: #e4c477;
+  --accent-soft: rgba(198, 161, 94, .11);
+  --surface: rgba(20, 20, 19, .94);
+  --surface-strong: rgba(16, 16, 15, .98);
+  --surface-subtle: rgba(255,255,255,.03);
+  --line: rgba(225, 220, 203, .12);
+  --line-strong: rgba(198, 161, 94, .38);
+  --text: #ece8dd;
+  --muted: #aaa597;
+  --quiet: #716d63;
+  --success: #7fa57c;
+  background: #11110f;
+}
+.prototype-page[data-theme="forge"] .world-backdrop { background-image: url("../../img/najie/najie.jpg"); background-position: center 36%; filter: grayscale(.3) sepia(.18); }
+.prototype-page[data-theme="forge"] .world-backdrop::after { background: linear-gradient(90deg, rgba(13,13,12,.96) 0 18%, rgba(13,13,12,.78) 52%, rgba(13,13,12,.94)); }
+.prototype-page[data-theme="forge"] .world-topbar { border-bottom-color: var(--line-strong); background: rgba(15,15,14,.96); }
+.prototype-page[data-theme="forge"] .brand-seal,
+.prototype-page[data-theme="forge"] .realm-glyph,
+.prototype-page[data-theme="forge"] .item-rune {
+  color: var(--accent-strong);
+  border-color: rgba(198, 161, 94, .52);
+  background: linear-gradient(135deg, rgba(198, 161, 94, .14), rgba(255, 255, 255, .02));
+}
+.prototype-page[data-theme="forge"] .world-shell {
+  width: min(100%, 1720px);
+  grid-template-columns: 330px minmax(500px, 1fr) 390px;
+  grid-template-rows: auto 1fr;
+  grid-template-areas:
+    "inv market chat"
+    "inv realm chat";
+}
+.prototype-page[data-theme="forge"] .inventory-panel { grid-row: 1 / 3; }
+.prototype-page[data-theme="forge"] .chat-stage { grid-row: 1 / 3; }
+.prototype-page[data-theme="forge"] .realm-rail { min-height: 0; }
+.prototype-page[data-theme="forge"] .realm-overview, .prototype-page[data-theme="forge"] .raid-brief { display: none; }
+.prototype-page[data-theme="forge"] .realm-list { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); }
+.prototype-page[data-theme="forge"] .realm-row { min-height: 54px; }
+.prototype-page[data-theme="forge"] .market-panel { min-height: 470px; }
+.prototype-page[data-theme="forge"] .trade-grid { grid-template-columns: 1fr; }
+.prototype-page[data-theme="forge"] .trade-card { padding: 20px; border-right: 0; }
+.prototype-page[data-theme="forge"] .exchange-line { min-height: 80px; }
+.prototype-page[data-theme="forge"] .message-stream { max-height: calc(100dvh - 253px); }
+
+/* C: Taixu Scroll */
+.prototype-page[data-theme="scroll"] {
+  color-scheme: light;
+  --accent: #a34e43;
+  --accent-strong: #7e352f;
+  --accent-soft: rgba(163, 78, 67, .08);
+  --surface: rgba(246, 248, 245, .92);
+  --surface-strong: rgba(247, 249, 246, .98);
+  --surface-subtle: rgba(38, 73, 69, .045);
+  --line: rgba(54, 79, 73, .16);
+  --line-strong: rgba(163, 78, 67, .34);
+  --text: #24342f;
+  --muted: #61726d;
+  --quiet: #8c9995;
+  --success: #3e7b64;
+  background: #edf1ed;
+}
+.prototype-page[data-theme="scroll"] .world-backdrop { background-image: url("../../img/state/背景图.jpg"); background-position: center top; }
+.prototype-page[data-theme="scroll"] .world-backdrop::after { background: rgba(240,244,240,.66); }
+.prototype-page[data-theme="scroll"] .world-topbar { color: var(--text); border-bottom: 2px solid #415d56; background: rgba(242,246,242,.94); }
+.prototype-page[data-theme="scroll"] .world-shell {
+  width: min(100%, 1480px);
+  margin-top: 18px;
+  grid-template-columns: minmax(560px, 1fr) 300px;
+  grid-template-areas:
+    "chat realm"
+    "market inv";
+  box-shadow: 0 28px 70px rgba(38,62,56,.12);
+}
+.prototype-page[data-theme="scroll"] .panel { backdrop-filter: blur(7px); -webkit-backdrop-filter: blur(7px); }
+.prototype-page[data-theme="scroll"] .brand-seal { color: #fff5ef; border-color: #863c35; background: var(--accent); box-shadow: inset 0 0 0 4px rgba(255,255,255,.2); }
+.prototype-page[data-theme="scroll"] .world-brand b, .prototype-page[data-theme="scroll"] .panel-head h1, .prototype-page[data-theme="scroll"] .panel-head h2 { color: #24342f; }
+.prototype-page[data-theme="scroll"] .channel-filters button.is-active, .prototype-page[data-theme="scroll"] .market-tabs button.is-active, .prototype-page[data-theme="scroll"] .want-kind button.is-active, .prototype-page[data-theme="scroll"] .send-button, .prototype-page[data-theme="scroll"] .primary-button, .prototype-page[data-theme="scroll"] .inline-trade button, .prototype-page[data-theme="scroll"] .trade-card footer button, .prototype-page[data-theme="scroll"] .raid-call button { color: #fff8f2; }
+.prototype-page[data-theme="scroll"] .message-body > p { color: #44564f; }
+.prototype-page[data-theme="scroll"] .sender-seal { color: #fff; }
+.prototype-page[data-theme="scroll"] .realm-overview strong, .prototype-page[data-theme="scroll"] .currency-strip b { font-family: "STKaiti", "KaiTi", serif; }
+.prototype-page[data-theme="scroll"] .message-stream { max-height: 680px; }
+.prototype-page[data-theme="scroll"] .chat-stage { min-height: 760px; }
+.prototype-page[data-theme="scroll"] .realm-rail, .prototype-page[data-theme="scroll"] .inventory-panel { min-height: 0; }
+
+@media (max-width: 1240px) {
+  .world-topbar { grid-template-columns: 210px 1fr auto; gap: 12px; }
+  .realm-identity { display: none; }
+  .nav-command { min-width: 82px; padding-inline: 10px; }
+  .prototype-page[data-theme="celestial"] .world-shell { grid-template-columns: 210px minmax(420px, 1fr) 300px; }
+  .prototype-page[data-theme="forge"] .world-shell { grid-template-columns: 300px minmax(440px, 1fr) 340px; }
+}
+
+@media (max-width: 960px) {
+  :root { --topbar-height: 60px; }
+  .world-topbar { padding: 0 16px; grid-template-columns: 190px 1fr; }
+  .primary-nav { display: none; }
+  .topbar-actions { grid-column: 2; }
+  .world-shell, .prototype-page[data-theme="celestial"] .world-shell, .prototype-page[data-theme="forge"] .world-shell, .prototype-page[data-theme="scroll"] .world-shell {
+    width: 100%; min-height: calc(100dvh - var(--topbar-height) - 62px); margin: 0; display: block; box-shadow: none;
+  }
+  .panel { min-height: calc(100dvh - var(--topbar-height) - 62px) !important; }
+  .prototype-page [data-panel] { display: none; }
+  .prototype-page[data-view="chat"] [data-panel="chat"],
+  .prototype-page[data-view="market"] [data-panel="market"],
+  .prototype-page[data-view="inventory"] [data-panel="inventory"],
+  .prototype-page[data-view="realms"] [data-panel="realms"] { display: flex; }
+  .prototype-page[data-view="market"] [data-panel="market"], .prototype-page[data-view="inventory"] [data-panel="inventory"], .prototype-page[data-view="realms"] [data-panel="realms"] { flex-direction: column; }
+  .chat-stage { min-height: calc(100dvh - var(--topbar-height) - 62px); }
+  .message-stream, .prototype-page[data-theme="forge"] .message-stream, .prototype-page[data-theme="scroll"] .message-stream { max-height: none; }
+  .market-panel { min-height: calc(100dvh - var(--topbar-height) - 62px); }
+  .trade-grid, .prototype-page[data-theme="forge"] .trade-grid { grid-template-columns: 1fr 1fr; }
+  .inventory-panel { overflow-y: auto; }
+  .inventory-list { max-height: none; }
+  .realm-list, .prototype-page[data-theme="forge"] .realm-list { display: block; }
+  .realm-overview, .prototype-page[data-theme="forge"] .realm-overview { display: grid; }
+  .raid-brief, .prototype-page[data-theme="forge"] .raid-brief { display: block; }
+  .mobile-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; min-height: 62px; padding-bottom: env(safe-area-inset-bottom); display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line-strong); background: var(--surface-strong); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
+  .mobile-nav button { min-width: 0; min-height: 60px; padding: 7px 3px; display: grid; place-content: center; gap: 4px; color: var(--quiet); border: 0; border-top: 2px solid transparent; background: transparent; font-size: 9px; }
+  .mobile-nav button.is-active { color: var(--accent-strong); border-top-color: var(--accent); background: var(--accent-soft); }
+  .mobile-nav svg { width: 17px; height: 17px; margin: 0 auto; stroke-width: 1.7; }
+  .toast { bottom: 78px; }
+}
+
+@media (max-width: 700px) {
+  .approval-head { min-height: 250px; padding: 46px 22px 34px; align-items: flex-end; }
+  .approval-head h1 { font-size: 36px; }
+  .approval-head p { font-size: 12px; }
+  .approval-mark { width: 62px; height: 78px; font-size: 30px; }
+  .approval-option, .approval-option:nth-child(even) { min-height: 0; display: flex; flex-direction: column; }
+  .approval-option:nth-child(even) .approval-visual { order: 0; }
+  .approval-visual { min-height: 230px; height: 230px; }
+  .approval-visual::after, .approval-option:nth-child(even) .approval-visual::after { background: linear-gradient(transparent 55%, #0a1113); }
+  .approval-copy { padding: 30px 22px 38px; }
+  .approval-copy h2 { font-size: 29px; }
+  .approval-foot { padding: 20px 22px; align-items: flex-start; gap: 12px; flex-direction: column; }
+
+  .world-topbar { padding: 0 12px; grid-template-columns: 1fr auto; }
+  .world-brand b { font-size: 17px; }
+  .world-brand small { display: none; }
+  .brand-seal { width: 32px; height: 38px; font-size: 17px; }
+  .topbar-actions { gap: 7px; }
+  .theme-select select { width: 34px; padding: 0; color: transparent; background: var(--surface-strong); }
+  .theme-select { position: relative; }
+  .theme-select::after { content: "换"; position: absolute; inset: 0; display: grid; place-items: center; color: var(--accent-strong); pointer-events: none; font-family: "STKaiti", "KaiTi", serif; font-size: 13px; }
+  .panel-head { min-height: 59px; padding: 12px 14px; }
+  .panel-head h1, .panel-head h2 { font-size: 20px; }
+  .kicker { font-size: 8px; }
+  .channel-filters button, .market-tabs button { min-width: 42px; padding: 0 7px; }
+  .world-notice { padding-inline: 14px; grid-template-columns: 16px 1fr; }
+  .world-notice time { display: none; }
+  .message-stream { min-height: 0; padding: 4px 14px 12px; }
+  .message { grid-template-columns: 34px minmax(0,1fr); gap: 9px; padding: 14px 0; }
+  .sender-seal { width: 32px; height: 37px; font-size: 14px; }
+  .message-body > header { flex-wrap: wrap; gap: 5px; }
+  .message-body > header time { flex: 1; min-width: 35px; text-align: right; }
+  .message-body > p { font-size: 11px; }
+  .message-actions { display: none; }
+  .inline-trade { grid-template-columns: 1fr 18px 1fr; gap: 6px; padding: 9px; }
+  .inline-trade button { grid-column: 1 / -1; width: 100%; }
+  .raid-call button { margin-top: 3px; }
+  .chat-composer { position: sticky; bottom: 62px; z-index: 5; min-height: 60px; padding: 8px 10px; grid-template-columns: 34px 1fr auto; }
+  .composer-count { display: none; }
+  .send-button { min-width: 42px; width: 42px; }
+  .send-button span { display: none; }
+  .trade-grid, .prototype-page[data-theme="forge"] .trade-grid { display: block; }
+  .trade-card { border-right: 0; }
+  .currency-strip { margin-inline: 12px; }
+  .inventory-search { margin-inline: 12px; }
+  .inventory-list { padding-inline: 12px; }
+  .trade-maker { padding: 14px 12px 90px; }
+  .realm-overview { min-height: 96px; }
+  .raid-brief { margin-bottom: 90px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .panel, .world-topbar, .mobile-nav { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--surface-strong); }
+}

@@ -1,0 +1,143 @@
+/* 纳戒物品内部纹理模板四（卡片感·低透明度版） */
+/* 调整：底色 alpha 由 0.16~0.62 提升到 0.82~0.95，加投影+顶部内高光做出卡片厚度 */
+/* 四角符文改为白色高光点，在实色底上更醒目；对角织线略提对比 */
+
+.item[class*='rarity-'] {
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.32);
+  background:
+    /* 四角符文高光（白色，实底上可见） */
+    radial-gradient(circle at 6px 6px, rgba(255, 255, 255, 0.85) 0 2px, transparent 3px),
+    radial-gradient(circle at calc(100% - 6px) 6px, rgba(255, 255, 255, 0.85) 0 2px, transparent 3px),
+    radial-gradient(circle at 6px calc(100% - 6px), rgba(255, 255, 255, 0.85) 0 2px, transparent 3px),
+    radial-gradient(circle at calc(100% - 6px) calc(100% - 6px), rgba(255, 255, 255, 0.85) 0 2px, transparent 3px),
+    /* 对角织线 */
+    repeating-linear-gradient(45deg, transparent 0 10px, rgba(var(--najie-rarity-rgb), 0.15) 10px 11px, transparent 11px 22px),
+    repeating-linear-gradient(-45deg, transparent 0 14px, rgba(255, 255, 255, 0.12) 14px 15px, transparent 15px 30px),
+    /* 中心微光晕 */
+    radial-gradient(circle at 50% 50%, rgba(var(--najie-rarity-rgb), 0.22) 0%, transparent 60%),
+    /* 底色浸润（高不透明） */
+    radial-gradient(at top left, rgba(var(--najie-rarity-rgb), 0.95), rgba(var(--najie-rarity-rgb), 0.85));
+}
+
+.item.rarity-1 {
+  background:
+    radial-gradient(circle at 6px 6px, rgba(255, 255, 255, 0.9) 0 2px, transparent 3px),
+    radial-gradient(circle at calc(100% - 6px) 6px, rgba(255, 255, 255, 0.9) 0 2px, transparent 3px),
+    radial-gradient(circle at 6px calc(100% - 6px), rgba(255, 255, 255, 0.9) 0 2px, transparent 3px),
+    radial-gradient(circle at calc(100% - 6px) calc(100% - 6px), rgba(255, 255, 255, 0.9) 0 2px, transparent 3px),
+    repeating-linear-gradient(45deg, transparent 0 10px, rgba(228, 232, 238, 0.18) 10px 11px, transparent 11px 22px),
+    repeating-linear-gradient(-45deg, transparent 0 14px, rgba(255, 255, 255, 0.16) 14px 15px, transparent 15px 30px),
+    radial-gradient(circle at 50% 50%, rgba(228, 232, 238, 0.22) 0%, transparent 60%),
+    radial-gradient(at top left, rgba(234, 238, 244, 0.97), rgba(188, 195, 206, 0.88));
+}
+
+.item.rarity-2 {
+  background:
+    radial-gradient(circle at 6px 6px, rgba(255, 255, 255, 0.9) 0 2px, transparent 3px),
+    radial-gradient(circle at calc(100% - 6px) 6px, rgba(255, 255, 255, 0.9) 0 2px, transparent 3px),
+    radial-gradient(circle at 6px calc(100% - 6px), rgba(255, 255, 255, 0.9) 0 2px, transparent 3px),
+    radial-gradient(circle at calc(100% - 6px) calc(100% - 6px), rgba(255, 255, 255, 0.9) 0 2px, transparent 3px),
+    repeating-linear-gradient(45deg, transparent 0 10px, rgba(57, 185, 107, 0.18) 10px 11px, transparent 11px 22px),
+    repeating-linear-gradient(-45deg, transparent 0 14px, rgba(255, 255, 255, 0.14) 14px 15px, transparent 15px 30px),
+    radial-gradient(circle at 50% 50%, rgba(57, 185, 107, 0.24) 0%, transparent 60%),
+    radial-gradient(at top left, rgba(168, 236, 192, 0.96), rgba(34, 153, 83, 0.86));
+}
+
+.item.rarity-3 {
+  background:
+    radial-gradient(circle at 6px 6px, rgba(255, 255, 255, 0.92) 0 2px, transparent 3px),
+    radial-gradient(circle at calc(100% - 6px) 6px, rgba(255, 255, 255, 0.92) 0 2px, transparent 3px),
+    radial-gradient(circle at 6px calc(100% - 6px), rgba(255, 255, 255, 0.92) 0 2px, transparent 3px),
+    radial-gradient(circle at calc(100% - 6px) calc(100% - 6px), rgba(255, 255, 255, 0.92) 0 2px, transparent 3px),
+    repeating-linear-gradient(45deg, transparent 0 10px, rgba(242, 212, 71, 0.2) 10px 11px, transparent 11px 22px),
+    repeating-linear-gradient(-45deg, transparent 0 14px, rgba(255, 255, 255, 0.15) 14px 15px, transparent 15px 30px),
+    radial-gradient(circle at 50% 50%, rgba(242, 212, 71, 0.26) 0%, transparent 60%),
+    radial-gradient(at top left, rgba(255, 247, 178, 0.97), rgba(212, 176, 25, 0.88));
+}
+
+.item.rarity-4 {
+  background:
+    radial-gradient(circle at 6px 6px, rgba(255, 255, 255, 0.9) 0 2px, transparent 3px),
+    radial-gradient(circle at calc(100% - 6px) 6px, rgba(255, 255, 255, 0.9) 0 2px, transparent 3px),
+    radial-gradient(circle at 6px calc(100% - 6px), rgba(255, 255, 255, 0.9) 0 2px, transparent 3px),
+    radial-gradient(circle at calc(100% - 6px) calc(100% - 6px), rgba(255, 255, 255, 0.9) 0 2px, transparent 3px),
+    repeating-linear-gradient(45deg, transparent 0 10px, rgba(169, 107, 232, 0.2) 10px 11px, transparent 11px 22px),
+    repeating-linear-gradient(-45deg, transparent 0 14px, rgba(255, 255, 255, 0.14) 14px 15px, transparent 15px 30px),
+    radial-gradient(circle at 50% 50%, rgba(169, 107, 232, 0.26) 0%, transparent 60%),
+    radial-gradient(at top left, rgba(223, 181, 255, 0.96), rgba(125, 63, 190, 0.86));
+}
+
+.item.rarity-5 {
+  background:
+    radial-gradient(circle at 6px 6px, rgba(255, 255, 255, 0.92) 0 2px, transparent 3px),
+    radial-gradient(circle at calc(100% - 6px) 6px, rgba(255, 255, 255, 0.92) 0 2px, transparent 3px),
+    radial-gradient(circle at 6px calc(100% - 6px), rgba(255, 255, 255, 0.92) 0 2px, transparent 3px),
+    radial-gradient(circle at calc(100% - 6px) calc(100% - 6px), rgba(255, 255, 255, 0.92) 0 2px, transparent 3px),
+    repeating-linear-gradient(45deg, transparent 0 10px, rgba(255, 215, 0, 0.22) 10px 11px, transparent 11px 22px),
+    repeating-linear-gradient(-45deg, transparent 0 14px, rgba(255, 255, 255, 0.16) 14px 15px, transparent 15px 30px),
+    radial-gradient(circle at 50% 50%, rgba(255, 215, 0, 0.28) 0%, transparent 60%),
+    radial-gradient(at top left, rgba(255, 246, 184, 0.97), rgba(184, 121, 0, 0.88));
+}
+
+.item.rarity-6 {
+  background:
+    radial-gradient(circle at 6px 6px, rgba(255, 255, 255, 0.92) 0 2px, transparent 3px),
+    radial-gradient(circle at calc(100% - 6px) 6px, rgba(255, 255, 255, 0.92) 0 2px, transparent 3px),
+    radial-gradient(circle at 6px calc(100% - 6px), rgba(255, 255, 255, 0.92) 0 2px, transparent 3px),
+    radial-gradient(circle at calc(100% - 6px) calc(100% - 6px), rgba(255, 255, 255, 0.92) 0 2px, transparent 3px),
+    repeating-linear-gradient(45deg, transparent 0 10px, rgba(255, 138, 43, 0.22) 10px 11px, transparent 11px 22px),
+    repeating-linear-gradient(-45deg, transparent 0 14px, rgba(255, 255, 255, 0.16) 14px 15px, transparent 15px 30px),
+    radial-gradient(circle at 50% 50%, rgba(255, 138, 43, 0.26) 0%, transparent 60%),
+    radial-gradient(at top left, rgba(255, 212, 166, 0.97), rgba(217, 101, 0, 0.88));
+}
+
+.item.rarity-7 {
+  background:
+    radial-gradient(circle at 6px 6px, rgba(255, 255, 255, 0.9) 0 2px, transparent 3px),
+    radial-gradient(circle at calc(100% - 6px) 6px, rgba(255, 255, 255, 0.9) 0 2px, transparent 3px),
+    radial-gradient(circle at 6px calc(100% - 6px), rgba(255, 255, 255, 0.9) 0 2px, transparent 3px),
+    radial-gradient(circle at calc(100% - 6px) calc(100% - 6px), rgba(255, 255, 255, 0.9) 0 2px, transparent 3px),
+    repeating-linear-gradient(45deg, transparent 0 10px, rgba(239, 63, 79, 0.22) 10px 11px, transparent 11px 22px),
+    repeating-linear-gradient(-45deg, transparent 0 14px, rgba(255, 255, 255, 0.15) 14px 15px, transparent 15px 30px),
+    radial-gradient(circle at 50% 50%, rgba(239, 63, 79, 0.26) 0%, transparent 60%),
+    radial-gradient(at top left, rgba(255, 170, 178, 0.96), rgba(184, 25, 42, 0.86));
+}
+
+.item.rarity-8 {
+  background:
+    radial-gradient(circle at 6px 6px, rgba(255, 255, 255, 0.9) 0 2px, transparent 3px),
+    radial-gradient(circle at calc(100% - 6px) 6px, rgba(255, 255, 255, 0.9) 0 2px, transparent 3px),
+    radial-gradient(circle at 6px calc(100% - 6px), rgba(255, 255, 255, 0.9) 0 2px, transparent 3px),
+    radial-gradient(circle at calc(100% - 6px) calc(100% - 6px), rgba(255, 255, 255, 0.9) 0 2px, transparent 3px),
+    repeating-linear-gradient(45deg, transparent 0 10px, rgba(93, 118, 210, 0.22) 10px 11px, transparent 11px 22px),
+    repeating-linear-gradient(-45deg, transparent 0 14px, rgba(255, 255, 255, 0.15) 14px 15px, transparent 15px 30px),
+    radial-gradient(circle at 50% 50%, rgba(93, 118, 210, 0.26) 0%, transparent 60%),
+    radial-gradient(at top left, rgba(140, 160, 234, 0.96), rgba(49, 130, 206, 0.86));
+}
+
+.item.rarity-9,
+.item.rarity-10 {
+  background:
+    radial-gradient(circle at 6px 6px, rgba(255, 255, 255, 0.92) 0 2px, transparent 3px),
+    radial-gradient(circle at calc(100% - 6px) 6px, rgba(255, 255, 255, 0.92) 0 2px, transparent 3px),
+    radial-gradient(circle at 6px calc(100% - 6px), rgba(255, 255, 255, 0.92) 0 2px, transparent 3px),
+    radial-gradient(circle at calc(100% - 6px) calc(100% - 6px), rgba(255, 255, 255, 0.92) 0 2px, transparent 3px),
+    repeating-linear-gradient(45deg, transparent 0 10px, rgba(180, 93, 192, 0.22) 10px 11px, transparent 11px 22px),
+    repeating-linear-gradient(-45deg, transparent 0 14px, rgba(255, 255, 255, 0.16) 14px 15px, transparent 15px 30px),
+    radial-gradient(circle at 50% 50%, rgba(180, 93, 192, 0.26) 0%, transparent 60%),
+    radial-gradient(at top left, rgba(236, 188, 240, 0.96), rgba(180, 93, 192, 0.86));
+}
+
+.item.rarity-10 {
+  background:
+    radial-gradient(circle at 6px 6px, rgba(255, 255, 255, 0.95) 0 2px, transparent 3px),
+    radial-gradient(circle at calc(100% - 6px) 6px, rgba(255, 255, 255, 0.95) 0 2px, transparent 3px),
+    radial-gradient(circle at 6px calc(100% - 6px), rgba(255, 255, 255, 0.95) 0 2px, transparent 3px),
+    radial-gradient(circle at calc(100% - 6px) calc(100% - 6px), rgba(255, 255, 255, 0.95) 0 2px, transparent 3px),
+    repeating-linear-gradient(45deg, transparent 0 10px, rgba(225, 186, 72, 0.24) 10px 11px, transparent 11px 22px),
+    repeating-linear-gradient(-45deg, transparent 0 14px, rgba(255, 255, 255, 0.18) 14px 15px, transparent 15px 30px),
+    radial-gradient(circle at 50% 50%, rgba(225, 186, 72, 0.3) 0%, transparent 60%),
+    radial-gradient(at top left, rgba(255, 244, 178, 0.98), rgba(225, 186, 72, 0.9));
+}

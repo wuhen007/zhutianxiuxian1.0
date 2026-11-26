@@ -1,0 +1,52 @@
+/* 纳戒物品内部配色模板一：同色浸润 */
+/* 设计理念：用对应稀有度的浅色作为卡片底色，保留原版的边框光效，整体清新透亮 */
+
+.item[class*='rarity-'] {
+  background: radial-gradient(
+    ellipse at top left,
+    rgba(var(--najie-rarity-rgb), 0.28),
+    rgba(var(--najie-rarity-rgb), 0.12) 55%,
+    rgba(var(--najie-rarity-rgb), 0.06)
+  );
+}
+
+.item.rarity-1 {
+  background: radial-gradient(ellipse at top left, rgba(228, 232, 238, 0.55), rgba(228, 232, 238, 0.22) 55%, rgba(228, 232, 238, 0.1));
+}
+
+.item.rarity-2 {
+  background: radial-gradient(ellipse at top left, rgba(57, 185, 107, 0.35), rgba(57, 185, 107, 0.16) 55%, rgba(57, 185, 107, 0.08));
+}
+
+.item.rarity-3 {
+  background: radial-gradient(ellipse at top left, rgba(242, 212, 71, 0.38), rgba(242, 212, 71, 0.18) 55%, rgba(242, 212, 71, 0.08));
+}
+
+.item.rarity-4 {
+  background: radial-gradient(ellipse at top left, rgba(169, 107, 232, 0.32), rgba(169, 107, 232, 0.14) 55%, rgba(169, 107, 232, 0.07));
+}
+
+.item.rarity-5 {
+  background: radial-gradient(ellipse at top left, rgba(255, 215, 0, 0.36), rgba(255, 215, 0, 0.16) 55%, rgba(255, 215, 0, 0.07));
+}
+
+.item.rarity-6 {
+  background: radial-gradient(ellipse at top left, rgba(255, 138, 43, 0.32), rgba(255, 138, 43, 0.14) 55%, rgba(255, 138, 43, 0.07));
+}
+
+.item.rarity-7 {
+  background: radial-gradient(ellipse at top left, rgba(239, 63, 79, 0.32), rgba(239, 63, 79, 0.14) 55%, rgba(239, 63, 79, 0.07));
+}
+
+.item.rarity-8 {
+  background: radial-gradient(ellipse at top left, rgba(93, 118, 210, 0.32), rgba(93, 118, 210, 0.14) 55%, rgba(93, 118, 210, 0.07));
+}
+
+.item.rarity-9,
+.item.rarity-10 {
+  background: radial-gradient(ellipse at top left, rgba(180, 93, 192, 0.34), rgba(180, 93, 192, 0.15) 55%, rgba(180, 93, 192, 0.07));
+}
+
+.item.rarity-10 {
+  background: radial-gradient(ellipse at top left, rgba(225, 186, 72, 0.36), rgba(225, 186, 72, 0.16) 55%, rgba(225, 186, 72, 0.08));
+}

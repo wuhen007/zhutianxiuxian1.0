@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta http-equiv="content-type" content="text/html;charset=utf-8" />
+    <link
+      rel="stylesheet"
+      type="text/css"
+      href="{{pluResPath}}/html/equipment/equipment.css"
+    />
+    <link rel="preload" href="../../font/tttgbnumber.ttf" as="font" />
+    <link rel="shortcut icon" href="#" />
+    <style type="text/css">
+      body {
+        transform: scale(1);
+        width: 100%;
+        height: 480px;
+        margin: 0;
+        text-align: center;
+        background-image: url('{{pluResPath}}/img/equipment_pifu/{{pifu}}.jpg');
+        background-size: cover; /* 保持比例，完全覆盖 */
+      }
+    </style>
+  </head>
+  <body>
+    <div class="user_width">
+      <div class="user_left">
+        <div class="user_left_top">
+          <div class="user_font_title">[武器]</div>
+          <div class="user_font">
+            名称:{{arms.name}}({{['劣','普','优','精','极','绝','顶'][arms.pinji]}})
+          </div>
+          {{set equipmentGenesis = arms.天阙创世 === true && arms.百分比上限豁免 === '天阙创世'}}{{set equipmentCap = equipmentGenesis ? 500 : 499}}{{if !equipmentGenesis && (arms.atk>499 || arms.def>499 || arms.HP>499)}}
+          <div class="user_font">属性:无</div>
+          <div class="user_font">攻击:{{(arms.atk || 0).toFixed(0)}}{{if arms.归一属性 && arms.归一属性.百分比 && arms.归一属性.百分比.atk}}（+{{set equipmentPercent = arms.归一属性.百分比.atk}}{{((equipmentPercent > equipmentCap ? equipmentCap : equipmentPercent)*100).toFixed(0)}}%）{{/if}}</div>
+          <div class="user_font">防御:{{(arms.def || 0).toFixed(0)}}{{if arms.归一属性 && arms.归一属性.百分比 && arms.归一属性.百分比.def}}（+{{set equipmentPercent = arms.归一属性.百分比.def}}{{((equipmentPercent > equipmentCap ? equipmentCap : equipmentPercent)*100).toFixed(0)}}%）{{/if}}</div>
+          <div class="user_font">血量:{{(arms.HP || 0).toFixed(0)}}{{if arms.归一属性 && arms.归一属性.百分比 && arms.归一属性.百分比.HP}}（+{{set equipmentPercent = arms.归一属性.百分比.HP}}{{((equipmentPercent > equipmentCap ? equipmentCap : equipmentPercent)*100).toFixed(0)}}%）{{/if}}</div>
+          {{else}}
+          <div class="user_font">
+            属性:{{['金','木','土','水','火'][arms.id-1]}}
+          </div>
+          <div class="user_font">攻击:{{set equipmentPercent = ((arms.atk || 0) + ((arms.归一属性 && arms.归一属性.百分比 && arms.归一属性.百分比.atk) || 0))}}{{((equipmentPercent > equipmentCap ? equipmentCap : equipmentPercent)*100).toFixed(0)}}%</div>
+          <div class="user_font">防御:{{set equipmentPercent = ((arms.def || 0) + ((arms.归一属性 && arms.归一属性.百分比 && arms.归一属性.百分比.def) || 0))}}{{((equipmentPercent > equipmentCap ? equipmentCap : equipmentPercent)*100).toFixed(0)}}%</div>
+          <div class="user_font">血量:{{set equipmentPercent = ((arms.HP || 0) + ((arms.归一属性 && arms.归一属性.百分比 && arms.归一属性.百分比.HP) || 0))}}{{((equipmentPercent > equipmentCap ? equipmentCap : equipmentPercent)*100).toFixed(0)}}%</div>
+          {{/if}}
+          <div class="user_font">暴击率:{{(arms.bao*100).toFixed(0)}}%</div>
+        </div>
+        <div class="user_left_buttom">
+          <div class="user_font_title">[护具]</div>
+          <div class="user_font">
+            名称:{{armor.name}}({{['劣','普','优','精','极','绝','顶'][armor.pinji]}})
+          </div>
+          {{set equipmentGenesis = armor.天阙创世 === true && armor.百分比上限豁免 === '天阙创世'}}{{set equipmentCap = equipmentGenesis ? 500 : 499}}{{if !equipmentGenesis && (armor.atk>499 || armor.def>499 || armor.HP>499)}}
+          <div class="user_font">属性:无</div>
+          <div class="user_font">攻击:{{(armor.atk || 0).toFixed(0)}}{{if armor.归一属性 && armor.归一属性.百分比 && armor.归一属性.百分比.atk}}（+{{set equipmentPercent = armor.归一属性.百分比.atk}}{{((equipmentPercent > equipmentCap ? equipmentCap : equipmentPercent)*100).toFixed(0)}}%）{{/if}}</div>
+          <div class="user_font">防御:{{(armor.def || 0).toFixed(0)}}{{if armor.归一属性 && armor.归一属性.百分比 && armor.归一属性.百分比.def}}（+{{set equipmentPercent = armor.归一属性.百分比.def}}{{((equipmentPercent > equipmentCap ? equipmentCap : equipmentPercent)*100).toFixed(0)}}%）{{/if}}</div>
+          <div class="user_font">血量:{{(armor.HP || 0).toFixed(0)}}{{if armor.归一属性 && armor.归一属性.百分比 && armor.归一属性.百分比.HP}}（+{{set equipmentPercent = armor.归一属性.百分比.HP}}{{((equipmentPercent > equipmentCap ? equipmentCap : equipmentPercent)*100).toFixed(0)}}%）{{/if}}</div>
+          {{else}}
+          <div class="user_font">
+            属性:{{['金','木','土','水','火'][armor.id-1]}}
+          </div>
+          <div class="user_font">攻击:{{set equipmentPercent = ((armor.atk || 0) + ((armor.归一属性 && armor.归一属性.百分比 && armor.归一属性.百分比.atk) || 0))}}{{((equipmentPercent > equipmentCap ? equipmentCap : equipmentPercent)*100).toFixed(0)}}%</div>
+          <div class="user_font">防御:{{set equipmentPercent = ((armor.def || 0) + ((armor.归一属性 && armor.归一属性.百分比 && armor.归一属性.百分比.def) || 0))}}{{((equipmentPercent > equipmentCap ? equipmentCap : equipmentPercent)*100).toFixed(0)}}%</div>
+          <div class="user_font">血量:{{set equipmentPercent = ((armor.HP || 0) + ((armor.归一属性 && armor.归一属性.百分比 && armor.归一属性.百分比.HP) || 0))}}{{((equipmentPercent > equipmentCap ? equipmentCap : equipmentPercent)*100).toFixed(0)}}%</div>
+          {{/if}}
+          <div class="user_font">暴击率:{{(armor.bao*100).toFixed(0)}}%</div>
+        </div>
+      </div>
+      <div class="user_right">
+        <div class="user_right_top">
+          <div class="user_font_title">[法宝]</div>
+          <div class="user_font">
+            名称:{{treasure.name}}({{['劣','普','优','精','极','绝','顶'][treasure.pinji]}})
+          </div>
+          {{set equipmentGenesis = treasure.天阙创世 === true && treasure.百分比上限豁免 === '天阙创世'}}{{set equipmentCap = equipmentGenesis ? 500 : 499}}{{if !equipmentGenesis && (treasure.atk>499 || treasure.def>499 || treasure.HP>499)}}
+          <div class="user_font">属性:无</div>
+          <div class="user_font">攻击:{{(treasure.atk || 0).toFixed(0)}}{{if treasure.归一属性 && treasure.归一属性.百分比 && treasure.归一属性.百分比.atk}}（+{{set equipmentPercent = treasure.归一属性.百分比.atk}}{{((equipmentPercent > equipmentCap ? equipmentCap : equipmentPercent)*100).toFixed(0)}}%）{{/if}}</div>
+          <div class="user_font">防御:{{(treasure.def || 0).toFixed(0)}}{{if treasure.归一属性 && treasure.归一属性.百分比 && treasure.归一属性.百分比.def}}（+{{set equipmentPercent = treasure.归一属性.百分比.def}}{{((equipmentPercent > equipmentCap ? equipmentCap : equipmentPercent)*100).toFixed(0)}}%）{{/if}}</div>
+          <div class="user_font">血量:{{(treasure.HP || 0).toFixed(0)}}{{if treasure.归一属性 && treasure.归一属性.百分比 && treasure.归一属性.百分比.HP}}（+{{set equipmentPercent = treasure.归一属性.百分比.HP}}{{((equipmentPercent > equipmentCap ? equipmentCap : equipmentPercent)*100).toFixed(0)}}%）{{/if}}</div>
+          {{else}}
+          <div class="user_font">
+            属性:{{['金','木','土','水','火'][treasure.id-1]}}
+          </div>
+          <div class="user_font">攻击:{{set equipmentPercent = ((treasure.atk || 0) + ((treasure.归一属性 && treasure.归一属性.百分比 && treasure.归一属性.百分比.atk) || 0))}}{{((equipmentPercent > equipmentCap ? equipmentCap : equipmentPercent)*100).toFixed(0)}}%</div>
+          <div class="user_font">防御:{{set equipmentPercent = ((treasure.def || 0) + ((treasure.归一属性 && treasure.归一属性.百分比 && treasure.归一属性.百分比.def) || 0))}}{{((equipmentPercent > equipmentCap ? equipmentCap : equipmentPercent)*100).toFixed(0)}}%</div>
+          <div class="user_font">血量:{{set equipmentPercent = ((treasure.HP || 0) + ((treasure.归一属性 && treasure.归一属性.百分比 && treasure.归一属性.百分比.HP) || 0))}}{{((equipmentPercent > equipmentCap ? equipmentCap : equipmentPercent)*100).toFixed(0)}}%</div>
+          {{/if}}
+          <div class="user_font">暴击率:{{(treasure.bao*100).toFixed(0)}}%</div>
+        </div>
+        <div class="user_right_buttom">
+          <div class="user_font_title">[属性板]</div>
+          <div class="user_font2">道号:{{nickname}}</div>
+          <div class="user_font2">血量:{{(player_maxHP).toFixed(0)}}</div>
+          <div class="user_font2">攻击:{{(player_atk).toFixed(0)}}</div>
+          <div class="user_font2">防御:{{(player_def).toFixed(0)}}</div>
+          <div class="user_font2">暴击率:{{(player_bao).toFixed(0)}}%</div>
+          {{if daoTreasure && daoTreasure.name}}
+          <div class="user_font_title">[至宝]</div>
+          <div class="user_font2">{{daoTreasure.自定义名称 || daoTreasure.name}}</div>
+          {{if daoTreasure.自定义名称}}<div class="user_font2">本名：{{daoTreasure.name}}</div>{{/if}}
+          {{/if}}
+        </div>
+      </div>
+      <style></style>
+    </div>
+  </body>
+</html>

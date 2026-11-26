@@ -1,0 +1,783 @@
+/* ============================================================
+   问仙令 · 混沌遗卷 v7 (深色玄幻版)
+   暗紫玄金底 · 炽金辉光 · 仙界深渊沉浸感
+   ============================================================ */
+
+@font-face {
+  font-family: 'tttgb';
+  src: url('../../font/tttgbnumber.ttf');
+}
+
+* { box-sizing: border-box; margin:0; padding:0; }
+
+body {
+  background:
+    /* 星云 —— 青紫交织 */
+    radial-gradient(ellipse at 25% 20%, rgba(60,100,180,0.22), transparent 48%),
+    radial-gradient(ellipse at 75% 15%, rgba(140,80,180,0.16), transparent 45%),
+    radial-gradient(ellipse at 50% 40%, rgba(180,140,60,0.10), transparent 55%),
+    /* 远处仙山剪影 */
+    radial-gradient(ellipse at 30% 92%, rgba(60,30,80,0.35), transparent 40%),
+    radial-gradient(ellipse at 70% 95%, rgba(40,25,70,0.30), transparent 38%),
+    /* 深渊底色 */
+    linear-gradient(180deg, #0a0912 0%, #0d0b1a 40%, #0e0c1c 70%, #100e20 100%);
+  font-family: 'tttgb', 'Microsoft YaHei', sans-serif;
+  color: #e8d5a0;
+  min-width: 920px;
+  padding: 44px 0 48px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+/* ============================================================
+   外围星点 (深空版 —— 更亮更密集)
+   ============================================================ */
+.wxl-particles {
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+}
+
+.wxl-part {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* 金星 —— 白热核心 */
+.wxl-part:nth-child(odd) {
+  width: 10px; height: 10px;
+  background: radial-gradient(circle at 35% 30%,
+    rgba(255,255,230,1), rgba(255,220,100,0.7) 45%, rgba(240,180,50,0) 80%);
+  box-shadow:
+    0 0 8px rgba(255,240,160,0.95),
+    0 0 22px rgba(250,200,80,0.55),
+    0 0 50px rgba(240,170,50,0.20);
+}
+/* 青星 —— 冷冽辉光 */
+.wxl-part:nth-child(even) {
+  width: 8px; height: 8px;
+  background: radial-gradient(circle at 38% 32%,
+    rgba(200,255,240,1), rgba(130,220,200,0.6) 48%, rgba(90,190,170,0) 80%);
+  box-shadow:
+    0 0 8px rgba(200,255,240,0.9),
+    0 0 20px rgba(130,220,200,0.5),
+    0 0 44px rgba(90,190,170,0.18);
+}
+
+/* 大小错落 + 左右分布 */
+.wxl-part:nth-child(1) { left: 12%; top: 18%; transform: scale(0.9); }
+.wxl-part:nth-child(2) { left: 85%; top: 14%; transform: scale(0.55); }
+.wxl-part:nth-child(3) { left: 92%; top: 55%; transform: scale(1.1); }
+.wxl-part:nth-child(4) { left: 8%;  top: 62%; transform: scale(0.5); }
+.wxl-part:nth-child(5) { left: 48%; top: 6%;  transform: scale(1.0); }
+.wxl-part:nth-child(6) { left: 94%; top: 82%; transform: scale(0.7); }
+.wxl-part:nth-child(7) { left: 6%;  top: 38%; transform: scale(0.45); }
+.wxl-part:nth-child(8) { left: 72%; top: 90%; transform: scale(0.85); }
+
+/* ============================================================
+   根容器 — 暗金古卷 (浮于深渊)
+   ============================================================ */
+.wxl-root {
+  width: 930px; position: relative; z-index: 1;
+  background:
+    /* 暗纹：八卦环 (SVG) */
+    url("data:image/svg+xml,%3Csvg width='120' height='120' xmlns='http://www.w3.org/2000/svg'%3E%3Cdefs%3E%3Cpattern id='g' width='60' height='60' patternUnits='userSpaceOnUse'%3E%3Ccircle cx='30' cy='30' r='27' fill='none' stroke='rgba(200,160,80,0.07)' stroke-width='0.8'/%3E%3Ccircle cx='30' cy='30' r='21' fill='none' stroke='rgba(190,150,70,0.05)' stroke-width='0.5'/%3E%3Cline x1='30' y1='3' x2='30' y2='57' stroke='rgba(195,155,70,0.045)' stroke-width='0.4'/%3E%3Cline x1='3' y1='30' x2='57' y2='30' stroke='rgba(195,155,70,0.045)' stroke-width='0.4'/%3E%3Cline x1='9' y1='9' x2='51' y2='51' stroke='rgba(185,145,65,0.035)' stroke-width='0.35'/%3E%3Cline x1='51' y1='9' x2='9' y2='51' stroke='rgba(185,145,65,0.035)' stroke-width='0.35'/%3E%3C/pattern%3E%3C/defs%3E%3Crect width='120' height='120' fill='url(%23g)'/%3E%3C/svg%3E") 0 0 / 120px 120px,
+    /* 竖纹 */
+    repeating-linear-gradient(90deg, transparent, transparent 10px, rgba(180,140,70,0.018) 10px, rgba(180,140,70,0.018) 10.5px),
+    /* 横纹 */
+    repeating-linear-gradient(0deg, transparent, transparent 12px, rgba(185,145,70,0.015) 12px, rgba(185,145,70,0.015) 12.5px),
+    /* 顶光洒落 */
+    radial-gradient(ellipse at 50% 0%, rgba(255,240,200,0.10), transparent 48%),
+    /* 底光 */
+    radial-gradient(ellipse at 50% 100%, rgba(180,140,60,0.06), transparent 42%),
+    /* 主基调 —— 暗紫玄金 */
+    linear-gradient(176deg,
+      #1d152c 0%,
+      #1b1328 15%,
+      #191126 35%,
+      #1a1228 55%,
+      #181024 75%,
+      #1a122a 100%);
+  border: 2.5px solid rgba(190,145,55,0.45);
+  border-radius: 12px; overflow: visible;
+  /* 悬浮在深渊上 —— 外围金晕 + 深层暗影 */
+  box-shadow:
+    0 0 60px rgba(210,160,45,0.24),
+    0 0 130px rgba(180,130,40,0.10),
+    0 0 36px rgba(160,120,45,0.12),
+    0 20px 80px rgba(0,0,0,0.70),
+    0 8px 32px rgba(0,0,0,0.45),
+    inset 0 2px 0 rgba(255,255,255,0.06),
+    inset 0 -2px 0 rgba(0,0,0,0.15);
+}
+
+/* 能量边框 (发光金线) */
+.wxl-root::before {
+  content: ''; position: absolute; inset: -5px; border-radius: 14px;
+  border: 2px solid transparent;
+  background:
+    linear-gradient(150deg,
+      rgba(230,180,55,0.70),
+      rgba(130,180,160,0.20),
+      rgba(230,180,55,0.52),
+      rgba(200,160,60,0.18),
+      rgba(230,180,55,0.60)) border-box;
+  -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  pointer-events: none; z-index: 20;
+}
+
+/* 顶光微晕 */
+.wxl-root::after {
+  content: ''; position: absolute; inset: 0; border-radius: 10px;
+  background:
+    radial-gradient(ellipse at 50% 18%, rgba(255,230,150,0.06), transparent 55%),
+    radial-gradient(ellipse at 30% 3%, rgba(255,210,100,0.04), transparent 28%);
+  pointer-events: none; z-index: 19;
+}
+
+/* ============================================================
+   八卦暗纹 (深色底强化版)
+   ============================================================ */
+.wxl-octagram {
+  position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: 0.12;
+  background:
+    radial-gradient(circle at 50% 50%, transparent 38%, rgba(210,165,70,0.55) 38.3%, rgba(200,155,65,0.45) 40%, transparent 40.3%),
+    radial-gradient(circle at 50% 50%, transparent 43%, rgba(200,155,65,0.38) 43.3%, rgba(190,145,60,0.28) 44.5%, transparent 44.8%),
+    linear-gradient(0deg,   transparent 49.2%, rgba(200,155,65,0.35) 49.5%, rgba(200,155,65,0.30) 50.5%, transparent 50.8%),
+    linear-gradient(90deg,  transparent 49.2%, rgba(200,155,65,0.35) 49.5%, rgba(200,155,65,0.30) 50.5%, transparent 50.8%),
+    linear-gradient(45deg,  transparent 49.2%, rgba(190,145,60,0.28) 49.5%, rgba(190,145,60,0.22) 50.5%, transparent 50.8%),
+    linear-gradient(135deg, transparent 49.2%, rgba(190,145,60,0.28) 49.5%, rgba(190,145,60,0.22) 50.5%, transparent 50.8%);
+}
+
+/* ============================================================
+   金焰冕冠 (深色底 — 火焰更炽烈)
+   ============================================================ */
+.wxl-crown {
+  position: absolute; top: -50px; left: 50%; transform: translateX(-50%);
+  width: 280px; height: 68px; z-index: 25; pointer-events: none;
+}
+
+/* 左焰 */
+.wxl-cf-l {
+  position: absolute; bottom: 0; left: 48px;
+  width: 26px; height: 40px;
+  border-radius: 54% 54% 0 0;
+  background:
+    linear-gradient(180deg,
+      rgba(255,235,130,0.78) 0%,
+      rgba(255,210,80,0.58) 28%,
+      rgba(245,180,50,0.32) 62%,
+      rgba(230,160,45,0.08) 100%);
+  box-shadow:
+    0 0 20px rgba(255,225,110,0.70),
+    0 -8px 16px rgba(255,220,100,0.30),
+    inset 0 2px 0 rgba(255,255,255,0.22);
+  filter: blur(1.3px);
+}
+/* 中焰 (最高最亮) */
+.wxl-cf-c {
+  position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
+  width: 36px; height: 56px;
+  border-radius: 52% 54% 0 0;
+  background:
+    linear-gradient(180deg,
+      rgba(255,245,145,0.88) 0%,
+      rgba(255,225,100,0.68) 22%,
+      rgba(252,200,80,0.45) 55%,
+      rgba(240,170,50,0.14) 100%);
+  box-shadow:
+    0 0 30px rgba(255,230,110,0.80),
+    0 0 65px rgba(255,210,80,0.35),
+    0 -10px 20px rgba(255,230,110,0.35),
+    inset 0 3px 0 rgba(255,255,255,0.25);
+  filter: blur(2.0px);
+}
+/* 右焰 */
+.wxl-cf-r {
+  position: absolute; bottom: 0; right: 48px;
+  width: 26px; height: 40px;
+  border-radius: 54% 54% 0 0;
+  background:
+    linear-gradient(180deg,
+      rgba(255,235,130,0.78) 0%,
+      rgba(255,210,80,0.58) 28%,
+      rgba(245,180,50,0.32) 62%,
+      rgba(230,160,45,0.08) 100%);
+  box-shadow:
+    0 0 20px rgba(255,225,110,0.70),
+    0 -8px 16px rgba(255,220,100,0.30),
+    inset 0 2px 0 rgba(255,255,255,0.22);
+  filter: blur(1.3px);
+}
+
+/* ============================================================
+   顶部信息栏
+   ============================================================ */
+.wxl-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 30px 32px 24px;
+  background:
+    linear-gradient(180deg, rgba(200,150,55,0.10), transparent 85%);
+  border-bottom: 1.5px solid rgba(200,150,55,0.25);
+  gap: 16px; position: relative;
+}
+
+.wxl-header::after {
+  content: ''; position: absolute; bottom: -1.5px; left: 5%; right: 5%; height: 1.5px;
+  background: linear-gradient(90deg, transparent, rgba(220,170,55,0.55), transparent);
+}
+.wxl-header::before {
+  content: '◆'; position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%);
+  font-size: 10px; color: rgba(220,170,55,0.6); z-index: 2;
+  text-shadow: 0 0 10px rgba(220,170,55,0.5);
+}
+
+.wxl-header-left { display: flex; align-items: center; gap: 16px; flex: 0 0 auto; }
+
+/* 头像光环 */
+.wxl-avatar-ring {
+  position: relative; width: 70px; height: 70px;
+  display: flex; align-items: center; justify-content: center;
+}
+
+.wxl-avatar-ring::before {
+  content: ''; position: absolute; inset: -4px; border-radius: 50%;
+  background: conic-gradient(from 20deg,
+    #e0b040, #ffe080, #b88830, #c89840, #e8c858, #e0b040);
+  opacity: 0.78;
+  mask: radial-gradient(circle, transparent 55%, #000 57%, #000 62%, transparent 64%);
+  -webkit-mask: radial-gradient(circle, transparent 55%, #000 57%, #000 62%, transparent 64%);
+  box-shadow: 0 0 16px rgba(220,170,55,0.45);
+}
+
+.wxl-avatar-ring::after {
+  content: ''; position: absolute; inset: -7px; border-radius: 50%;
+  border: 1.2px solid rgba(220,170,55,0.35);
+  box-shadow: 0 0 18px rgba(220,170,55,0.28);
+}
+
+.wxl-avatar {
+  width: 58px; height: 58px; border-radius: 50%;
+  border: 2.5px solid rgba(210,160,75,0.75);
+  object-fit: cover;
+  background: #1a1228;
+  position: relative; z-index: 1;
+  box-shadow:
+    0 0 14px rgba(200,155,55,0.30),
+    inset 0 0 8px rgba(0,0,0,0.15);
+}
+
+.wxl-user-info { display: flex; flex-direction: column; gap: 6px; }
+
+.wxl-name {
+  font-size: 20px; font-weight: bold; color: #ffe0a0;
+  text-shadow:
+    0 0 12px rgba(220,170,55,0.45),
+    0 0 28px rgba(200,150,40,0.18);
+  letter-spacing: 1px;
+}
+
+.wxl-realm {
+  font-size: 13px; color: #c0a560; font-weight: 600;
+  background: rgba(255,240,200,0.08);
+  border: 1px solid rgba(200,150,55,0.15);
+  border-radius: 4px; padding: 2px 10px;
+  display: inline-block;
+}
+
+.wxl-header-center { flex: 1; text-align: center; }
+
+.wxl-title {
+  font-size: 36px; font-weight: bold;
+  color: #ffe8a0;
+  text-shadow:
+    0 0 16px rgba(255,210,80,0.70),
+    0 0 42px rgba(240,180,50,0.38),
+    0 0 80px rgba(220,150,40,0.15),
+    1px 1px 0 rgba(180,130,40,0.35);
+  letter-spacing: 12px;
+}
+
+.wxl-subtitle {
+  font-size: 13px; color: #b89850; letter-spacing: 4px;
+  margin-top: 8px; font-weight: 600;
+  background: rgba(200,150,40,0.08);
+  border: 1px solid rgba(200,150,55,0.12);
+  border-radius: 4px; padding: 3px 16px;
+  display: inline-block;
+}
+
+.wxl-header-right {
+  display: flex; flex-direction: column; align-items: flex-end;
+  gap: 7px; flex: 0 0 auto;
+}
+
+/* 等级徽章 */
+.wxl-level-badge {
+  background:
+    linear-gradient(150deg, rgba(52,38,18,0.6) 0%, rgba(42,30,14,0.8) 40%, rgba(36,26,12,0.9) 100%);
+  border: 1.5px solid rgba(215,170,55,0.65);
+  border-radius: 22px; padding: 6px 20px;
+  font-size: 14px; color: #e8c870; font-weight: 600;
+  box-shadow:
+    0 0 18px rgba(215,170,55,0.30),
+    inset 0 1px 0 rgba(255,240,200,0.08),
+    0 3px 10px rgba(0,0,0,0.30);
+  text-shadow: 0 0 8px rgba(215,170,55,0.30);
+}
+
+.wxl-lv-num {
+  font-size: 26px; font-weight: bold; color: #ffd880;
+  text-shadow: 0 0 14px rgba(240,190,60,0.50);
+}
+
+.wxl-potential {
+  font-size: 13px; color: #a0c0b5; font-weight: 600;
+}
+.wxl-potential span {
+  color: #50e0b0; font-weight: bold;
+  text-shadow: 0 0 12px rgba(80,224,176,0.50);
+}
+.wxl-claimed-count {
+  font-size: 12px; color: #a09070; font-weight: 600;
+  background: rgba(200,150,40,0.06);
+  border: 1px solid rgba(200,150,55,0.10);
+  border-radius: 4px; padding: 2px 10px;
+}
+
+/* ============================================================
+   经验进度条 (暗金充能)
+   ============================================================ */
+.wxl-progress-section {
+  padding: 20px 32px 18px;
+  background: linear-gradient(180deg, rgba(0,0,0,0.12), transparent);
+  border-bottom: 1px solid rgba(200,150,55,0.14);
+  position: relative;
+}
+
+.wxl-progress-label {
+  display: flex; justify-content: space-between;
+  font-size: 13px; color: #c8a860; font-weight: 600; margin-bottom: 12px;
+}
+.wxl-progress-tip { color: #a08850; }
+.wxl-progress-tip.wxl-maxed {
+  color: #ffd880; font-weight: bold;
+  text-shadow: 0 0 12px rgba(240,190,60,0.45);
+}
+
+/* 进度条底座 —— 暗石凹槽 */
+.wxl-progress-bar-bg {
+  position: relative; width: 100%; height: 24px;
+  background:
+    repeating-linear-gradient(90deg, transparent, transparent 3px, rgba(0,0,0,0.10) 3px, rgba(0,0,0,0.10) 3.5px),
+    linear-gradient(180deg, rgba(0,0,0,0.25), rgba(0,0,0,0.10) 35%, transparent 65%),
+    #1a122a;
+  border: 2px solid rgba(200,150,55,0.32);
+  border-radius: 12px; overflow: hidden;
+  box-shadow:
+    inset 0 4px 10px rgba(0,0,0,0.40),
+    inset 0 -1px 2px rgba(200,160,60,0.06),
+    0 1px 0 rgba(200,160,60,0.08);
+}
+
+/* 填充 —— 炽金熔流 */
+.wxl-progress-bar-fill {
+  height: 100%; position: relative; min-width: 0;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.22) 0%, transparent 48%),
+    linear-gradient(90deg,
+      #c87818 0%,
+      #dd9628 15%,
+      #ecb840 35%,
+      #f8d058 50%,
+      #ecb840 65%,
+      #dd9628 85%,
+      #c87818 100%);
+  border-radius: 10px;
+  box-shadow:
+    inset 0 2px 0 rgba(255,255,255,0.32),
+    inset 0 -1px 0 rgba(0,0,0,0.12),
+    0 0 22px rgba(230,170,40,0.72),
+    0 0 50px rgba(220,155,35,0.32);
+}
+
+/* 高光扫条 */
+.wxl-progress-bar-fill::before {
+  content: ''; position: absolute; inset: 0; border-radius: 10px;
+  background: linear-gradient(90deg,
+    transparent 0%, transparent 28%,
+    rgba(255,255,255,0.18) 44%,
+    rgba(255,255,255,0.40) 50%,
+    rgba(255,255,255,0.18) 56%,
+    transparent 72%, transparent 100%);
+}
+
+/* 末端火花 */
+.wxl-pb-spark {
+  position: absolute; right: -7px; top: 50%; transform: translateY(-50%);
+  width: 20px; height: 20px; border-radius: 50%;
+  background: radial-gradient(circle at 36% 34%,
+    rgba(255,252,220,1), rgba(250,225,90,0.75) 42%, rgba(240,185,50,0) 82%);
+  box-shadow:
+    0 0 10px rgba(250,225,90,0.95),
+    0 0 26px rgba(245,205,70,0.65),
+    0 0 55px rgba(235,175,50,0.30);
+}
+
+.wxl-progress-text {
+  position: absolute; right: 16px; top: 50%; transform: translateY(-50%);
+  font-size: 12px; font-weight: bold; color: #1a0e04; z-index: 2;
+  text-shadow:
+    0 0 6px rgba(255,255,220,0.90),
+    0 0 16px rgba(255,240,180,0.55),
+    1px 1px 0 rgba(255,240,180,0.50);
+}
+
+/* ============================================================
+   5级展示窗口
+   ============================================================ */
+.wxl-cards-section {
+  padding: 42px 24px 28px;
+  position: relative;
+}
+
+/* 范围标签 */
+.wxl-range-label {
+  display: flex; align-items: center; justify-content: center;
+  gap: 14px; margin-bottom: 32px;
+}
+
+.wxl-range-arrow {
+  font-size: 20px; color: rgba(210,165,55,0.55);
+  letter-spacing: -4px; user-select: none;
+  text-shadow: 0 0 10px rgba(210,165,55,0.25);
+}
+
+.wxl-range-text {
+  font-size: 17px; font-weight: bold; color: #e8c870;
+  background:
+    linear-gradient(180deg, rgba(220,170,60,0.18), rgba(190,140,45,0.06));
+  border: 1.5px solid rgba(210,165,60,0.38);
+  border-radius: 20px; padding: 6px 28px;
+  text-shadow: 0 0 14px rgba(220,170,60,0.45);
+  letter-spacing: 3px;
+  box-shadow:
+    inset 0 1px 0 rgba(255,240,200,0.06),
+    0 3px 12px rgba(0,0,0,0.25);
+}
+
+/* 卡片行 */
+.wxl-cards-row {
+  display: flex; gap: 14px; justify-content: center;
+  position: relative;
+}
+
+/* 星河连接线 */
+.wxl-cards-row::before {
+  content: ''; position: absolute; left: 8%; right: 8%;
+  top: 56px; height: 3px;
+  background: linear-gradient(90deg,
+    transparent, rgba(230,185,55,0.22) 10%,
+    rgba(245,210,70,0.60) 40%,
+    rgba(255,225,85,0.78) 50%,
+    rgba(245,210,70,0.60) 60%,
+    rgba(230,185,55,0.22) 90%, transparent);
+  z-index: 0; border-radius: 2px;
+  box-shadow:
+    0 0 14px rgba(230,185,55,0.35),
+    0 0 32px rgba(230,185,55,0.12);
+}
+
+/* ============================================================
+   金碟卡片 (暗色金石版)
+   ============================================================ */
+.wxl-card {
+  position: relative; z-index: 1;
+  flex: 1; max-width: 166px; min-width: 140px;
+  background:
+    radial-gradient(ellipse at 50% 10%, rgba(255,225,125,0.08), transparent 55%),
+    radial-gradient(ellipse at 50% 95%, rgba(180,130,40,0.06), transparent 40%),
+    linear-gradient(174deg,
+      #241b34 0%,
+      #20182e 35%,
+      #1c1428 65%,
+      #22182e 100%);
+  border: 2.5px solid rgba(200,155,65,0.40);
+  border-radius: 16px;
+  padding: 20px 12px 18px;
+  display: flex; flex-direction: column; align-items: center;
+  gap: 12px;
+  box-shadow:
+    0 8px 28px rgba(0,0,0,0.40),
+    0 2px 8px rgba(0,0,0,0.25),
+    inset 0 1px 0 rgba(255,255,255,0.04),
+    inset 0 -1px 0 rgba(0,0,0,0.10);
+}
+
+/* 内装饰边 */
+.wxl-card::before {
+  content: ''; position: absolute;
+  top: 2px; left: 2px; right: 2px; bottom: 2px;
+  border-radius: 15px;
+  border: 1px solid rgba(220,170,65,0.12);
+  pointer-events: none; z-index: 0;
+}
+
+/* 左上L形刻纹 */
+.wxl-card::after {
+  content: ''; position: absolute;
+  top: 5px; left: 5px; right: 5px; bottom: 5px;
+  border-radius: 12px;
+  border-top: 1px solid rgba(220,170,65,0.10);
+  border-left: 1px solid rgba(220,170,65,0.10);
+  border-right: 1px solid transparent;
+  border-bottom: 1px solid transparent;
+  pointer-events: none; z-index: 0;
+}
+
+/* ---- 当前等级 —— 炽金觉醒 ---- */
+.card-current {
+  border-color: rgba(230,155,45,0.85);
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(255,210,100,0.20), transparent 48%),
+    radial-gradient(ellipse at 50% 100%, rgba(255,190,60,0.08), transparent 40%),
+    linear-gradient(174deg, #2a1e3c 0%, #261a36 35%, #22162e 65%, #281c38 100%);
+  box-shadow:
+    0 0 34px rgba(240,170,45,0.72),
+    0 0 72px rgba(230,155,35,0.32),
+    0 0 120px rgba(220,140,30,0.12),
+    0 8px 28px rgba(0,0,0,0.40),
+    inset 0 1px 0 rgba(255,255,255,0.06);
+  transform: translateY(-8px);
+  z-index: 5;
+}
+
+/* ---- 已领取 —— 暗玉绿 ---- */
+.card-claimed {
+  border-color: rgba(70,160,95,0.42);
+  background:
+    radial-gradient(ellipse at 50% 10%, rgba(100,200,130,0.06), transparent 50%),
+    linear-gradient(174deg, #1c2e24 0%, #1a2a20 35%, #18281e 65%, #1c2e22 100%);
+  box-shadow:
+    0 8px 28px rgba(0,0,0,0.30),
+    0 2px 8px rgba(50,120,60,0.15),
+    inset 0 1px 0 rgba(255,255,255,0.03);
+}
+
+/* ---- 可领取 —— 金光脉动 ---- */
+.card-claimable {
+  border-color: rgba(230,160,42,0.75);
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(255,210,90,0.16), transparent 46%),
+    linear-gradient(174deg, #261c30 0%, #241a2c 35%, #201628 65%, #261a30 100%);
+  box-shadow:
+    0 0 28px rgba(240,170,45,0.62),
+    0 0 60px rgba(230,155,35,0.28),
+    0 8px 28px rgba(0,0,0,0.36),
+    inset 0 1px 0 rgba(255,255,255,0.05);
+}
+
+/* ---- 未解锁 —— 沉寂暗石 ---- */
+.card-locked {
+  border-color: rgba(120,100,75,0.25);
+  background:
+    linear-gradient(174deg, #181424 0%, #161220 35%, #14101c 65%, #181222 100%);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  opacity: 0.55;
+}
+
+/* ---- 等级数字 ---- */
+.wxl-card-level {
+  display: flex; align-items: baseline; gap: 3px;
+  position: relative; z-index: 1;
+}
+
+.wxl-card-lv-num {
+  font-size: 44px; font-weight: bold; color: #e0c870;
+  line-height: 1;
+  text-shadow: 0 2px 6px rgba(200,150,50,0.40);
+}
+
+.card-current .wxl-card-lv-num {
+  color: #ffe080;
+  text-shadow:
+    0 0 18px rgba(240,180,50,0.85),
+    0 0 44px rgba(230,160,40,0.45),
+    0 2px 6px rgba(180,120,35,0.35);
+}
+
+.card-claimed .wxl-card-lv-num { color: #80c090; text-shadow: 0 0 10px rgba(80,170,100,0.35); }
+.card-locked .wxl-card-lv-num { color: #706050; text-shadow: none; }
+
+.wxl-card-lv-unit {
+  font-size: 14px; color: #b89850; font-weight: 600;
+}
+.card-locked .wxl-card-lv-unit { color: #706050; }
+
+/* 当前标签 */
+.wxl-card-lv-tag {
+  position: absolute;
+  top: -12px; right: -34px;
+  font-size: 10px; color: #fff8e0;
+  background: linear-gradient(140deg, #e09020, #b85812);
+  border-radius: 8px; padding: 2px 8px;
+  font-weight: bold; letter-spacing: 1px;
+  box-shadow: 0 0 14px rgba(230,140,30,0.70);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+}
+
+/* ---- 状态标识 ---- */
+.wxl-card-status { position: relative; z-index: 1; }
+
+.wxl-card-badge {
+  font-size: 10px; font-weight: bold; border-radius: 10px; padding: 3px 12px;
+  letter-spacing: 1px;
+}
+
+.badge-done {
+  background: rgba(60,160,80,0.22); color: #70e090;
+  border: 1px solid rgba(60,160,80,0.38);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+}
+.badge-claim {
+  background: rgba(240,170,40,0.30); color: #ffe090;
+  border: 1px solid rgba(240,170,40,0.60);
+  box-shadow:
+    0 0 14px rgba(240,170,40,0.50),
+    inset 0 1px 0 rgba(255,255,255,0.08);
+}
+.badge-pending {
+  background: rgba(180,150,100,0.15); color: #b89850;
+  border: 1px solid rgba(180,150,100,0.28);
+}
+.badge-lock {
+  background: rgba(120,100,70,0.10); color: #887050;
+  border: 1px solid rgba(120,100,70,0.18);
+}
+
+/* ---- 奖励列表 ---- */
+.wxl-card-rewards {
+  display: flex; flex-direction: column; gap: 7px;
+  width: 100%; position: relative; z-index: 1;
+}
+
+/* 奖励条 —— 暗色底衬 + 色标 */
+.wxl-card-rw {
+  display: flex; align-items: center; gap: 7px;
+  background: rgba(20,14,30,0.70);
+  border-radius: 6px; padding: 6px 10px;
+  border-left: 3px solid rgba(220,170,60,0.40);
+  border: 1px solid rgba(200,150,55,0.14);
+  box-shadow: inset 0 0 6px rgba(0,0,0,0.15);
+}
+
+/* 色标区分 */
+.wxl-card-rw:nth-child(1) { border-left-color: rgba(230,185,65,0.55); }
+.wxl-card-rw:nth-child(2) { border-left-color: rgba(235,105,75,0.50); }
+.wxl-card-rw:nth-child(3) { border-left-color: rgba(95,170,225,0.50); }
+.wxl-card-rw:nth-child(4) { border-left-color: rgba(100,210,190,0.55); }
+
+.card-claimed .wxl-card-rw { opacity: 0.60; }
+.card-claimed .wxl-card-rw:nth-child(1) { border-left-color: rgba(90,170,100,0.45); }
+.card-claimed .wxl-card-rw:nth-child(2) { border-left-color: rgba(170,100,85,0.38); }
+.card-claimed .wxl-card-rw:nth-child(3) { border-left-color: rgba(90,150,195,0.38); }
+.card-claimed .wxl-card-rw:nth-child(4) { border-left-color: rgba(120,180,155,0.45); }
+
+.card-locked .wxl-card-rw { opacity: 0.35; }
+
+.wxl-rw-icon {
+  font-size: 14px; width: 16px; text-align: center; flex-shrink: 0;
+  filter: drop-shadow(0 0 4px rgba(220,170,55,0.35));
+}
+
+.wxl-rw-text {
+  font-size: 11px; color: #f0d880; font-weight: 700;
+  white-space: nowrap;
+  text-shadow: 0 0 6px rgba(255,225,130,0.25);
+}
+
+.card-current .wxl-rw-text { color: #ffe8a0; font-weight: 800; }
+.card-claimable .wxl-rw-text { color: #f8e090; font-weight: 700; }
+.card-locked .wxl-rw-text { color: #605848; text-shadow: none; }
+
+/* ---- 额外奖励横幅 ---- */
+.wxl-card-bonus {
+  position: relative; z-index: 1; width: 100%;
+  background:
+    linear-gradient(135deg, rgba(255,210,100,0.16), rgba(220,160,50,0.06), rgba(255,210,100,0.14));
+  border: 1.5px solid rgba(230,180,60,0.38);
+  border-radius: 8px; padding: 8px 10px;
+  text-align: center;
+}
+
+.wxl-card-bonus-name {
+  font-size: 10px; color: #ffd880; font-weight: bold;
+  letter-spacing: 1px;
+  text-shadow: 0 0 8px rgba(240,180,50,0.35);
+}
+
+.wxl-card-bonus-items {
+  font-size: 9px; color: #d8b060; margin-top: 4px; line-height: 1.6;
+}
+
+.bonus-big {
+  background: linear-gradient(135deg, rgba(250,200,60,0.22), rgba(220,160,45,0.10), rgba(250,200,60,0.20));
+  border-color: rgba(230,175,55,0.58);
+  box-shadow: 0 0 10px rgba(230,175,55,0.20);
+}
+.bonus-big .wxl-card-bonus-name { color: #ffe090; font-size: 11px; }
+.bonus-big .wxl-card-bonus-items { font-weight: 650; }
+
+.bonus-final {
+  background: linear-gradient(135deg, rgba(255,200,50,0.38), rgba(240,165,30,0.18), rgba(255,200,50,0.36));
+  border-color: rgba(240,165,30,0.82);
+  box-shadow: 0 0 18px rgba(240,165,30,0.45);
+}
+.bonus-final .wxl-card-bonus-name {
+  color: #fff0b0; font-size: 12px; font-weight: bold;
+  text-shadow: 0 0 12px rgba(255,200,60,0.55);
+}
+.bonus-final .wxl-card-bonus-items { color: #ffe090; font-weight: bold; font-size: 10px; }
+
+/* ============================================================
+   底部光柱 (当前等级)
+   ============================================================ */
+.wxl-card-beam {
+  position: absolute; bottom: -14px; left: 50%; transform: translateX(-50%);
+  width: 72%; height: 6px;
+  background: linear-gradient(90deg,
+    transparent, rgba(250,215,85,0.88), rgba(255,240,120,1), rgba(250,215,85,0.88), transparent);
+  border-radius: 3px;
+  box-shadow:
+    0 0 22px rgba(250,215,85,0.92),
+    0 0 50px rgba(245,200,75,0.42),
+    0 4px 14px rgba(250,210,80,0.32);
+}
+
+/* ============================================================
+   底部
+   ============================================================ */
+.wxl-footer {
+  padding: 20px 32px 28px;
+  position: relative;
+  background: linear-gradient(180deg, rgba(0,0,0,0.10), rgba(0,0,0,0.15));
+}
+
+.wxl-footer-line {
+  position: absolute; top: 0; left: 8%; right: 8%; height: 1.5px;
+  background: linear-gradient(90deg, transparent, rgba(220,170,55,0.48), transparent);
+}
+
+.wxl-hint {
+  font-size: 13px; color: #a08860; text-align: center; font-weight: 600;
+  padding-top: 8px;
+  text-shadow: 0 0 8px rgba(200,150,40,0.15);
+}
+
+.wxl-hint.wxl-hint-active {
+  color: #e8c870; font-size: 15px; font-weight: bold;
+  text-shadow: 0 0 14px rgba(220,170,50,0.40);
+}
+
+.wxl-hint.wxl-hint-active b { color: #ffe090; text-shadow: 0 0 10px rgba(240,180,50,0.35); }

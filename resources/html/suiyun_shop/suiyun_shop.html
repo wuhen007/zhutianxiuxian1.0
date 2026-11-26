@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>岁云剑宫商店</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; width: 960px; color: #e7edf4; background: #101924; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
+    #container { padding: 42px; background: radial-gradient(circle at 92% 2%, #34485d 0, #1b2b3b 22%, #101924 52%); }
+    .eyebrow { margin: 0 0 12px; color: #9fb5c9; font-size: 14px; letter-spacing: 5px; }
+    header { position: relative; padding-bottom: 29px; border-bottom: 1px solid #45576a; }
+    header::after { content: ""; position: absolute; right: 24px; top: 0; width: 67px; height: 67px; border-radius: 50%; box-shadow: -13px 8px 0 0 #d5e4f2; opacity: .6; transform: rotate(-16deg); }
+    h1 { margin: 0; font-family: "KaiTi", "STKaiti", serif; font-size: 44px; font-weight: 500; letter-spacing: 8px; }
+    .subtitle { margin: 13px 0 0; color: #afbecb; font-size: 16px; }
+    .account { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin: 25px 0 28px; padding: 19px 22px; border: 1px solid #425368; background: #1b2a3a; }
+    .owner { min-width: 0; flex: 1; }
+    .label { color: #a6b8c9; font-size: 13px; letter-spacing: 1px; }
+    .name { margin: 7px 0 0; font-size: 21px; overflow-wrap: anywhere; }
+    .balance { flex-shrink: 0; text-align: right; }
+    .balance strong { display: block; margin-top: 6px; font-family: Georgia, serif; font-size: 28px; font-weight: 400; color: #f2d29a; }
+    .section { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 15px; }
+    h2 { margin: 0; font-size: 21px; font-weight: 500; letter-spacing: 2px; }
+    .count { font-size: 13px; color: #9daebe; }
+    .catalog { display: grid; grid-template-columns: 1fr 1fr; gap: 11px 14px; }
+    .item { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 17px 18px; border: 1px solid #33465a; background: #152333; }
+    .item-title { margin: 0 0 8px; font-size: 18px; font-weight: 500; overflow-wrap: anywhere; }
+    .item-meta { margin: 0; color: #96a9bb; font-size: 12px; }
+    .price { flex-shrink: 0; text-align: right; }
+    .price strong { display: block; margin-bottom: 8px; font-size: 17px; font-weight: 500; color: #e8c58b; font-variant-numeric: tabular-nums; }
+    .price small { color: #9aafc1; font-size: 11px; }
+    .price .ready { color: #90c7b9; }
+    footer { margin-top: 27px; border-top: 1px solid #45576a; padding-top: 23px; }
+    .command { margin: 0; color: #e1eaf4; font-size: 18px; }
+    .example { margin: 11px 0 0; font-size: 14px; color: #9fb2c5; line-height: 1.8; }
+    .inscription { margin: 23px 0 0; color: #70899f; font-family: "KaiTi", serif; text-align: right; font-size: 17px; letter-spacing: 4px; }
+  </style>
+</head>
+<body>
+  <main id="container">
+    <header>
+      <p class="eyebrow">岁云剑宫 · 月华宝库</p>
+      <h1>剑宫商店</h1>
+      <p class="subtitle">宫主专属名录 · 源石兑换</p>
+    </header>
+    <div class="account">
+      <div class="owner"><span class="label">{{panel.position}}</span><p class="name">{{panel.nickname}}</p></div>
+      <div class="balance"><span class="label">当前源石</span><strong>{{panel.balance}}</strong></div>
+    </div>
+    <div class="section"><h2>宝库名录</h2><span class="count">{{panel.items.length}} 项可兑换</span></div>
+    <div class="catalog">
+      {{each panel.items item}}
+      <article class="item">
+        <div><h3 class="item-title">{{item.name}}</h3><p class="item-meta">{{item.category}} · 稀有度 {{item.rarity}}</p></div>
+        <div class="price"><strong>{{item.price}}</strong><small class="{{item.affordable ? 'ready' : ''}}">源石 / 件 · {{item.affordable ? '可兑换' : '余额不足'}}</small></div>
+      </article>
+      {{/each}}
+    </div>
+    <footer>
+      <p class="command">#剑宫兑换 物品名*数量</p>
+      <p class="example">例：#剑宫兑换 龙髓*1　·　省略数量兑换1件<br>每日供奉：#开启剑宫宝库</p>
+      <p class="inscription">月华万古 · 岁云化月</p>
+    </footer>
+  </main>
+</body>
+</html>

@@ -1,0 +1,716 @@
+// 原创独立位面；所有战斗、修炼、探索都先保存行动，到期再兑现。
+export const SWORD_MAGIC_LOCATION = 0.7;
+// 飞升落点：练气 39 级「真界境后期」，比复活地球毕业（42 地仙）低一档，体现两条路线的难度差。
+export const SWORD_MAGIC_ASCENSION_LEVEL_ID = 39;
+export const SWORD_MAGIC_ASCENSION_COIN_RATE = 100;
+// 三条终局各留一件绑定信物；发放走纳戒层并按 idempotencyKey 防重。
+export const SWORD_MAGIC_MEMORIALS = Object.freeze({
+  黎明勇者: { id: 9600501, name: '黎明誓约剑', pinji: 6 },
+  地脉贤者: { id: 9600502, name: '地脉织针', pinji: 6 },
+  守隙魔王: { id: 9600503, name: '守隙王冠', pinji: 6 },
+  折冠之人: { id: 9600504, name: '断冠古剑', pinji: 6 },
+});
+export const SWORD_MAGIC_GRADUATION_MINGGE = 'otherworld_returnee';
+// 终局专属命格词条：比隐藏灵根更合适——隐藏灵根是锻造专精资产（单值、已被煅炉占用），
+// 覆盖会毁掉玩家的炼器底子；命格才是通用成长资产。
+export const SWORD_MAGIC_ENDGAME_FATES = Object.freeze({
+  黎明勇者: { id: 'dawn_oath', name: '黎明之约' },
+  地脉贤者: { id: 'leyline_promise', name: '地脉之诺' },
+  守隙魔王: { id: 'riftward_vow', name: '守隙之誓' },
+  折冠之人: { id: 'crown_breaker', name: '折冠破妄' },
+});
+// 无职风格七阶熟练度位阶：0未入门，1~5初级，6~11中级，12~17上级，18~23圣级，24~28王级，29~30帝级。
+export function getSkillRank(value = 0) {
+  const n = Math.trunc(Number(value) || 0);
+  if (n <= 0) return '未入门';
+  if (n <= 5) return '初级';
+  if (n <= 11) return '中级';
+  if (n <= 17) return '上级';
+  if (n <= 23) return '圣级';
+  if (n <= 28) return '王级';
+  return '帝级';
+}
+export function getSkillRankTitle(skill, value = 0) {
+  const rank = getSkillRank(value);
+  if (rank === '未入门') return `${skill}·未入门`;
+  const prefix = { 剑术: '剑', 魔法: '魔导', 祷告: '神圣', 侦察: '北神' }[skill] || skill;
+  return rank === '圣级' || rank === '王级' || rank === '帝级' ? `${prefix}${rank.slice(0, 1)}` : `${prefix}·${rank}`;
+}
+// Lv.5 二转流派（借鉴《无职转生》三大剑术流派与无咏唱/魔导体系）
+export const SWORD_MAGIC_SUBCLASSES = Object.freeze({
+  天剑流: { profession: '剑士', power: 14, desc: '模拟剑神流「光之太刀」，先手突袭战力+14，强攻额外+6，委托与主线赏金+20%。' },
+  止水流: { profession: '剑士', power: 9, desc: '模拟水神流「流转」卸力反制，战力+9，每次冒险受伤固定减少6点。' },
+  无声术师: { profession: '魔法师', power: 11, desc: '钻研泥沼与混合魔术，战力+11，施法耗时缩短1分钟；持无吟唱者天赋时额外+5战力。' },
+  星杖魔导: { profession: '魔法师', power: 12, desc: '王级广域魔导术式，战力+12，每次主线或委托探索额外解析古代晶片×1。' },
+  圣印神官: { profession: '僧侣', power: 12, desc: '神殿结界特攻体系，战力+12，净化与祷告应对时额外恢复10生命并获15铜币补贴。' },
+  巡礼白枝: { profession: '僧侣', power: 8, desc: '战地无声治愈，战力+8，休养耗时减半（5分钟），同行与战后生命恢复翻倍。' },
+  狂犬猎手: { profession: '游侠', power: 11, desc: '模拟北神流奇袭与死角切入，战力+11，高危暴击上限压低15%。' },
+  迷宫行者: { profession: '游侠', power: 8, desc: '遗迹深层斥候，战力+8，探索行进缩短1分钟，公会委托与主线铜币赏金+35%。' },
+});
+// 魔界古皇奇遇赋予的异界魔眼
+export const SWORD_MAGIC_DEMON_EYES = Object.freeze({
+  预知眼: { power: 8, hurtReduce: 5, desc: '看穿一秒后的未来轨迹，战力+8，每次冒险受伤减少5点。' },
+  千里眼: { power: 6, extraItem: 1, desc: '俯瞰地脉迷宫构造，战力+6，每次探索额外发现古代晶片×1。' },
+  魔力眼: { power: 10, mpDiscount: 2, desc: '直视魔力流动节点，战力+10，所有法术与净化魔力消耗减少2点。' },
+});
+// 三阶武装锻造：一阶职业武装 → 二阶傲慢龙骨铭装 → 三阶初代魔导圣铠
+export const SWORD_MAGIC_WEAPON_TIERS = Object.freeze([
+  { tier: 0, name: '未锻造', power: 0, coins: 0, crystals: 0, minutes: 0, ascensionBonusStones: 0 },
+  { tier: 1, name: '职业武装', power: 8, coins: 60, crystals: 4, minutes: 15, ascensionBonusStones: 0 },
+  { tier: 2, name: '傲慢龙骨铭装', power: 16, coins: 120, crystals: 6, minutes: 15, ascensionBonusStones: 18_000 },
+  { tier: 3, name: '初代魔导圣铠', power: 26, coins: 200, crystals: 8, minutes: 15, ascensionBonusStones: 50_000 },
+]);
+// 飞升彩蛋仙宠：按风鸣林际遇发放；三条分支都有，不因当时的抉择永久亏待玩家。
+export const SWORD_MAGIC_MEMORIAL_PETS = Object.freeze({
+  companion: { id: 7091401, name: '巡礼僧侣莉娅' },
+  pact: { id: 7091402, name: '风精灵希露' },
+  wanderer: { id: 7091403, name: '白桦镇信使雀' },
+});
+export function getGraduationPet(state) {
+  if (state?.pact) return SWORD_MAGIC_MEMORIAL_PETS.pact;
+  if (state?.companion) return SWORD_MAGIC_MEMORIAL_PETS.companion;
+  return SWORD_MAGIC_MEMORIAL_PETS.wanderer;
+}
+const MINUTE = 60_000;
+const MAX = 1_000_000_000;
+const ok = (condition, message) => { if (!condition) throw new Error(message); };
+const integer = (n, max = MAX) => Number.isSafeInteger(n) && n >= 0 && n <= max;
+const own = (object, key) => Object.hasOwn(object, key);
+
+export const SWORD_MAGIC_TRAITS = Object.freeze([
+  { id: 'spirit', name: '精灵亲和', weight: 12, desc: '能听见低阶精灵；风鸣林可通过精灵交涉，解锁独有线索。' },
+  { id: 'element', name: '元素亲和', weight: 18, desc: '魔法训练额外获得2点熟练度；法术应对的魔力消耗减少3点。' },
+  { id: 'mana', name: '魔力超群', weight: 8, desc: '魔力上限增加35，适合持续施法。' },
+  { id: 'silent', name: '无吟唱者', weight: 2, desc: '无需口述咒文；施法应对缩短2分钟，解锁静默解析古代封印。' },
+  { id: 'sword', name: '剑术直觉', weight: 18, desc: '武力增加6；剑术训练额外获得2点熟练度。' },
+  { id: 'holy', name: '圣印共鸣', weight: 12, desc: '祷告训练额外获得2点熟练度；净化消耗减少3点魔力。' },
+  { id: 'wanderer', name: '旅人洞察', weight: 20, desc: '探索缩短1分钟；调查时能发现额外的遗迹材料。' },
+  { id: 'will', name: '逆境意志', weight: 10, desc: '每次冒险受伤减少4点；不会免除战败或疗养代价。' },
+]);
+const TRAIT_IDS = SWORD_MAGIC_TRAITS.map(trait => trait.id);
+export const SWORD_MAGIC_PROFESSIONS = Object.freeze({
+  剑士: { skill: '剑术', desc: '以斗气和身法迎战，正面突破最为稳健。' },
+  魔法师: { skill: '魔法', desc: '操纵元素与术式，擅长解析法阵。' },
+  僧侣: { skill: '祷告', desc: '以誓愿引导圣术，擅长净化与庇护。' },
+  游侠: { skill: '侦察', desc: '追踪、射击与野外生存，擅长调查和迂回。' },
+});
+const GOODS = Object.freeze({
+  野营口粮: { price: 8, description: '出发探索消耗1份；富裕时在旅途分给饥饿旅人或有奇遇。' },
+  疗伤药: { price: 18, description: '3分钟治疗，恢复60生命。' },
+  魔力药: { price: 22, description: '3分钟调息，恢复50魔力。' },
+  古代晶片: { price: 0, description: '遗迹材料，用于铸造职业武装与魔导圣铠。' },
+  旧契约信: { price: 0, description: '记载圣约纪元真相的灾变残笺，集齐3封可在裂月王庭斩碎地脉炉。' },
+});
+export const SWORD_MAGIC_REGIONS = Object.freeze([
+  { name: '风鸣林', level: 1, minutes: 6, threat: 12, reward: 45, item: 2,
+    intro: '木精灵的歌声断在一棵倒生的树前。失踪的采药人留下半张骑士征收令，落款是四百年前就已撤销的税务厅。',
+    mystery: '树根中封着王室铸造的魔力钉——征收旧约从未被废除，只是被改名为「生态修复」。林中异变来自旧约苏醒的悸动。',
+    choices: ['救援', '调查', '精灵交涉'] },
+  { name: '灰钟地窟', level: 2, minutes: 8, threat: 18, reward: 60, item: 2,
+    intro: '废弃钟楼下的亡灵每天重复同一次祈祷，为某个不被允许提及的人。圣堂公告却说此地从未安葬过人。',
+    mystery: '亡灵守着被抹去姓名的工程师。古钟曾为王国抽取地脉计时；他查清了地脉炉的用途，于是连名字都成了禁忌。',
+    choices: ['强攻', '净化', '调查'] },
+  { name: '雾桥驿', level: 3, minutes: 10, threat: 25, reward: 75, item: 2,
+    intro: '商路上出现魔族难民，他们宁可进入仇视自己的王国也不愿留在故乡。领主要求封桥，公会却要你护送持有旧时代地图的孩子。',
+    mystery: '地图标明的灾变中心位于王都，而非宣传中的魔王领。魔族逃离的不是战乱，是正在失修的裂隙。',
+    choices: ['救援', '调查', '强攻'] },
+  { name: '断冠遗迹', level: 4, minutes: 12, threat: 32, reward: 90, item: 3,
+    intro: '王冠残片悬在无声大厅，四百年的尘埃不敢落在上面。凡是念出咒文的人，都会被封印当作入侵者。',
+    mystery: '历代勇者的誓约记录于此，每一份都在为地脉炉支付代价；断冠者拒绝的从来不是责任，而是谎言。',
+    choices: ['法术', '静默解析', '调查'] },
+  { name: '黑曜边城', level: 5, minutes: 14, threat: 40, reward: 110, item: 3,
+    intro: '魔王的守军正在抵挡裂隙，城墙上的抓痕朝向城外。城外人类军团的旗帜上，刻着与你遗迹武装相同的纹章。',
+    mystery: '魔王是守隙之职，勇者是封印之职；两种力量曾共同维护世界，如今却在史书的两端互相仇杀。',
+    choices: ['救援', '法术', '净化'] },
+  { name: '裂月王庭', level: 6, minutes: 16, threat: 48, reward: 150, item: 4,
+    intro: '裂月将临，旧王庭的地脉炉开始吞噬大陆，炉火映得夜空如凝固的血。你要决定谁来承担封印，以及如何改写旧约。',
+    mystery: '王国、圣堂与魔族都只保存了旧约的一部分；六地证据拼出了最后的解法，也拼出了四百年前那个夜晚的完整真相。',
+    choices: ['重铸勇者誓约', '织补地脉', '继承守隙王冠', '斩碎地脉炉'] },
+]);
+
+export const SWORD_MAGIC_LORE = [
+  '【剑与魔法·艾瑟兰大陆】',
+  '断冠纪元第417年。封建领主掌握田地与骑士，商路城邦以公会维持秩序；法术学院向贵族与平民学徒同时收取昂贵学费，巡礼僧侣在乡野修筑庇护所。',
+  '人类、森裔精灵、矮人与魔族依靠同一条世界地脉生存。地脉是世界的血液循环：魔法通过理解元素、构筑术式与支付魔力施展，咏唱帮助稳定术式；无吟唱者可以直接完成构筑，并在幼年期（Lv.5及以前）通过榨干魔力的极限施法不断拓宽魔力容器。剑士以呼吸与斗气淬炼肉体，分出追求一击必杀的「天剑流」与卸力流转的「止水流」；僧侣以誓愿和圣印引导地脉支流，游侠负责追踪与遗迹勘探。各技艺皆分初级、中级、上级、圣级、王级、帝级六大位阶。',
+  '再往前是圣约纪元：古代王庭在地脉主脉上建成地脉炉，并立下旧约——勇者司封印，魔王司守隙，两职本是一体两面。四百一十七年前，断冠者折冠拒祭，王庭改写史书，旧约裂为三份残章，王国、圣堂与魔族各执其一。散落大陆的「旧契约信」与游荡遗迹的魔界古皇残魂，仍在等待后来者。',
+  '史书称勇者将击败魔王，精灵却记得另一份旧约。四百年间地脉炉无人维护，持续抽取地脉，魔力潮汐逐年紊乱——而裂月，将临。',
+  '你从白桦镇出发。谁是敌人，要靠你的探索与证据判断，而不是史书；最终可成为黎明勇者、地脉贤者、守隙魔王，或集齐旧契约信成为斩碎虚伪轮回的「折冠之人」。',
+].join('\n\n');
+export const SWORD_MAGIC_HELP = [
+  '【剑与魔法·冒险手册】',
+  '#剑与魔法 世界观 / 地图 / 状态 / 词条 / 见闻',
+  '#抽取异界词条：一次抽取2条不重复天赋；#抽取命格词条 在此路线同样生效。',
+  '#剑与魔法 就职 剑士|魔法师|僧侣|游侠',
+  '#剑与魔法 转职 流派：Lv.5且本职达中级（熟练6）可二转（天剑流/止水流/无声术师/星杖魔导/圣印神官/巡礼白枝/狂犬猎手/迷宫行者）。',
+  '#剑与魔法 开眼 预知眼|千里眼|魔力眼：主线第2章后或偶遇魔界古皇残魂后可觉醒异界魔眼。',
+  '#剑与魔法 训练 剑术|魔法|祷告|侦察 [1~5]：单次5分钟（Lv.5前榨干魔力可触发早慧魔力淬炼）；帮工 [1~5] 每轮5分钟赚15铜币；休养10分钟免费。',
+  '#剑与魔法 探索 风鸣林：到期出现事件；#剑与魔法 抉择 选项：继续计时（集齐3封旧契约信可在终章选择「斩碎地脉炉」）。',
+  '#剑与魔法 状态 或 结算：到期自动核对结果；途中可 #剑与魔法 撤离。',
+  '#剑与魔法 飞升：完成六地区主线与终局、锻造职业武装并达到等级8后，飞升诸天落入仙界（真界境后期，铜币折灵石）；档案封存，可 #剑与魔法 回顾，并开放每日1次 #剑与魔法 裂隙探索。',
+  '#剑与魔法 商店 / 购买 野营口粮 2 / 使用 疗伤药 / 锻造（可三阶锻造：职业武装→傲慢龙骨铭装→初代魔导圣铠）',
+  '#我的纳戒 或 #剑与魔法 背包：查看随身、仓储与探索收获。',
+  '#剑与魔法 存入 物品 数量 / 取出 物品 数量 / 丢弃 物品 数量',
+  '一名角色同时进行一个行动。每次探索、战斗、治疗与训练都需要现实时间；重启保持原期限。主线按地图顺序解锁，完成后提供可重复公会委托。',
+].join('\n');
+
+const has = (state, id) => state.traits.includes(id);
+const weaponTierOf = state => {
+  const t = Number.isSafeInteger(state?.weaponTier) ? state.weaponTier : 0;
+  return state?.weapon ? Math.max(1, t) : t;
+};
+const weaponInfo = state => SWORD_MAGIC_WEAPON_TIERS[weaponTierOf(state)] || SWORD_MAGIC_WEAPON_TIERS[0];
+const caps = state => ({ hp: 100 + (state.level - 1) * 8,
+  mp: 60 + (state.level - 1) * 6 + (has(state, 'mana') ? 35 : 0) + (state.manaForaged || 0) * 5 });
+const load = state => Object.entries(state.bag).reduce((sum, [name, n]) => sum + (name === '旧契约信' ? 0 : n), 0)
+  + Object.entries(state.cargo).reduce((sum, [name, n]) => sum + (name === '旧契约信' ? 0 : n), 0);
+const traitNames = state => state.traits.map(id => SWORD_MAGIC_TRAITS.find(trait => trait.id === id).name);
+const items = bag => Object.entries(bag).filter(([, n]) => n > 0).map(([name, n]) => `${name}×${n}`).join('、') || '空';
+function tryForageMana(state) {
+  const count = state.manaForaged || 0;
+  if (state.level <= 5 && state.mp <= 15 && count < 8) {
+    state.manaForaged = count + 1;
+    return `\n【早慧魔力淬炼】你在幼年极限榨干魔力（${state.manaForaged}/8），魔力容器永久拓宽+5（上限${caps(state).mp}）！`;
+  }
+  return '';
+}
+function randomRoll(random) {
+  const value = random();
+  ok(typeof value === 'number' && Number.isFinite(value) && value >= 0 && value < 1, '随机源异常，本次操作未提交。');
+  return value;
+}
+function changeItems(bag, name, amount) {
+  ok(own(GOODS, name) && Number.isSafeInteger(amount), '物品或数量异常。');
+  const next = (bag[name] || 0) + amount;
+  ok(integer(next), `缺少${name}或数量超出范围。`);
+  bag[name] = next;
+}
+function gainExp(state, amount) {
+  state.exp += amount;
+  while (state.level < 10 && state.exp >= state.level * 35) {
+    state.exp -= state.level * 35;
+    state.level++;
+  }
+}
+export function createSwordMagicState(now = Date.now()) {
+  ok(integer(now, Number.MAX_SAFE_INTEGER), '时间异常。');
+  return { version: 1, revision: 0, createdAt: now, status: 'active', profession: '', subclass: '', traits: [], drawnAt: null,
+    level: 1, exp: 0, coins: 120, hp: 100, mp: 60, wounded: false, manaForaged: 0, demonEye: '', metEmpress: false,
+    skills: { 剑术: 0, 魔法: 0, 祷告: 0, 侦察: 0 }, place: '白桦镇', chapter: 0,
+    bag: { 野营口粮: 2, 疗伤药: 2, 魔力药: 1 }, storage: {}, cargo: {}, weapon: false, weaponTier: 0,
+    companion: false, pact: false, kashu: false,
+    action: null, encounter: null, lore: [], ending: '', defeats: 0, commissions: 0,
+    history: [], receipts: [], memorial: '', riftDay: '' };
+}
+
+function validateState(state) {
+  ok(state?.version === 1 && integer(state.revision, Number.MAX_SAFE_INTEGER)
+    && integer(state.createdAt, Number.MAX_SAFE_INTEGER), '异界存档版本异常。');
+  ok(integer(state.level, 10) && state.level >= 1 && integer(state.exp)
+    && integer(state.coins) && integer(state.chapter, 6) && integer(state.defeats)
+    && integer(state.commissions), '异界成长记录异常。');
+  ok(state.profession === '' || own(SWORD_MAGIC_PROFESSIONS, state.profession), '职业记录异常。');
+  ok(state.subclass === undefined || state.subclass === ''
+    || (own(SWORD_MAGIC_SUBCLASSES, state.subclass) && SWORD_MAGIC_SUBCLASSES[state.subclass].profession === state.profession), '二转流派记录异常。');
+  ok(state.manaForaged === undefined || integer(state.manaForaged, 8), '魔力淬炼记录异常。');
+  ok(state.demonEye === undefined || state.demonEye === '' || own(SWORD_MAGIC_DEMON_EYES, state.demonEye), '魔眼记录异常。');
+  ok(state.weaponTier === undefined || (integer(state.weaponTier, 3) && (state.weaponTier === 0 || state.weapon)), '武装阶数记录异常。');
+  ok(state.metEmpress === undefined || typeof state.metEmpress === 'boolean', '奇遇记录异常。');
+  ok(state.kashu === undefined || typeof state.kashu === 'boolean', '魔族同盟记录异常。');
+  ok(state.riftDay === undefined || typeof state.riftDay === 'string', '裂隙回响记录异常。');
+  ok(Array.isArray(state.traits) && state.traits.length <= 2 && new Set(state.traits).size === state.traits.length
+    && state.traits.every(id => TRAIT_IDS.includes(id))
+    && (state.drawnAt === null ? state.traits.length === 0 : integer(state.drawnAt, Number.MAX_SAFE_INTEGER) && state.traits.length === 2), '天赋记录异常。');
+  ok(integer(state.hp, caps(state).hp) && integer(state.mp, caps(state).mp)
+    && ['wounded', 'weapon', 'companion', 'pact'].every(key => typeof state[key] === 'boolean'), '异界生命记录异常。');
+  ok(state.skills && Object.keys(state.skills).length === 4
+    && ['剑术', '魔法', '祷告', '侦察'].every(key => integer(state.skills[key], 30)), '职业熟练度异常。');
+  for (const bag of [state.bag, state.storage, state.cargo]) {
+    ok(bag && typeof bag === 'object' && !Array.isArray(bag)
+      && Object.entries(bag).every(([name, count]) => own(GOODS, name) && integer(count)), '异界物品记录异常。');
+  }
+  ok(load(state) <= 12, '随身及探索收获合计上限12格。');
+  ok(['白桦镇', ...SWORD_MAGIC_REGIONS.map(region => region.name)].includes(state.place), '异界位置异常。');
+  ok(Array.isArray(state.lore) && state.lore.length === state.chapter
+    && state.lore.every((name, i) => name === SWORD_MAGIC_REGIONS[i].name), '主线见闻记录异常。');
+  ok(state.status === undefined || state.status === 'active' || state.status === 'ascended', '异界篇章状态异常。');
+  ok(['', '黎明勇者', '地脉贤者', '守隙魔王', '折冠之人'].includes(state.ending)
+    && (state.chapter === 6) === Boolean(state.ending), '异界终局异常。');
+  ok(state.status !== 'ascended' || (state.chapter === 6 && Boolean(state.ending)), '飞升记录异常。');
+  // memorial 是飞升信物的待发标记：只在飞升后可存在，发放成功后清空；旧档无此字段视为已清空。
+  ok(state.memorial === undefined || state.memorial === ''
+    || (state.status === 'ascended' && own(SWORD_MAGIC_MEMORIALS, state.memorial)), '飞升信物记录异常。');
+  const a = state.action;
+  ok(a === null || (a && ['train', 'work', 'rest', 'use', 'explore', 'choice', 'forge', 'return'].includes(a.kind)
+    && integer(a.startedAt, Number.MAX_SAFE_INTEGER) && integer(a.endAt, Number.MAX_SAFE_INTEGER)
+    && a.endAt > a.startedAt && typeof a.target === 'string'
+    && integer(a.region, 5) && typeof a.repeat === 'boolean' && typeof a.title === 'string'
+    && (a.count === undefined || (integer(a.count, 5) && a.count >= 1))
+    && Number.isFinite(a.roll) && a.roll >= 0 && a.roll < 1), '异界行动记录异常。');
+  if (a) {
+    if (a.kind === 'train') ok(own(state.skills, a.target), '训练目标异常。');
+    if (a.kind === 'use') ok(['疗伤药', '魔力药'].includes(a.target), '治疗记录异常。');
+    if (['explore', 'choice'].includes(a.kind)) ok(state.place === SWORD_MAGIC_REGIONS[a.region].name, '探索位置异常。');
+    if (a.kind === 'choice') ok(SWORD_MAGIC_REGIONS[a.region].choices.includes(a.target), '抉择记录异常。');
+  }
+  ok(state.encounter === null || (integer(state.encounter.region, 5) && typeof state.encounter.repeat === 'boolean'
+    && state.place === SWORD_MAGIC_REGIONS[state.encounter.region].name && !a), '遭遇记录异常。');
+  for (const [key, limit] of [['history', 16], ['receipts', 64]]) {
+    ok(Array.isArray(state[key]) && state[key].length <= limit
+      && state[key].every(item => typeof item.message === 'string'
+        && (key === 'history' ? integer(item.at, Number.MAX_SAFE_INTEGER) : typeof item.id === 'string' && item.id.length > 0)), '异界履历异常。');
+  }
+  ok(new Set(state.receipts.map(receipt => receipt.id)).size === state.receipts.length, '消息凭证重复。');
+}
+
+export function isSwordMagicActive(player) {
+  const state = player?.剑与魔法;
+  if (state) return state.status !== 'ascended';
+  return Number(player?.power_place) === SWORD_MAGIC_LOCATION;
+}
+// 飞升信物的待发查询与清空：清空必须自行推进 revision，写保护只允许 +1。
+export function getPendingMemorial(player) {
+  const state = player?.剑与魔法;
+  if (!state || state.status !== 'ascended' || !state.memorial) return null;
+  const item = SWORD_MAGIC_MEMORIALS[state.memorial];
+  return item ? { ...item, ending: state.memorial } : null;
+}
+export function clearPendingMemorial(player) {
+  if (!getPendingMemorial(player)) return false;
+  player.剑与魔法.memorial = '';
+  player.剑与魔法.revision += 1;
+  return true;
+}
+export function getSwordMagicCommandBlock(player, message) {
+  if (!isSwordMagicActive(player)) return '';
+  const text = String(message || '').trim();
+  // 转世确认流程对异界角色放行：断绝此生会清空整档，是离开本条路线的合法出口。
+  if (/^(?:断绝此生|再继仙缘)$/.test(text)) return '';
+  if (/^#(?:剑与魔法(?:\s|帮助(?:\s|$)|$)|抽取异界词条$|抽取词条$|抽取命格词条$|我的练气$|我$|我的纳戒$|纳戒$|背包$|修仙帮助$|诸天帮助$|再入仙途$|强制再入仙途$|世界(?:\s|$))/.test(text)) return '';
+  return '你正身处「剑与魔法」，使用独立职业、魔力与背包。发送 #剑与魔法 帮助 查看冒险指令；通关终局后可 #剑与魔法 飞升 前往仙界。';
+}
+export function assertSwordMagicWriteCurrent(previous, next) {
+  if (!previous?.剑与魔法) return;
+  const before = previous.剑与魔法, after = next?.剑与魔法;
+  let valid = true;
+  try { validateState(after); } catch { valid = false; }
+  // 境界字段与位面锚定只在「前后都在籍」时校验；飞升（active→ascended）是合法的一次性跳变。
+  const bothActive = before.status !== 'ascended' && after?.status !== 'ascended';
+  const changedNativeRealm = bothActive
+    && ['level_id', 'Physique_id', 'mijinglevel_id', 'xiangulevel_id', 'huafenlevel_id', 'lunhui']
+      .some(key => Number(previous[key] || 0) !== Number(next[key] || 0));
+  if (!valid || after.revision < before.revision || after.revision > before.revision + 1
+    || (after.revision === before.revision && JSON.stringify(after) !== JSON.stringify(before))
+    || (after.status !== 'ascended' && Number(next.power_place) !== SWORD_MAGIC_LOCATION)
+    || changedNativeRealm) {
+    const error = new Error('剑与魔法存档已变化，请读取最新记录再操作。');
+    error.code = 'SWORD_MAGIC_STALE_WRITE';
+    throw error;
+  }
+}
+
+function status(state, now) {
+  const limits = caps(state);
+  const wInfo = weaponInfo(state);
+  const profLabel = state.subclass ? `${state.profession}·${state.subclass}` : (state.profession || '未就职');
+  const eyeLabel = state.demonEye ? `｜魔眼：${state.demonEye}` : '';
+  const forageLabel = state.manaForaged ? `（早慧淬炼+${state.manaForaged * 5}）` : '';
+  const letters = state.bag?.旧契约信 || 0;
+  return [
+    `【剑与魔法·艾瑟兰】${profLabel} Lv.${state.level}｜${state.ending || '白桦镇的异乡人'}${eyeLabel}`,
+    `生命${state.hp}/${limits.hp}｜魔力${state.mp}/${limits.mp}${forageLabel}｜铜币${state.coins}｜经验${state.exp}/${state.level * 35}`,
+    `天赋：${traitNames(state).join('、') || '尚未抽取，发送 #抽取异界词条'}；职业武装：${state.weapon ? `已锻造（${wInfo.name}）` : '未锻造'}${letters ? `；旧契约信×${letters}` : ''}`,
+    `旅途羁绊：${state.companion ? '巡礼僧侣莉娅同行（战后治疗5）' : '尚无同行者'}；${state.pact ? '风精灵契约（施法消耗-2，回镇恢复魔力4）' : '尚未缔结精灵契约'}${state.kashu ? '；魔族少年卡修同盟' : ''}`,
+    `熟练度：${Object.entries(state.skills).map(([name, n]) => `${name}${n}/30(${getSkillRank(n)})`).join('、')}`,
+    `地点：${state.place}｜主线${state.chapter}/6｜公会委托${state.commissions}次｜重伤撤回${state.defeats}次`,
+    state.action ? `行动：${state.action.title}｜${Math.max(0, Math.ceil((state.action.endAt - now) / 1000))}秒后完成`
+      : state.encounter ? `事件：${SWORD_MAGIC_REGIONS[state.encounter.region].intro}\n选项：${SWORD_MAGIC_REGIONS[state.encounter.region].choices.join(' / ')}；发送 #剑与魔法 抉择 选项`
+        : state.wounded ? '你需要休养或使用疗伤药。' : '当前空闲。可以训练、准备背包或探索地图。',
+    '发送 #剑与魔法 帮助 查看规则；#我的纳戒 查看当前路线物资。',
+  ].join('\n');
+}
+function begin(state, kind, title, minutes, target, now, random, extra = {}) {
+  ok(!state.action, '已有行动正在进行，请查看状态或等待其完成。');
+  const roll = ['explore', 'choice'].includes(kind) ? randomRoll(random) : 0;
+  const endAt = now + Math.max(1, minutes) * MINUTE;
+  ok(Number.isSafeInteger(endAt), '行动结束时间超出范围。');
+  state.action = { kind, title, target, startedAt: now, endAt, roll, region: 0, repeat: false, ...extra };
+  return `${title}已开始，预计${Math.max(1, minutes)}分钟。发送 #剑与魔法 状态 查看进度；到期后自动兑现。`;
+}
+function settle(state) {
+  const a = state.action;
+  state.action = null;
+  const count = a.count || 1;
+  if (a.kind === 'train') {
+    const trait = { 剑术: 'sword', 魔法: 'element', 祷告: 'holy', 侦察: 'wanderer' }[a.target];
+    const primary = SWORD_MAGIC_PROFESSIONS[state.profession].skill === a.target ? 1 : 0;
+    const perGain = 3 + primary + (has(state, trait) ? 2 : 0);
+    state.skills[a.target] = Math.min(30, state.skills[a.target] + perGain * count);
+    let forageNote = '';
+    if (a.target === '魔法' && state.level <= 5) {
+      state.mp = Math.max(0, state.mp - 25 * count);
+      forageNote = tryForageMana(state);
+    }
+    gainExp(state, 18 * count);
+    return `训练完成：${a.target}熟练度${state.skills[a.target]}/30（${getSkillRankTitle(a.target, state.skills[a.target])}），获得${18 * count}经验。${forageNote}`;
+  }
+  if (a.kind === 'work') {
+    const gain = 15 * count;
+    state.coins += gain;
+    return `白桦镇帮工完成，获得${gain}铜币。`;
+  }
+  if (a.kind === 'rest') {
+    state.hp = caps(state).hp; state.mp = caps(state).mp; state.wounded = false;
+    return '在白桦镇休养完成，生命与魔力恢复，重伤已解除。';
+  }
+  if (a.kind === 'use') {
+    if (a.target === '疗伤药') { state.hp = Math.min(caps(state).hp, state.hp + 60); state.wounded = false; }
+    else state.mp = Math.min(caps(state).mp, state.mp + 50);
+    return `使用${a.target}完成；生命${state.hp}，魔力${state.mp}。`;
+  }
+  if (a.kind === 'forge') {
+    const nextTier = Math.min(3, weaponTierOf(state) + 1);
+    state.weapon = true;
+    state.weaponTier = nextTier;
+    const info = SWORD_MAGIC_WEAPON_TIERS[nextTier];
+    return `${info.name}锻造完成，所有冒险应对能力增加${info.power}。`;
+  }
+  if (a.kind === 'return') {
+    state.place = '白桦镇'; state.encounter = null; state.cargo = {};
+    return '你已撤回白桦镇，未完成的本次探索没有发奖。';
+  }
+  const region = SWORD_MAGIC_REGIONS[a.region];
+  if (a.kind === 'explore') {
+    state.encounter = { region: a.region, repeat: a.repeat };
+    let empressNote = '';
+    if (!state.metEmpress && a.region >= 1 && (state.bag.野营口粮 || 0) >= 1) {
+      state.metEmpress = true;
+      empressNote = '\n【奇遇·魔界古皇残魂】饥肠辘辘的金发少女在废墟边盯上了你的野营口粮；作为答谢，她允许你发送 #剑与魔法 开眼 预知眼|千里眼|魔力眼 觉醒异界魔眼！';
+    }
+    return `抵达${region.name}。${region.intro}${empressNote}\n可选：${region.choices.join(' / ')}。调查或应对仍需时间，发送 #剑与魔法 抉择 选项。`;
+  }
+  const skill = ['法术', '静默解析', '织补地脉'].includes(a.target) ? '魔法'
+    : ['净化', '继承守隙王冠'].includes(a.target) ? '祷告'
+      : ['调查', '精灵交涉'].includes(a.target) ? '侦察' : '剑术';
+  const primary = SWORD_MAGIC_PROFESSIONS[state.profession].skill === skill;
+  const sub = state.subclass ? SWORD_MAGIC_SUBCLASSES[state.subclass] : null;
+  const eye = state.demonEye ? SWORD_MAGIC_DEMON_EYES[state.demonEye] : null;
+  const wPower = weaponInfo(state).power;
+  const power = state.level * 5 + state.skills[skill] + (primary ? 7 : 0) + wPower
+    + (sub ? sub.power : 0)
+    + (state.subclass === '天剑流' && a.target === '强攻' ? 6 : 0)
+    + (state.subclass === '无声术师' && has(state, 'silent') ? 5 : 0)
+    + (eye ? eye.power : 0)
+    + (skill === '剑术' && has(state, 'sword') ? 6 : 0)
+    + (a.target === '精灵交涉' && has(state, 'spirit') ? 14 : 0)
+    + (a.target === '静默解析' && has(state, 'silent') ? 14 : 0);
+  const effectiveThreat = Math.max(4, region.threat - (a.region === 4 && state.kashu ? 8 : 0));
+  const maxDanger = state.subclass === '狂犬猎手' ? 0.50 : 0.65;
+  const danger = Math.max(0.03, Math.min(maxDanger, (effectiveThreat - power + 18) / 100));
+  const hurtReduce = (has(state, 'will') ? 4 : 0)
+    + (state.subclass === '止水流' ? 6 : 0)
+    + (eye?.hurtReduce || 0);
+  const hurt = Math.max(2, effectiveThreat - Math.floor(power / 3) - hurtReduce)
+    + (a.roll < danger ? 30 : 0);
+  state.hp = Math.max(0, state.hp - hurt);
+  state.place = '白桦镇';
+  if (state.hp === 0) {
+    state.defeats++; state.hp = 1; state.wounded = true; state.cargo = {};
+    state.coins -= Math.min(15, state.coins);
+    return '你在冒险中重伤，被公会救援队送回白桦镇。本次收获遗失，支付至多15铜币救援费；休养后可再次挑战。';
+  }
+  const extraCrystal = (a.target === '调查' ? 1 : 0)
+    + (has(state, 'wanderer') && a.target === '调查' ? 1 : 0)
+    + (state.subclass === '星杖魔导' ? 1 : 0)
+    + (eye?.extraItem || 0);
+  const amount = Math.min(region.item + extraCrystal, 12 - load(state));
+  changeItems(state.bag, '古代晶片', amount);
+  const baseCoins = a.repeat ? Math.floor(region.reward / 2) : region.reward;
+  const coinMult = state.subclass === '迷宫行者' ? 1.35 : state.subclass === '天剑流' ? 1.2 : 1;
+  const earnedCoins = Math.floor(baseCoins * coinMult)
+    + (state.subclass === '圣印神官' && skill === '祷告' ? 15 : 0);
+  state.coins += earnedCoins;
+  gainExp(state, a.repeat ? 22 : 45);
+  let letterNote = '';
+  if (a.repeat) state.commissions++;
+  else {
+    if (a.region === 0 && a.target === '救援') state.companion = true;
+    if (a.region === 0 && a.target === '精灵交涉') state.pact = true;
+    if (a.region === 2 && a.target === '救援') state.kashu = true;
+    if (a.region < 5 && ['调查', '精灵交涉', '净化', '静默解析', '救援'].includes(a.target) && (state.bag.旧契约信 || 0) < 5) {
+      changeItems(state.bag, '旧契约信', 1);
+      letterNote = `\n【灾变家书】你在遗迹夹层寻获「旧契约信」×1（当前${state.bag.旧契约信}/3，集齐3封可在裂月王庭斩碎地脉炉）。`;
+    }
+    state.lore.push(region.name); state.chapter++;
+    if (state.chapter === 6) state.ending = {
+      重铸勇者誓约: '黎明勇者', 织补地脉: '地脉贤者', 继承守隙王冠: '守隙魔王', 斩碎地脉炉: '折冠之人',
+    }[a.target];
+  }
+  const healMult = state.subclass === '巡礼白枝' ? 2 : 1;
+  if (state.companion) state.hp = Math.min(caps(state).hp, state.hp + 5 * healMult);
+  if (state.subclass === '圣印神官' && skill === '祷告') state.hp = Math.min(caps(state).hp, state.hp + 10);
+  if (state.pact) state.mp = Math.min(caps(state).mp, state.mp + 4);
+  state.cargo = {};
+  return `完成${region.name}的${a.repeat ? '公会委托' : '主线'}，遭遇伤害${hurt}，带回古代晶片×${amount}，铜币+${earnedCoins}。\n${a.repeat ? '重复委托不重复解锁主线见闻。' : `【见闻】${region.mystery}`}${!a.repeat && a.region === 0 ? state.companion ? '\n你救出了巡礼僧侣莉娅，她将同行并在每次冒险后治疗5生命。' : state.pact ? '\n风精灵与你缔结契约，后续施法减少2魔力，回镇恢复4魔力。' : '\n你带回了更完整的遗迹材料；调查将额外获得晶片。' : ''}${!a.repeat && a.region === 2 && state.kashu ? '\n【同行夜话】你护送的魔族少年卡修记下了你的恩情，黑曜边城的魔族守军将为你降低戒备（威胁-8）。' : ''}${letterNote}${state.ending ? `\n【断冠纪元终章】你成为${state.ending}，你的决定已写入大陆史。` : ''}`;
+}
+
+function perform(state, command, now, random) {
+  const [verb, target, countText, ...extra] = command.split(/\s+/);
+  ok(extra.length === 0, '参数过多，请查看 #剑与魔法 帮助。');
+  if (verb === '抽取词条') {
+    ok(!target && state.drawnAt === null && !state.action, '开局词条每名角色仅抽取一次，当前行动中也暂缓抽取。');
+    let pool = [...SWORD_MAGIC_TRAITS];
+    for (let i = 0; i < 2; i++) {
+      let point = randomRoll(random) * pool.reduce((sum, trait) => sum + trait.weight, 0);
+      const trait = pool.find(item => (point -= item.weight) < 0) || pool.at(-1);
+      state.traits.push(trait.id); pool = pool.filter(item => item.id !== trait.id);
+    }
+    state.drawnAt = now; state.mp = caps(state).mp;
+    return `【异界开局词条】${state.traits.map(id => {
+      const trait = SWORD_MAGIC_TRAITS.find(item => item.id === id);
+      return `${trait.name}：${trait.desc}`;
+    }).join('\n')}\n词条已保存，本角色不重复抽取。`;
+  }
+  if (verb === '就职') {
+    ok(!state.action, '当前行动结束后再登记职业。');
+    ok(!state.profession && own(SWORD_MAGIC_PROFESSIONS, target) && !countText, '选择一次职业：剑士、魔法师、僧侣、游侠。');
+    ok(state.drawnAt !== null, '请先发送 #抽取异界词条，再根据天赋选择职业。');
+    state.profession = target; state.skills[SWORD_MAGIC_PROFESSIONS[target].skill] = 5;
+    return `你在白桦镇公会登记为${target}。${SWORD_MAGIC_PROFESSIONS[target].desc}`;
+  }
+  if (verb === '丢弃') {
+    const count = Number(countText);
+    ok(own(GOODS, target) && integer(count) && count > 0 && /^\d+$/.test(countText), '用法：丢弃 物品 正整数。');
+    changeItems(state.bag, target, -count); return `已丢弃${target}×${count}。`;
+  }
+  if (verb === '撤离') {
+    ok(!target && state.place !== '白桦镇' && (!state.action || state.action.kind === 'explore'), '只能中止行进或从尚未应对的遭遇撤离。');
+    state.action = null; state.encounter = null;
+    return begin(state, 'return', '撤回白桦镇', 3, '', now, random);
+  }
+  ok(!state.action, `当前正在${state.action?.title}，请等待完成。`);
+  if (verb === '抉择') {
+    ok(state.encounter && !countText, '先完成一段探索，再选择遭遇选项。');
+    const { region: index, repeat } = state.encounter;
+    const region = SWORD_MAGIC_REGIONS[index];
+    ok(region.choices.includes(target), `本次选项：${region.choices.join('、')}。`);
+    if (target === '精灵交涉') ok(has(state, 'spirit'), '精灵尚未回应你的声音，可选择救援或调查。');
+    if (target === '静默解析') ok(has(state, 'silent'), '需要无吟唱者天赋；也可通过调查完成此遗迹。');
+    if (index === 3 && target === '法术') ok(has(state, 'silent'), '无声大厅会响应咒文；可选择调查，拥有无吟唱者时也可施法或静默解析。');
+    if (index === 5) {
+      if (target === '斩碎地脉炉') {
+        const primary = SWORD_MAGIC_PROFESSIONS[state.profession]?.skill || '剑术';
+        ok((state.bag.旧契约信 || 0) >= 3 && state.skills[primary] >= 12 && state.weapon,
+          `此真结局需要旧契约信×3、${primary}熟练度12（上级）与职业武装。`);
+      } else {
+        const required = { 重铸勇者誓约: '剑术', 织补地脉: '魔法', 继承守隙王冠: '祷告' }[target];
+        ok(state.skills[required] >= 10 && state.weapon, `此结局需要${required}熟练度10与职业武装；可先撤离、训练、锻造再来。`);
+      }
+    }
+    const magic = ['法术', '静默解析', '净化', '织补地脉', '继承守隙王冠'].includes(target);
+    const eyeDiscount = state.demonEye === '魔力眼' ? 2 : 0;
+    const cost = magic ? Math.max(2, 12 - (has(state, 'element') ? 3 : 0)
+      - (has(state, 'holy') && target === '净化' ? 3 : 0) - (state.pact ? 2 : 0) - eyeDiscount) : 0;
+    ok(state.mp >= cost, '魔力不足，请撤离回镇补给，或选择其他应对方式。');
+    state.mp -= cost;
+    const forageNote = magic ? tryForageMana(state) : '';
+    state.encounter = null;
+    const choiceMinutes = Math.max(2, (magic && has(state, 'silent') ? 3 : 5) - (magic && state.subclass === '无声术师' ? 1 : 0));
+    return begin(state, 'choice', `${region.name}·${target}`, choiceMinutes, target, now, random, { region: index, repeat }) + forageNote;
+  }
+  if (verb === '使用') {
+    ok(['疗伤药', '魔力药'].includes(target) && !countText, '使用 疗伤药 或 魔力药。');
+    ok((state.bag[target] || 0) > 0, `随身缺少${target}。`);
+    const key = target === '疗伤药' ? 'hp' : 'mp';
+    ok(state[key] < caps(state)[key] || (key === 'hp' && state.wounded), '当前状态已满，保留补给。');
+    ok(!state.encounter, '遭遇期间先决定应对或撤离，治疗需在阶段间进行。');
+    changeItems(state.bag, target, -1);
+    return begin(state, 'use', `使用${target}`, 3, target, now, random);
+  }
+  ok(!state.encounter && state.place === '白桦镇', '先完成当前遭遇或撤离回白桦镇。');
+  if (verb === '转职') {
+    ok(state.profession && !countText, '先就职基础职业，再在等级5进行二转流派晋升。');
+    const options = Object.entries(SWORD_MAGIC_SUBCLASSES)
+      .filter(([, item]) => item.profession === state.profession)
+      .map(([name]) => name);
+    ok(!state.subclass, `你已晋升为「${state.subclass}」，流派选定后不可更改。`);
+    ok(options.includes(target), `${state.profession}可选二转流派：${options.join('、')}。`);
+    const primary = SWORD_MAGIC_PROFESSIONS[state.profession].skill;
+    ok(state.level >= 5 && state.skills[primary] >= 6, `二转需要等级5且${primary}达中级（熟练度6），当前Lv.${state.level}、${primary}${state.skills[primary]}。`);
+    state.subclass = target;
+    return `【二转晋升·${target}】${SWORD_MAGIC_SUBCLASSES[target].desc}`;
+  }
+  if (verb === '开眼') {
+    ok(own(SWORD_MAGIC_DEMON_EYES, target) && !countText, '可选异界魔眼：预知眼、千里眼、魔力眼。');
+    ok(!state.demonEye, `你已觉醒「${state.demonEye}」，魔眼不可重复置换。`);
+    ok(state.metEmpress || state.chapter >= 2, '需在旅途中携带口粮偶遇魔界古皇残魂，或推进主线至第2章后方可开眼。');
+    state.demonEye = target;
+    state.metEmpress = true;
+    return `【魔界古皇·恩赐开眼】你在剧痛中睁开「${target}」——${SWORD_MAGIC_DEMON_EYES[target].desc}`;
+  }
+  if (verb === '飞升') {
+    ok(target === '确认' && !countText, '飞升将离开艾瑟兰、落入仙界继续修行，异界档案封存不再行动。确认请发送 #剑与魔法 飞升 确认。');
+    ok(state.chapter === 6 && state.ending, '飞升需要完成六地区主线并写下终局。');
+    ok(state.weapon, '飞升需要已锻造的职业武装——它将成为你跨入诸天的信物。');
+    ok(state.level >= 8, `飞升需要等级8，当前等级${state.level}。`);
+    state.status = 'ascended';
+    state.memorial = state.ending; // 待发信物标记：发放成功后才清空，进程中断也能补发。
+    const bonusStones = weaponInfo(state).ascensionBonusStones;
+    const bonusText = bonusStones > 0 ? `；${weaponInfo(state).name}共鸣地脉，额外折算${bonusStones}灵石` : '';
+    return '裂月之光落在你的肩上，职业武装化作流光缠于腕间，白桦镇的钟声为异乡人送行。\n'
+      + `【飞升诸天】你落入仙界，境界定为「真界境后期」（修为需重新积累）；异界铜币按1:${SWORD_MAGIC_ASCENSION_COIN_RATE}折为灵石${bonusText}入账。\n`
+      + `命宫额外显化传说词条【异界归人】与【${SWORD_MAGIC_ENDGAME_FATES[state.ending]?.name || '终局'}】（不占原有命格位）：见过另一种力量体系的尽头，道心因此宽广。\n`
+      + '此世档案已封存，发送 #剑与魔法 回顾 可随时翻看，每日亦可发送 #剑与魔法 裂隙探索 感应故土回响。愿你在诸天之上，仍记得艾瑟兰的春天。';
+  }
+  if (verb === '休养') {
+    ok(!target, '用法：#剑与魔法 休养。');
+    const restMinutes = state.subclass === '巡礼白枝' ? 5 : 10;
+    return begin(state, 'rest', '在白桦镇休养', restMinutes, '', now, random);
+  }
+  if (verb === '帮工') {
+    const count = target === undefined ? 1 : Number(target);
+    ok(!countText && integer(count, 5) && count >= 1 && (target === undefined || /^[1-5]$/.test(target)), '用法：#剑与魔法 帮工 [1~5]。');
+    return begin(state, 'work', count > 1 ? `白桦镇公会连续帮工×${count}` : '白桦镇公会帮工', 5 * count, '', now, random, { count });
+  }
+  if (verb === '购买' || verb === '存入' || verb === '取出') {
+    const count = countText === undefined && verb === '购买' ? 1 : Number(countText);
+    ok(own(GOODS, target) && integer(count, 99) && count > 0
+      && (countText === undefined || /^\d+$/.test(countText)), '物品名称或数量有误，数量为1至99的整数。');
+    if (verb !== '存入' && target !== '旧契约信') ok(load(state) + count <= 12, '随身空间不足，请先存入仓储或整理背包。');
+    if (verb === '购买') {
+      ok(GOODS[target].price > 0, `${target}通过探索或事件获得。`);
+      const cost = GOODS[target].price * count;
+      ok(state.coins >= cost, `铜币不足，需要${cost}。`); state.coins -= cost;
+    } else changeItems(verb === '存入' ? state.bag : state.storage, target, -count);
+    changeItems(verb === '存入' ? state.storage : state.bag, target, count);
+    return `${verb}${target}×${count}，随身${load(state)}/12格。`;
+  }
+  ok(state.profession && state.drawnAt !== null, '先抽取异界词条并就职，再进行冒险或训练。');
+  if (verb === '训练') {
+    const count = countText === undefined ? 1 : Number(countText);
+    ok(own(state.skills, target) && integer(count, 5) && count >= 1
+      && (countText === undefined || /^[1-5]$/.test(countText)), '训练方向：剑术、魔法、祷告、侦察（可附带1~5连训次数）；每项熟练度上限30，封顶后仍可获得经验。');
+    const cost = 10 * count;
+    ok(state.coins >= cost, `训练${count}次需要${cost}铜币，可完成已开放地区的公会委托筹措。`);
+    state.coins -= cost;
+    return begin(state, 'train', count > 1 ? `${target}连续训练×${count}` : `${target}训练`, 5 * count, target, now, random, { count });
+  }
+  if (verb === '锻造') {
+    const curTier = weaponTierOf(state);
+    ok(!target && curTier < 3, '初代魔导圣铠已达三阶极限，无需再次锻造。');
+    const nextSpec = SWORD_MAGIC_WEAPON_TIERS[curTier + 1];
+    ok(state.coins >= nextSpec.coins && (state.bag.古代晶片 || 0) >= nextSpec.crystals,
+      `锻造${nextSpec.name}（${curTier + 1}阶）需要${nextSpec.coins}铜币与随身古代晶片×${nextSpec.crystals}。`);
+    state.coins -= nextSpec.coins; changeItems(state.bag, '古代晶片', -nextSpec.crystals);
+    return begin(state, 'forge', `锻造${nextSpec.name}`, nextSpec.minutes, '', now, random);
+  }
+  if (verb === '探索') {
+    const index = SWORD_MAGIC_REGIONS.findIndex(region => region.name === target);
+    ok(index >= 0 && !countText, '请按地图中的地区名探索。');
+    const region = SWORD_MAGIC_REGIONS[index];
+    ok(!state.wounded, '重伤期间先休养或使用疗伤药。');
+    ok(index <= state.chapter && state.level >= region.level, `此地区需要前序主线与等级${region.level}，当前等级${state.level}。`);
+    ok((state.bag.野营口粮 || 0) > 0 && load(state) <= 11, '探索需要野营口粮×1，并至少留1格收获空间。');
+    changeItems(state.bag, '野营口粮', -1); state.place = region.name;
+    const reduceMin = (has(state, 'wanderer') ? 1 : 0) + (state.subclass === '迷宫行者' ? 1 : 0);
+    return begin(state, 'explore', `前往${region.name}探索`, Math.max(2, region.minutes - reduceMin), target, now, random, { region: index, repeat: index < state.chapter });
+  }
+  throw new Error('未知指令，请发送 #剑与魔法 帮助。');
+}
+
+export function runSwordMagicCommand(player, command = '状态', { now = Date.now(), random = Math.random, requestId = '' } = {}) {
+  let state, messages = [], progressed = false, wasAscended = false;
+  const commit = (success, message) => {
+    if (progressed) {
+      state.revision++;
+      state.history = [...state.history, { at: now, message }].slice(-16);
+      // ponytail: 保留最近64条指令回执；核心天赋、主线和行动状态另外独立防重。
+      if (requestId) state.receipts = [...state.receipts, { id: requestId, message }].slice(-64);
+      validateState(state);
+      player.剑与魔法 = state;
+      if (state.status === 'ascended' && !wasAscended) {
+        // 飞升是一次性跳变：落仙界、修为重新积累、铜币折灵石；档案封存。
+        player.level_id = SWORD_MAGIC_ASCENSION_LEVEL_ID;
+        player.修为 = 0;
+        player.power = 0;
+        player.power_place = 1;
+        player.灵石 = (Number.isSafeInteger(player.灵石) ? player.灵石 : 0)
+          + state.coins * SWORD_MAGIC_ASCENSION_COIN_RATE + weaponInfo(state).ascensionBonusStones;
+        // 毕业专属命格：异界归人 + 终局专属词条；额外开对应格数，不挤占原有抽取位。
+        const fates = [SWORD_MAGIC_GRADUATION_MINGGE, SWORD_MAGIC_ENDGAME_FATES[state.ending]?.id].filter(Boolean);
+        player.附加命格 = [...(Array.isArray(player.附加命格) ? player.附加命格 : []), ...fates];
+        player.命格词条上限 = Math.max(1, Math.trunc(Number(player.命格词条上限) || 1)) + fates.length;
+      } else if (state.status !== 'ascended') {
+        player.power_place = SWORD_MAGIC_LOCATION;
+      }
+    }
+    return { ok: success, changed: progressed, message };
+  };
+  try {
+    ok(typeof command === 'string' && command.length <= 160 && integer(now, Number.MAX_SAFE_INTEGER)
+      && typeof requestId === 'string' && requestId.length <= 160, '指令、时间或消息标识异常。');
+    command = command.trim().replace(/\s+/g, ' ') || '状态';
+    if (command === '帮助') return { ok: true, changed: false, message: SWORD_MAGIC_HELP };
+    if (command === '世界观') return { ok: true, changed: false, message: SWORD_MAGIC_LORE };
+    if (!player?.剑与魔法) {
+      ok(command === '入界 确认', '先发送 #踏入仙途，再选择 #降临 剑与魔法。');
+      ok(!player.试炼宇宙 && !player.复活地球 && Number(player.power_place) === 0
+        && ['level_id', 'Physique_id', 'mijinglevel_id', 'xiangulevel_id', 'huafenlevel_id'].every(key => Number(player[key] ?? 1) === 1)
+        && !Number(player.lunhui || 0), '这条路线接纳新凡人，已有角色沿原路线继续。');
+      state = createSwordMagicState(now); progressed = true;
+      return commit(true, '你在艾瑟兰的白桦镇醒来，公会为异乡人准备了基础补给。\n发送 #抽取异界词条 抽取两条开局天赋，再发送 #剑与魔法 就职 职业。\n#剑与魔法 世界观 查看断冠纪元的秘密。');
+    }
+    validateState(player.剑与魔法);
+    ok(Number(player.power_place) === SWORD_MAGIC_LOCATION
+      || player.剑与魔法.status === 'ascended', '位面与角色记录不一致，请保留存档检查。');
+    const receipt = requestId && player.剑与魔法.receipts.find(item => item.id === requestId);
+    if (receipt) return { ok: true, changed: false, message: `【已处理消息】${receipt.message}` };
+    wasAscended = player.剑与魔法.status === 'ascended';
+    state = structuredClone(player.剑与魔法);
+    state.status ??= 'active';
+    if (state.status === 'ascended'
+      && !['状态', '结算', '背包', '词条', '地图', '见闻', '回顾', '飞升', '裂隙探索'].includes(command)) {
+      return { ok: false, changed: false, message: '本篇已结束，你已飞升诸天。异界档案封存不再行动，可发送 #剑与魔法 回顾 翻看履历，或发送 #剑与魔法 裂隙探索 感应故土回响；修行请在仙界继续。' };
+    }
+    if (state.status === 'ascended' && command === '裂隙探索') {
+      const dayKey = new Date(now + 8 * 3_600_000).toISOString().slice(0, 10);
+      if (state.riftDay === dayKey) {
+        return { ok: false, changed: false, message: '今日已感应过艾瑟兰裂隙回响，请明日再来。' };
+      }
+      state.riftDay = dayKey;
+      const bonusXiuwei = 15_000 + weaponTierOf(state) * 5_000 + (state.ending === '折冠之人' ? 10_000 : 0);
+      const bonusStones = 8_000 + weaponTierOf(state) * 4_000;
+      player.修为 = (Number.isSafeInteger(player.修为) ? player.修为 : 0) + bonusXiuwei;
+      player.灵石 = (Number.isSafeInteger(player.灵石) ? player.灵石 : 0) + bonusStones;
+      progressed = true;
+      return commit(true, `【裂隙回响·艾瑟兰】你隔着界壁聆听白桦镇的钟声与地脉余韵，修为+${bonusXiuwei}，灵石+${bonusStones}。`);
+    }
+    if (state.action && now >= state.action.endAt) {
+      messages.push(settle(state)); progressed = true;
+    }
+    let message;
+    if (command === '状态' || command === '结算') message = state.status === 'ascended'
+      ? `【剑与魔法·档案封存】${state.subclass ? `${state.profession}·${state.subclass}` : state.profession} Lv.${state.level}｜终局：${state.ending}\n你已飞升诸天，落入仙界「真界境后期」，修为重新积累。艾瑟兰的一切化为履历：主线${state.chapter}/6｜公会委托${state.commissions}次｜重伤撤回${state.defeats}次。\n发送 #剑与魔法 回顾 查看冒险履历，每日可 #剑与魔法 裂隙探索 感应回响；见闻与地图仍可查阅。`
+      : status(state, now);
+    else if (command === '飞升') message = state.status === 'ascended'
+      ? '你已飞升诸天，此世档案封存。修行请在仙界继续；#剑与魔法 回顾 可翻看履历。'
+      : `【飞升诸天】完成六地区主线与终局、锻造职业武装、等级达到8后，发送 #剑与魔法 飞升 确认 离开艾瑟兰。\n落点：仙界，境界定为「真界境后期」（练气39级），修为重新积累；随身铜币按1:${SWORD_MAGIC_ASCENSION_COIN_RATE}折为灵石。\n当前进度：主线${state.chapter}/6｜终局${state.ending || '未定'}｜职业武装${state.weapon ? '已锻造' : '未锻造'}｜等级${state.level}。`;
+    else if (command === '回顾') message = state.history.length
+      ? `【剑与魔法·冒险履历】\n${state.history.map(item => item.message).join('\n\n')}`
+      : '尚无履历。';
+    else if (command === '背包') message = `【异界随身物资】${load(state)}/12格\n${items(state.bag)}\n【白桦镇仓储】${items(state.storage)}\n【探索收获】${items(state.cargo)}\n取放仅在白桦镇空闲时进行；休养、治疗、锻造与探索都需时间。`;
+    else if (command === '词条') message = `每个角色抽取2条不重复天赋。下表是首抽权重，第二抽剔除已抽词条后按剩余权重归一；并非两次均为相同概率。\n${SWORD_MAGIC_TRAITS.map(trait => `${trait.name} ${trait.weight}/100：${trait.desc}`).join('\n')}\n已获得：${traitNames(state).join('、') || '尚未抽取'}`;
+    else if (command === '地图') message = SWORD_MAGIC_REGIONS.map((region, i) =>
+      `${i <= state.chapter ? '已开放' : '待解锁'}｜${region.name} Lv.${region.level}｜探索${region.minutes}分钟＋应对5分钟\n${i <= state.chapter ? region.intro : '前序主线完成后揭示'}`
+    ).join('\n\n');
+    else if (command === '见闻') message = state.lore.map(name => { const region = SWORD_MAGIC_REGIONS.find(item => item.name === name); return `【${name}】${region.mystery}`; }).join('\n\n') || '你的见闻尚未成册，完成主线后记录亲自查得的证据。';
+    else if (command === '商店') message = Object.entries(GOODS).filter(([, item]) => item.price).map(([name, item]) => `${name}：${item.price}铜币。${item.description}`).join('\n');
+    else {
+      const settled = structuredClone(state);
+      try { message = perform(state, command, now, random); progressed = true; }
+      catch (error) { state = settled; return commit(false, [...messages, error.message].join('\n\n')); }
+    }
+    return commit(true, [...messages, message].join('\n\n'));
+  } catch (error) {
+    return { ok: false, changed: false, message: error.message };
+  }
+}

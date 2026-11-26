@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta http-equiv="content-type" content="text/html;charset=utf-8" />
+    <link
+      rel="stylesheet"
+      type="text/css"
+      href="{{pluResPath}}/html/najie/najie.css"
+    />
+    <link
+      rel="stylesheet"
+      type="text/css"
+      href="{{pluResPath}}/html/najie/rarity.css?v=20260811"
+    />
+    <link rel="preload" href="../../font/tttgbnumber.ttf" as="font" />
+    <link rel="shortcut icon" href="#" />
+    <style type="text/css">
+      body {
+        width: 100%;
+        text-align: center;
+        background-image: url('{{pluResPath}}/img/najie_pifu/{{pifu}}.jpg');
+        background-size: 100% auto;
+      }
+    </style>
+  </head>
+  <body>
+    <div>
+      <div class="header"></div>
+      <!--上-->
+      <div class="card_box">
+        <!--左-->
+        <div class="user_top_left">
+          <div class="user_top_img_bottom">
+            <img
+              class="user_top_img"
+              src="https://q1.qlogo.cn/g?b=qq&s=0&nk={{user_id}}"
+              onerror="whenError(this)"
+            />
+          </div>
+          <div class="user_top_font_left">{{user_id}}</div>
+        </div>
+        <!--右-->
+        <div class="user_top_right">
+          <div class="user_top_font_right">道号：{{player.名号}}</div>
+          <div class="user_top_font_right">
+            生命：
+            <div class="blood_box">
+              <div class="blood_bar" {{strand_hp.style}}></div>
+              <div class="blood_volume">
+                {{player.当前血量}}/{{player.血量上限}}
+              </div>
+            </div>
+          </div>
+          <div class="user_top_font_right">等级：{{najie.等级}}</div>
+          <div class="user_top_font_right">
+            储量：
+            <div class="blood_box">
+              <div class="blood_bar" {{strand_lingshi.style}}></div>
+              <div class="blood_volume">{{najie.灵石}}/{{najie.灵石上限}}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!--下-->
+    {{if najie.装备.length > 0}}
+    <div class="card_box">
+      <div class="use_data">
+        <div class="user_font user_font_title">【装备】</div>
+        <div class="user_font wupin">
+          {{each najie.装备 item}}
+          <div class="item rarity-{{item.稀有度 || 1}}">
+            <div class="item_title">
+              【{{item.type}}】{{item.自定义名称 || item.name}}({{['劣','普','优','精','极','绝','顶'][item.pinji]}})({{['未锁定','已锁定'][item.islockd]}})
+            </div>
+            {{if item.自定义名称}}<div class="item_int">本名：{{item.name}}</div>{{/if}}
+            {{set equipmentGenesis = item.天阙创世 === true && item.百分比上限豁免 === '天阙创世'}}{{set equipmentCap = equipmentGenesis ? 500 : 499}}{{if !equipmentGenesis && (item.atk>499 || item.def>499 || item.HP>499)}}
+            <div class="item_int">属性:无</div>
+            <div class="item_int">攻击：{{(item.atk || 0).toFixed(0)}}{{if item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.atk}}（+{{set equipmentPercent = item.归一属性.百分比.atk}}{{((equipmentPercent > equipmentCap ? equipmentCap : equipmentPercent)*100).toFixed(0)}}%）{{/if}}</div>
+            <div class="item_int">防御：{{(item.def || 0).toFixed(0)}}{{if item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.def}}（+{{set equipmentPercent = item.归一属性.百分比.def}}{{((equipmentPercent > equipmentCap ? equipmentCap : equipmentPercent)*100).toFixed(0)}}%）{{/if}}</div>
+            <div class="item_int">血量：{{(item.HP || 0).toFixed(0)}}{{if item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.HP}}（+{{set equipmentPercent = item.归一属性.百分比.HP}}{{((equipmentPercent > equipmentCap ? equipmentCap : equipmentPercent)*100).toFixed(0)}}%）{{/if}}</div>
+            {{else}}
+            <div class="item_int">
+              属性:{{['金','木','土','水','火'][item.id-1]}}
+            </div>
+            <div class="item_int">攻击：{{set equipmentPercent = ((item.atk || 0) + ((item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.atk) || 0))}}{{((equipmentPercent > equipmentCap ? equipmentCap : equipmentPercent)*100).toFixed(0)}}%</div>
+            <div class="item_int">防御：{{set equipmentPercent = ((item.def || 0) + ((item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.def) || 0))}}{{((equipmentPercent > equipmentCap ? equipmentCap : equipmentPercent)*100).toFixed(0)}}%</div>
+            <div class="item_int">血量：{{set equipmentPercent = ((item.HP || 0) + ((item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.HP) || 0))}}{{((equipmentPercent > equipmentCap ? equipmentCap : equipmentPercent)*100).toFixed(0)}}%</div>
+            {{/if}}
+            <div class="item_int">暴击：{{(item.bao*100).toFixed(0)}}%</div>
+            <div class="item_int">数量：{{item.数量}}</div>
+            <div class="item_int">出售价：{{item.出售价}}灵石</div>
+            <div class="item_int">代号：{{$index+101}}</div>
+          </div>
+          {{/each}}
+        </div>
+      </div>
+    </div>
+    {{/if}}
+    <!--下-->
+   {{if najie.丹药.length > 0}}
+<div class="card_box">
+  <div class="use_data">
+    <div class="user_font user_font_title">【丹药】</div>
+    <div class="user_font wupin">
+      {{each najie.丹药 item}}
+      <div class="item rarity-{{item.稀有度 || 1}}">
+        <div class="item_title">
+          {{if item.type}}【{{item.type}}】{{/if}}{{item.name}}({{['未锁定','已锁定'][item.islockd]}})
+        </div>
+        {{if item.HPp > 0}}
+        <div class="item_int">恢复血量：{{(item.HPp*100).toFixed(1)}}%{{if item.HP > 0}} + {{item.HP.toLocaleString()}}{{/if}}</div>
+        {{else if item.HP > 0}}
+        <div class="item_int">恢复血量：{{item.HP.toLocaleString()}}</div>
+        {{/if}}
+        {{if item.exp > 0}}
+        <div class="item_int">增加修为：{{item.exp.toLocaleString()}}</div>
+        {{/if}} 
+        {{if item.xingyun > 0}}
+        <div class="item_int">
+          增加幸运：{{(item.xingyun*100).toFixed(1)}}%
+        </div>
+        {{/if}} 
+        {{if item.xueqi > 0}}
+        <div class="item_int">增加血气：{{item.xueqi.toLocaleString()}}</div>
+        {{/if}}
+        {{if item.shouyuan > 0}}
+        <div class="item_int">增加寿元：{{item.shouyuan}}年</div>
+        {{/if}}
+        {{if item.道心 > 0}}
+        <div class="item_int">增加道心：{{item.道心.toLocaleString()}}</div>
+        {{else if item.type == '道心' && item.desc}}
+        <div class="item_int">效果：{{item.desc}}</div>
+        {{/if}}
+        {{if item.yuanshen > 0}}
+        <div class="item_int">增加元神与元神上限：{{item.yuanshen.toLocaleString()}}</div>
+        {{/if}}
+        {{if item.heart > 0}}
+        <div class="item_int">恢复心神：{{item.heart.toLocaleString()}}</div>
+        {{/if}}
+        {{if item.heartMax > 0}}
+        <div class="item_int">增加心神上限：{{item.heartMax.toLocaleString()}}{{if item.useLimit > 0}}（最多服用{{item.useLimit}}颗）{{/if}}</div>
+        {{/if}}
+        {{if item.potential > 0}}
+        <div class="item_int">增加仙道潜力：{{item.potential.toLocaleString()}}</div>
+        {{/if}}
+        {{if item.insight > 0}}
+        <div class="item_int">增加功法感悟：{{item.insight.toLocaleString()}}</div>
+        {{/if}}
+        {{if item.额外数量 > 0}}
+        <div class="item_int">下次炼器额外格子：{{item.额外数量}}</div>
+        {{/if}}
+        {{if item.biguan > 0}}
+        <div class="item_int">提高下次闭关效率：{{(item.biguan*100).toFixed(0)}}%</div>
+        {{/if}}
+        {{if item.daoshang > 0}}
+        <div class="item_int">清除道伤：{{item.daoshang.toLocaleString()}}</div>
+        {{/if}}
+        {{if item.chujin > 0}}
+          <div class="item_int">增加出金率：{{item.chujin}}%</div>
+        {{/if}}
+        {{if item.desc && !(item.exp || item.xueqi || item.HP || item.HPp || item.yuanshen || item.heart || item.heartMax || item.道心 || item.potential || item.insight || item.shouyuan || item.chujin || item.xingyun || item.额外数量 || item.biguan || item.daoshang)}}
+        <div class="item_int">说明：{{item.desc}}</div>
+        {{/if}}
+        <div class="item_int">数量：{{item.数量}}</div>
+        <div class="item_int">出售价：{{item.出售价}}灵石</div>
+      </div>
+      {{/each}}
+    </div>
+  </div>
+</div>
+{{/if}}
+    <!--下-->
+    {{if najie.道具.length > 0}}
+    <div class="card_box">
+      <div class="use_data">
+        <div class="user_font user_font_title">【道具】</div>
+        <div class="user_font wupin">
+          {{each najie.道具 item}}
+          <div class="item rarity-{{item.稀有度 || 1}}">
+            <div class="item_title">
+              {{item.name}}({{['未锁定','已锁定'][item.islockd]}})
+            </div>
+            <div class="item_int">说明：{{item.desc}}</div>
+            <div class="item_int">数量：{{item.数量}}</div>
+            <div class="item_int">出售价：{{item.出售价}}灵石</div>
+          </div>
+          {{/each}}
+        </div>
+      </div>
+    </div>
+    {{/if}}
+    <!--下-->
+    {{if najie.功法.length > 0}}
+    <div class="card_box">
+      <div class="use_data">
+        <div class="user_font user_font_title">【功法】</div>
+        <div class="user_font wupin">
+          {{each najie.功法 item}}
+          <div class="item rarity-{{item.稀有度 || 1}}">
+            <div class="item_title">
+              {{item.name}}({{['未锁定','已锁定'][item.islockd]}})
+            </div>
+            {{if item.修炼加成 > 0}}
+            <div class="item_int">
+              修炼加成：{{(item.修炼加成*100).toFixed(0)}}%
+            </div>
+            {{/if}}
+            <div class="item_int">数量：{{item.数量}}</div>
+            <div class="item_int">出售价：{{item.出售价}}灵石</div>
+          </div>
+          {{/each}}
+        </div>
+      </div>
+    </div>
+    {{/if}}
+    <!--下-->
+    {{if najie.草药.length > 0}}
+    <div class="card_box">
+      <div class="use_data">
+        <div class="user_font user_font_title">【草药】</div>
+        <div class="user_font wupin">
+          {{each najie.草药 item}}
+          <div class="item rarity-{{item.稀有度 || 1}}">
+            <div class="item_title">
+              {{item.name}}({{['未锁定','已锁定'][item.islockd]}})
+            </div>
+            <div class="item_int">数量：{{item.数量}}</div>
+            <div class="item_int">出售价：{{item.出售价}}灵石</div>
+          </div>
+          {{/each}}
+        </div>
+      </div>
+    </div>
+    {{/if}} {{if najie.材料.length > 0}}
+    <div class="card_box">
+      <div class="use_data">
+        <div class="user_font user_font_title">【材料】</div>
+        <div class="user_font wupin">
+          {{each najie.材料 item}}
+          <div class="item rarity-{{item.稀有度 || 1}}">
+            <div class="item_title">
+              {{item.name}}({{['未锁定','已锁定'][item.islockd]}})
+            </div>
+            <div class="item_int">数量：{{item.数量}}</div>
+            <div class="item_int">出售价：{{item.出售价}}灵石</div>
+          </div>
+          {{/each}}
+        </div>
+      </div>
+    </div>
+    {{/if}}{{if najie.食材.length > 0}}
+    <div class="card_box">
+        <div class="use_data">
+            <div class="user_font user_font_title">【食材】</div>
+            <div class="user_font  wupin">
+                {{each najie.食材 item}}
+                <div class="item rarity-{{item.稀有度 || 1}}">
+                    <div class="item_title">{{item.name}}</div>
+                    <div class="item_int">数量：{{item.数量}}</div>
+                    <div class="item_int">出售价：{{item.出售价}}灵石</div>
+                    <div class="item_int">锁定状态：({{['未锁定','已锁定'][item.islockd]}})</div>
+                </div>
+                {{/each}}
+            </div>
+        </div>
+    </div>
+    {{/if}}
+    {{if najie.盒子.length > 0}}
+    <div class="card_box">
+        <div class="use_data">
+            <div class="user_font user_font_title">【盒子】</div>
+            <div class="user_font  wupin">
+                {{each najie.盒子 item}}
+                <div class="item rarity-{{item.稀有度 || 1}}">
+                    <div class="item_title">{{item.name}}</div>
+                    <div class="item_int">数量：{{item.数量}}</div>
+                    <div class="item_int">出售价：{{item.出售价}}灵石</div>
+                    <div class="item_int">锁定状态：({{['未锁定','已锁定'][item.islockd]}})</div>
+                </div>
+                {{/each}}
+            </div>
+        </div>
+    </div>
+    {{/if}} {{if najie.宝石.length > 0}}
+    <div class="card_box">
+      <div class="use_data">
+        <div class="user_font user_font_title">【宝石】</div>
+        <div class="user_font wupin">
+          {{each najie.宝石 item}}
+          <div class="item rarity-{{item.稀有度 || 1}}">
+            <div class="item_title">
+              {{item.name}}({{['未锁定','已锁定'][item.islockd]}})
+            </div>
+            <div class="item_int">攻击加成：{{item.攻击加成}}</div>
+            <div class="item_int">暴击率加成：{{item.暴击加成*100}}%</div>
+            <div class="item_int">生命加成：{{item.生命加成}}</div>
+            <div class="item_int">防御加成：{{item.防御加成}}</div>
+            <div class="item_int">等级：{{item.升级次数}}</div>
+            <div class="item_int">数量：{{item.数量}}</div>
+            <div class="item_int">出售价：{{item.出售价}}灵石</div>
+          </div>
+          {{/each}}
+        </div>
+      </div>
+    </div>
+    {{/if}} {{if najie.仙宠.length > 0}}
+    <div class="card_box">
+      <div class="use_data">
+        <div class="user_font user_font_title">【仙宠】</div>
+        <div class="user_font wupin">
+          {{each najie.仙宠 item}}
+          <div class="item rarity-{{item.稀有度 || 1}}">
+            <div class="item_title">
+              【{{item.品级}}】{{item.name}}({{['未锁定','已锁定'][item.islockd]}})
+              {{if item.灵魂绑定==1}}
+              <div class="item_int">【存在绑定】</div>
+              {{/if}} {{if item.灵魂绑定==0}}
+              <div class="item_int">【无绑定】</div>
+              {{/if}}
+            </div>
+            <div class="item_int">等级：[{{item.等级}}/{{item.等级上限}}]</div>
+            {{if item.type=="战斗"}}
+            <div class="item_int">三维加成:【{{item.atk}}】</div>
+            {{else}}
+            <div class="item_int">
+              {{item.type}}加成:{{(item.加成*100).toFixed(1)}}%
+            </div>
+            {{/if}}
+            <div class="item_int">数量：{{item.数量}}</div>
+            <div class="item_int">出售价：{{item.出售价}}灵石</div>
+            <div class="item_int">代号：{{$index+1001}}</div>
+          </div>
+          {{/each}}
+        </div>
+      </div>
+    </div>
+    {{/if}} {{if najie.仙宠口粮.length > 0}}
+    <div class="card_box">
+      <div class="use_data">
+        <div class="user_font user_font_title">【仙宠口粮】</div>
+        <div class="user_font wupin">
+          {{each najie.仙宠口粮 item}}
+          <div class="item rarity-{{item.稀有度 || 1}}">
+            <div class="item_title">
+              {{item.name}}({{['未锁定','已锁定'][item.islockd]}})
+            </div>
+            <div class="item_int">数量：{{item.数量}}</div>
+            <div class="item_int">出售价：{{item.出售价}}灵石</div>
+          </div>
+          {{/each}}
+        </div>
+      </div>
+    </div>
+    {{/if}}
+    <div class="user_bottom2"></div>
+  </body>
+</html>

@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{title}}</title>
+  <link rel="stylesheet" href="{{pluResPath}}/html/mingge/mingge.css">
+</head>
+<body>
+  <main class="atlas">
+    <header class="atlas-header">
+      <div class="eyebrow">凡界命书 · 众生命数</div>
+      <h1>{{title}}</h1>
+      <p class="subtitle">命由天授，道由己争。命格决定来处，不决定终点。</p>
+
+      <div class="current-fate {{hasCurrent ? 'awakened' : ''}}">
+        <span class="current-label">当前命格 {{currentCount}}/{{fateLimit}}</span>
+        <span class="current-name">{{currentName}}</span>
+      </div>
+
+      <div class="summary">
+        <div class="summary-item total"><strong>{{summary.total}}</strong><span>命格总数</span></div>
+        <div class="summary-item legendary"><strong>{{summary.legendary}}</strong><span>传说</span></div>
+        <div class="summary-item rare"><strong>{{summary.rare}}</strong><span>稀有</span></div>
+        <div class="summary-item normal"><strong>{{summary.normal}}</strong><span>普通</span></div>
+        <div class="summary-item negative"><strong>{{summary.negative}}</strong><span>负面</span></div>
+      </div>
+    </header>
+
+    {{each groups group}}
+    <section class="fate-section {{group.className}}">
+      <div class="section-heading">
+        <div>
+          <h2>{{group.title}}</h2>
+          <p>{{group.subtitle}}</p>
+        </div>
+        <span class="section-count">{{group.items.length}} 条</span>
+      </div>
+
+      <div class="fate-grid">
+        {{each group.items fate}}
+        <article class="fate-card rarity-{{fate.rarity}} {{fate.isNegative ? 'is-negative' : ''}} {{fate.isCurrent ? 'is-current' : ''}}">
+          {{if fate.isCurrent}}<div class="current-mark">当前命格</div>{{/if}}
+          <div class="card-head">
+            <h3>{{fate.name}}</h3>
+            <div class="badges">
+              <span class="badge rarity">{{fate.rarityName}}</span>
+              <span class="badge category">{{fate.category}}</span>
+              {{if fate.isNegative}}<span class="badge severity">厄命·{{fate.severityName}}</span>{{/if}}
+            </div>
+          </div>
+
+          <p class="fate-desc">{{fate.desc}}</p>
+
+          <div class="effects-title">大道铭文</div>
+          <div class="effects">
+            {{each fate.effectEntries effect}}
+            <div class="effect">
+              <span class="effect-name">{{effect.name}}</span>
+              <strong class="effect-value">{{effect.value}}</strong>
+            </div>
+            {{/each}}
+          </div>
+        </article>
+        {{/each}}
+      </div>
+    </section>
+    {{/each}}
+
+    <footer>发送「#抽取命格词条」可填补命宫空位 · 同一命格不会重复获得</footer>
+  </main>
+</body>
+</html>

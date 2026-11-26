@@ -1,0 +1,110 @@
+# Compiled class file
+*.class
+
+# Log file
+*.log
+
+# BlueJ files
+*.ctxt
+
+#
+node_modules/
+#
+defSet/
+
+# Mobile Tools for Java (J2ME)
+.mtj.tmp/
+
+# Package Files #
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
+hs_err_pid*
+
+# WorkBuddy 本机工具记忆（不入库）
+.workbuddy/
+
+# 嵌套残留副本（非项目本体）
+plugins/
+
+# Word 文档导出的临时媒体资源（不入库）
+.docx_media/
+
+# Runtime snapshots and administrator operation backups
+resources/backup/
+_backups/
+# 月华传承名额为本服玩家运行状态，独立于代码版本。
+resources/data/suiyun_gift.*.json
+resources/data/suiyun_gift.*.tmp
+resources/data/memory_unique.*.json
+resources/data/memory_unique.*.tmp
+
+# 世界聊天运行时数据（禁言名单/留言缓存，不入库）
+banned.json
+messages.json
+
+# 开发期临时验证脚本与设计草稿（不入库，本地保留）
+temp/
+
+# IDE project metadata
+.idea/
+apps/worldChat/config.local.json
+apps/worldChat/config.json
+apps/worldChat/installation.id
+config/endless-web.local.json
+worldchat-server/clients.json
+worldchat-server/*.tmp
+apps/worldChat/*.tmp
+
+# 万界灵市的全服行情与 NPC 资产
+data/lingshi-market.json
+data/lingshi-market.json.*.tmp
+
+# Standalone public gateway releases and private runtime identity
+dist/web-gateway/
+gateway-data/
+
+# 管理员/权限类文档只在本地留存，不入库（本仓库公开）
+docs/*.docx
+docs/管理员指令总表.md
+
+# 全服运行时状态（每轮游戏都会改，且含玩家绑定等隐私，不入库）
+resources/data/位面.json
+resources/data/dimension_guard_state.json
+resources/data/forbidden_event_state.json
+resources/data/foreign_imperial_pass.json
+resources/data/identity_map.json
+resources/data/innate_treasure_state.json
+resources/data/plane_rift_festival.json
+resources/data/strange_sacrifice_state.json
+resources/data/weimian_events.json
+
+# 玩家产出的数据，不进公开仓库（含 QQ 号/昵称，且会被运行时改写）
+resources/data/daofa_list.json
+resources/data/item/玩家自创帝经.json
+resources/data/item/小世界列表.json
+resources/data/chengzhang/chengzhang.json
+resources/data/item/玩家自创仙宠.json
+resources/data/位面天骄玩家.json
+resources/data/renwu/renwu.json
+
+# 其余运行时产物（含玩家号/绑定备份/公告图）统一忽略
+resources/data/announce/
+resources/data/dao_treasure_state.json
+resources/data/relay_map.json
+resources/data/suiyun_unique.*.json
+resources/data/worldline_causal_state.json
+resources/data/*.bak-*
+# 玩家自创技能（含创造者昵称，运行时生成）
+resources/data/item/技能列表/
+# 本地 Blender 安装（美术导出用，不入库）
+blender-3.6.22-windows-x64/
+
+# 发放订单流水：含群 openid 与受发放者 openid，运行时生成
+resources/data/item_grant.json

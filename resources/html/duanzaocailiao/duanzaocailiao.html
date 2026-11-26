@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta http-equiv="content-type" content="text/html;charset=utf-8" />
+    <link
+      rel="stylesheet"
+      type="text/css"
+      href="{{pluResPath}}/html/gongfa/gongfa.css"
+    />
+    <link rel="preload" href="../../font/tttgbnumber.ttf" as="font" />
+    <link rel="shortcut icon" href="#" />
+  </head>
+
+  <body>
+    <div>
+      <div class="header"></div>
+      <div class="card_box">
+        <div class="use_data">
+          <div class="user_font user_font_title">{{nickname}}的锻造材料</div>
+        </div>
+      </div>
+
+      {{if material_have.length > 0}}
+      <div class="card_box">
+        <div class="use_data">
+          <div class="user_font user_font_title">【已拥有】</div>
+          <div class="user_font wupin">
+            {{each material_have item}}
+            <div class="item">
+              <div class="item_title font_item_title">{{item.name}}</div>
+              <div class="item_int">持有：{{item.owned}}</div>
+              <div class="item_int">类型：{{item.type || '锻造'}}</div>
+              <div class="item_int">稀有度：{{item.稀有度 || 1}}级</div>
+              <div class="item_int">属性：{{item.effect}}</div>
+            </div>
+            {{/each}}
+          </div>
+        </div>
+      </div>
+      {{/if}}
+
+      {{if material_need.length > 0}}
+      <div class="card_box">
+        <div class="use_data">
+          <div class="user_font user_font_title">【未拥有】</div>
+          <div class="user_font wupin">
+            {{each material_need item}}
+            <div class="item">
+              <div class="item_title font_item_title">{{item.name}}</div>
+              <div class="item_int">类型：{{item.type || '锻造'}}</div>
+              <div class="item_int">稀有度：{{item.稀有度 || 1}}级</div>
+              <div class="item_int">属性：{{item.effect}}</div>
+              <div class="item_int">价值：{{item.出售价 || 0}}</div>
+            </div>
+            {{/each}}
+          </div>
+        </div>
+      </div>
+      {{/if}}
+
+      <div class="user_bottom2"></div>
+    </div>
+  </body>
+</html>

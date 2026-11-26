@@ -1,0 +1,723 @@
+import { isXiuxianAdmin } from '../../model/xiuxian.js';
+import plugin from '../../../../lib/plugins/plugin.js';
+import data from '../../model/XiuxianData.js';
+import common from '../../../../lib/common/common.js';
+import config from '../../model/Config.js';
+import Show from '../../model/show.js';
+import puppeteer from '../../../../lib/puppeteer/puppeteer.js';
+import {  __PATH } from '../../model/xiuxian.js';
+import {
+  existplayer,
+  Read_player,
+  Read_najie,
+  isNotNull,
+  Locked_najie_thing,
+  channel
+} from '../../model/xiuxian.js';
+import { convert2integer } from '../../model/xiuxian.js';
+import { compareAndSetRedisJson } from '../../utils/redisJsonCas.js';
+import { isItemTransferRestricted } from '../../model/equipmentTransfer.js';
+import {
+  createAuctionId,
+  reserveAuctionItem,
+} from '../../model/auctionSettlement.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
+import { isConfigured, tryOfficialActive } from '../../model/officialReply.js';
+import {
+  applyTianjiaoAuctionCounterbid,
+  selectHostileTianjiao,
+} from '../../model/tianjiaoHostility.js';
+
+// const intervalTime = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * 全局变量
+ */
+let allaction = false; //全局状态判断
+/**
+ * 拍卖系统
+ */
+export class Auction extends plugin {
+  constructor() {
+    super({
+      /** 功能名称 */
+      name: 'Auction',
+      /** 功能描述 */
+      dsc: '拍卖模块',
+      event: 'message',
+      /** 优先级，数字越小等级越高 */
+      priority: 600,
+      rule: [
+        {
+          reg: '^#拍卖.*$',
+          fnc: 'onsell_auction',
+        },
+        {
+          reg: '^#查看当前拍卖$',
+          fnc: 'show_auction',
+        },
+        {
+          reg: '^#竞价[0-9]*$',
+          fnc: 'offer_price',
+        },
+        {
+          reg: '^#星阁出价[0-9]*$',
+          fnc: 'offer_priceXINGGE',
+        },
+        {
+          reg: '^#星阁拍卖行$',
+          fnc: 'xingGE',
+        },
+        {
+          // 带参数 = 主人批量指定群号开启，例：#开启星阁体系 799048038 835576891
+          reg: '^#开启星阁体系(?:\\s+(.+))?$',
+          fnc: 'openAction',
+        },
+        {
+          reg: '^#取消星阁体系$',
+          fnc: 'cancalAction',
+        },
+        {
+          reg: '^#关闭星阁体系$',
+          fnc: 'offAction',
+        },
+      ],
+    });
+    this.set = config.getConfig('xiuxian', 'xiuxian');
+  }
+
+  async xingGE(e) {
+    if (!e.isGroup) {
+      return;
+    }
+    //固定写法
+    let usr_qq = e.user_id.toString().replace('qg_','');
+    usr_qq = await channel(usr_qq);
+    //有无存档
+    let ifexistplay = await existplayer(usr_qq);
+    if (!ifexistplay) {
+      return;
+    }
+    let auction = await redis.get('xiuxian:AuctionofficialTask');
+    if (!isNotNull(auction)) {
+      e.reply('目前没有拍卖正在进行');
+      return;
+    }
+    auction = JSON.parse(auction);
+
+    let msg = `___[星阁]___\n目前正在拍卖【${auction.thing.name}】\n`;
+    if (auction.last_offer_player === 0) {
+      msg += '暂无人出价';
+    } else if (auction.last_offer_player < 0) {
+      msg += `最高出价是${auction.tianjiaoBidder || '神秘修士'}叫出的${auction.last_price}`;
+    } else {
+      const player = await Read_player(auction.last_offer_player);
+      msg += `最高出价是${player.名号}叫出的${auction.last_price}`;
+    }
+    await e.reply(msg);
+  }
+
+  async openAction(e) {
+        const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+        const masterList = xiuxianConfig.Master || [];
+        const userQQ = e.user_id.toString().replace('qg_', '');
+        if (!isXiuxianAdmin(e)) {
+        return false;
+    }
+    // if (!e.isMaster) {
+    //   return e.reply('只有只因器人主人可以开启');
+    // }
+
+    // 如果星阁已经开了，将本群加入Redis
+    // INFO: 缺省判断是否在进行，GroupList判断哪些群开启了星阁体系
+    const redisGlKey = 'xiuxian:AuctionofficialTask_GroupList';
+    // 被主人主动关掉过的群记在这里，新玩家建档时不再自动拉进来
+    const optOutKey = 'xiuxian:Auction:sgOptOut';
+
+    // A. 主人指定群号批量开启：#开启星阁体系 799048038 835576891
+    // 用 indexOf 而不是 ^ 锚定：官方通道的 e.msg 前面可能带 <@openid> 之类的残留
+    const sgIdx = e.msg.indexOf('#开启星阁体系');
+    const rawArg = sgIdx >= 0 ? e.msg.slice(sgIdx + '#开启星阁体系'.length).trim() : '';
+    if (rawArg) {
+      const ids = rawArg.split(/[\s,，]+/).filter(id => /^\d{5,12}$/.test(id));
+      if (!ids.length) return e.reply('群号格式不对，例：#开启星阁体系 799048038 835576891');
+      for (const id of ids) {
+        await redis.sAdd(redisGlKey, id);
+        await redis.sRem(optOutKey, id);
+      }
+      return e.reply(`已把 ${ids.length} 个群加入星阁体系：${ids.join('、')}`);
+    }
+
+    // 手动开启本群：从退出名单里移除，避免下次被"自动加入"逻辑跳过
+    await redis.sRem(optOutKey, String(e.group_id));
+
+    const groupList = await redis.sMembers(redisGlKey);
+    if (groupList.length > 0) {
+      if (await redis.sIsMember(redisGlKey, String(e.group_id))) {
+        console.log(await redis.sMembers(redisGlKey));
+        return e.reply('星阁拍卖行已经开啦');
+      }
+      await redis.sAdd(redisGlKey, String(e.group_id));
+      return e.reply('星阁已开启，已将本群添加至星阁体系');
+    }
+
+    // 如果没开，判断是否在开启时间
+    const nowDate = new Date();
+    const todayDate = new Date(nowDate);
+    const { openHour, closeHour } = this.set.Auction;
+    const todayTime = todayDate.setHours(0, 0, 0, 0);
+    const openTime = todayTime + openHour * 60 * 60 * 1000;
+    const nowTime = nowDate.getTime();
+    const closeTime = todayTime + closeHour * 60 * 60 * 1000;
+    if (nowTime > openTime && nowTime < closeTime) {
+      // 如果在拍卖时间，随机一个物品来开启
+      await redis.sAdd(redisGlKey, String(e.group_id));
+      const auction = await openAU();
+      if (!auction) return e.reply('拍卖已开启，本群已加入星阁体系');
+      let msg = `___[星阁]___\n目前正在拍卖【${auction.thing.name}】\n`;
+      if (auction.last_offer_player === 0) {
+        msg += '暂无人出价';
+      } else {
+        const player = await Read_player(auction.last_offer_player);
+        msg += `最高出价是${player.名号}叫出的${auction.last_price}`;
+      }
+      await e.reply(msg);
+    }
+
+    // const addTIME = intervalTime;
+    // await redis.set(
+    //   'xiuxian:AuctionofficialTaskENDTIME',
+    //   JSON.stringify(Date.now() + addTIME)
+    // );
+
+    // await redis.set('xiuxian:AuctionofficialTask_E', e.group_id); NOTE: 过时的
+    await redis.sAdd(redisGlKey, String(e.group_id));
+    return e.reply('星阁体系在本群开启！');
+  }
+
+  async cancalAction(e) {
+        const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+        const masterList = xiuxianConfig.Master || [];
+        const userQQ = e.user_id.toString().replace('qg_', '');
+        if (!isXiuxianAdmin(e)) {
+        return false;
+    }
+    // if (!e.isMaster) {
+    //   return e.reply('只有只因器人主人可以取消');
+    // }
+
+    const redisGlKey = 'xiuxian:AuctionofficialTask_GroupList';
+    if (!(await redis.sIsMember(redisGlKey, String(e.group_id)))) {
+      return e.reply('本来就没开取消个冒险');
+    }
+    await redis.sRem(redisGlKey, String(e.group_id));
+    // 记进退出名单：以后有新玩家建档也不再自动拉起
+    await redis.sAdd('xiuxian:Auction:sgOptOut', String(e.group_id));
+
+    return e.reply('星阁体系在本群取消了');
+  }
+
+  async offAction(e) {
+        const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+        const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+        if (!isXiuxianAdmin(e)) {
+        return false;
+    }
+    // if (!e.isMaster) {
+    //   return e.reply('只有只因器人主人可以关闭');
+    // }
+
+    const redisGlKey = 'xiuxian:AuctionofficialTask_GroupList';
+    // 关闭全体前，把当前开启的群都记进退出名单，免得新玩家建档又把它们拉起来
+    const closing = await redis.sMembers(redisGlKey);
+    for (const gid of closing) await redis.sAdd('xiuxian:Auction:sgOptOut', gid);
+    await redis.del('xiuxian:AuctionofficialTask');
+    await redis.del(redisGlKey);
+    // await redis.set(
+    //   'xiuxian:AuctionofficialTaskENDTIME',
+    //   JSON.stringify(1145141919181145)
+    // );
+    return e.reply('星阁体系已关闭！');
+  }
+
+  /*竞价10000 */
+  async offer_priceXINGGE(e) {
+    if (!e.isGroup) {
+      return;
+    }
+    //固定写法
+    let usr_qq = e.user_id.toString().replace('qg_','');
+    usr_qq = await channel(usr_qq);
+    //判断是否为匿名创建存档
+    if (usr_qq == 80000000) {
+      return;
+    }
+    //有无存档
+    let ifexistplay = await existplayer(usr_qq);
+    if (!ifexistplay) {
+      return;
+    }
+    // 此群是否开启星阁体系
+    const redisGlKey = 'xiuxian:AuctionofficialTask_GroupList';
+    if (!(await redis.sIsMember(redisGlKey, String(e.group_id)))) return;
+    // 是否到拍卖时间
+    const auctionJson = await redis.get('xiuxian:AuctionofficialTask');
+    if (!isNotNull(auctionJson)) {
+      const { openHour, closeHour } = config.getConfig(
+        'xiuxian',
+        'xiuxian'
+      ).Auction;
+      e.reply(`不在拍卖时间，开启时间为每天${openHour}时~${closeHour}时`);
+      return;
+    }
+
+    let player = await Read_player(usr_qq);
+    const auction = JSON.parse(auctionJson);
+    if (auction.status && auction.status !== 'active') {
+      return e.reply('拍卖正在结算，请稍后查看');
+    }
+    // let start_price = auction.start_price;
+    let last_price = auction.last_price;
+    let new_price = e.msg.replace('#星阁出价', '');
+    new_price = parseInt(new_price);
+    if (isNaN(new_price)) {
+      new_price = parseInt(Math.ceil(last_price * 1.1));
+    } else {
+      if (new_price < Math.ceil(last_price * 1.1)) {
+        e.reply(`最新价格为${last_price}，每次加价不少于10 %！`);
+        return;
+      }
+    }
+    if (player.灵石 < new_price) {
+      e.reply('没这么多钱也想浑水摸鱼?');
+      return;
+    }
+
+    // if (auction.group_id.indexOf(e.group_id) < 0) {
+    //   auction.group_id += '|' + e.group_id;
+    // } NOTE: 过时的
+    // 关掉了
+    // await redis.sAdd(redisGlKey, String(e.group_id));
+    auction.groupList = await redis.sMembers(redisGlKey);
+
+    const retaliation = await selectHostileTianjiao({
+      redis,
+      tianjiaoList: data.weimiantianjiao_list,
+      playerId: usr_qq,
+      minimumLevel: '仇恨',
+      event: 'auction',
+      worldYear: getRealmEventWorldYear(),
+    });
+    const counterbid = applyTianjiaoAuctionCounterbid(
+      { ...auction, last_price: new_price },
+      retaliation,
+      usr_qq,
+    );
+    const nextAuction = counterbid.countered
+      ? counterbid.auction
+      : {
+          ...auction,
+          last_price: new_price,
+          last_offer_player: usr_qq,
+          last_offer_price: Date.now(),
+        };
+    if (!await compareAndSetRedisJson(redis, 'xiuxian:AuctionofficialTask', auctionJson, nextAuction)) {
+      return e.reply('价格已被其他玩家更新，请重新出价');
+    }
+
+    const msg = counterbid.countered
+      ? `${player.名号}叫价${new_price}，${retaliation.name}却当场抬至${counterbid.price}灵石：「你想要的东西，我偏不让你轻易拿走。」`
+      : `${player.名号}叫价${new_price} `;
+    await Promise.all(nextAuction.groupList.map(group_id => pushInfo(group_id, true, msg)));
+  }
+
+  async show_auction(e) {
+    if (!e.isGroup) {
+      return;
+    }
+    //固定写法
+    let usr_qq = e.user_id.toString().replace('qg_','');
+    usr_qq = await channel(usr_qq);
+    //判断是否为匿名创建存档
+    if (usr_qq == 80000000) {
+      return;
+    }
+    //有无存档
+    let ifexistplay = await existplayer(usr_qq);
+    if (!ifexistplay) {
+      return;
+    }
+    let auction = await redis.get('xiuxian:auction');
+    if (!isNotNull(auction)) {
+      e.reply('目前没有拍卖正在进行');
+      return;
+    }
+    auction = JSON.parse(auction);
+    let tmp = '';
+    if (auction.last_offer_player == 0) {
+      tmp = '暂无人出价';
+    } else {
+      let player = await Read_player(auction.last_offer_player);
+      tmp = `最高出价是${player.名号}叫出的${auction.last_price}`;
+    }
+    let msg = '___[星尘拍卖行]___\n';
+    msg += `目前正在拍卖【${auction.thing.name}】\n${tmp}`;
+    e.reply(msg);
+  }
+
+  /* #拍卖咸鱼宝剑*1000*10 */
+
+  /* 1000灵石=10把 */
+  async onsell_auction(e) {
+    if (!e.isGroup) {
+      return;
+    }
+    //固定写法
+    let usr_qq = e.user_id.toString().replace('qg_','');
+    usr_qq = await channel(usr_qq);
+    //判断是否为匿名创建存档
+    if (usr_qq == 80000000) {
+      return;
+    }
+    //有无存档
+    let ifexistplay = await existplayer(usr_qq);
+    if (!ifexistplay) {
+      return;
+    }
+    return withPlayerMutationLock(usr_qq, async () => {
+    let auction = await redis.get('xiuxian:auction');
+    if (isNotNull(auction)) {
+      e.reply(`已有拍卖正在进行`);
+      return;
+    }
+    let last_auction = await redis.get(
+      'xiuxian:player:' + usr_qq + ':last_auction'
+    );
+    let now_time = new Date().getTime();
+
+    if (isNotNull(last_auction)) {
+      last_auction = JSON.parse(last_auction);
+      if (now_time - last_auction <= 24 * 60 * 60 * 1000) {
+        let h = parseInt(
+          (last_auction + 24 * 60 * 60 * 1000 - now_time) / 1000 / 3600
+        );
+        let m = parseInt(
+          (last_auction + 24 * 60 * 60 * 1000 - now_time - h * 3600 * 1000) /
+            1000 /
+            60
+        );
+        let s = parseInt(
+          (last_auction +
+            24 * 60 * 60 * 1000 -
+            now_time -
+            m * 60 * 1000 -
+            h * 3600 * 1000) /
+            1000
+        );
+        e.reply(`每24小时可以上架一次拍卖，还剩${h}小时${m}分${s}秒`);
+        return;
+      }
+    }
+    let thing = e.msg.replace('#拍卖', '');
+    let code = thing.split('*');
+    let thing_name = code[0];
+    let thing_value = parseInt(code[1]);
+    let thing_amount = parseInt(code[2]);
+    thing_value=await convert2integer(thing_value);
+    thing_amount=await convert2integer(thing_amount);
+    let thing_data;
+    let najie = await Read_najie(usr_qq);
+    let equips = najie.装备.filter(item => item.name == thing_name);
+    let danyaos = najie.丹药.filter(item => item.name == thing_name);
+    let gongfas = najie.功法.filter(item => item.name == thing_name);
+    let daojus = najie.道具.filter(item => item.name == thing_name);
+    let caoyaos = najie.草药.filter(item => item.name == thing_name);
+    let cailiaos = najie.材料.filter(item => item.name == thing_name);
+    let shicais = najie.食材.filter(item => item.name == thing_name);
+    let hezis = najie.盒子.filter(item => item.name == thing_name);
+    if (equips.length > 0) {
+      thing_data = equips[0];
+    } else if (danyaos.length > 0) {
+      thing_data = danyaos[0];
+    } else if (gongfas.length > 0) {
+      thing_data = gongfas[0];
+    } else if (daojus.length > 0) {
+      thing_data = daojus[0];
+    } else if (caoyaos.length > 0) {
+      thing_data = caoyaos[0];
+    } else if (cailiaos.length > 0) {
+      thing_data = cailiaos[0];
+    } else if (shicais.length > 0) {
+      thing_data = shicais[0];
+    }else if (hezis.length > 0) {
+      thing_data = hezis[0];
+    } else {
+      e.reply(`你没有[${thing_name}]这样东西！`);
+      return;
+    }
+    if (thing_data.untradeble || isItemTransferRestricted(thing_data)) {
+      e.reply(`[${thing_name}]已与你灵魂绑定，无法转移给仙友`);
+      return;
+    }
+    if (thing_data.数量 < thing_amount) {
+      e.reply(`你只有${thing_name}×${thing_data.数量} `);
+      return;
+    }
+    if ((await Locked_najie_thing(usr_qq, thing_name, thing_data.class)) == 1) {
+      //锁定
+      e.reply(`你的纳戒中的${thing_data.class}[${thing_name}]是锁定的`);
+      return;
+    }
+    // let whole = thing_value * thing_amount;
+    // whole = Math.trunc(whole);
+    // let time = 10;//分钟
+    let wupin = {
+      auctionId: createAuctionId('player-auction'),
+      status: 'reserving',
+      qq: usr_qq,
+      thing: thing_data,
+      start_price: thing_value,
+      last_price: thing_value,
+      amount: thing_amount,
+      last_offer_price: now_time,
+      last_offer_player: 0,
+      group_id: `${e.group_id} `,
+    };
+    const wupinJson = JSON.stringify(wupin);
+    if (!await redis.set('xiuxian:auction', wupinJson, { NX: true })) {
+      return e.reply('已有拍卖正在进行');
+    }
+    await reserveAuctionItem(wupin);
+    const activeAuction = { ...wupin, status: 'active', reservedAt: Date.now() };
+    const activated = await compareAndSetRedisJson(
+      redis,
+      'xiuxian:auction',
+      wupinJson,
+      activeAuction
+    );
+    if (!activated) {
+      const current = JSON.parse(await redis.get('xiuxian:auction') || 'null');
+      if (current?.auctionId !== wupin.auctionId || current.status !== 'active') {
+        return e.reply('拍卖上架正在确认，请稍后查看');
+      }
+    }
+    await redis.set('xiuxian:player:' + usr_qq + ':last_auction', now_time);
+    //
+    // Exchange.push(wupin);
+    //写入
+    // await Write_Exchange(Exchange);
+    return e.reply('开始拍卖！');
+    });
+  }
+
+  /*竞价10000 */
+  async offer_price(e) {
+    if (!e.isGroup) {
+      return;
+    }
+    //固定写法
+    let usr_qq = e.user_id.toString().replace('qg_','');
+    usr_qq = await channel(usr_qq);
+    //判断是否为匿名创建存档
+    if (usr_qq == 80000000) {
+      return;
+    }
+    //有无存档
+    let ifexistplay = await existplayer(usr_qq);
+    if (!ifexistplay) {
+      return;
+    }
+    const auctionJson = await redis.get('xiuxian:auction');
+    if (!isNotNull(auctionJson)) {
+      e.reply(`没有拍卖正在进行`);
+      return;
+    }
+    let player = await Read_player(usr_qq);
+    const auction = JSON.parse(auctionJson);
+    if (auction.status && auction.status !== 'active') {
+      return e.reply('拍卖正在结算，请稍后查看');
+    }
+    if (usr_qq == auction.qq) {
+      e.reply('禁止自娱自乐！');
+      return;
+    }
+    if (usr_qq == auction.last_offer_player) {
+      e.reply('不会吧不会吧，不会还有人抬自己的价吧？');
+      return;
+    }
+    // let start_price = auction.start_price;
+    let last_price = auction.last_price;
+    let new_price = e.msg.replace('#竞价', '');
+    new_price = parseInt(new_price);
+    if (isNaN(new_price)) {
+      new_price = parseInt(last_price * 1.1);
+    } else {
+      if (new_price <= last_price * 1.1) {
+        e.reply(`最新价格为${last_price}，每次加价不少于10 %！`);
+        return;
+      }
+    }
+    if (player.灵石 < new_price) {
+      e.reply('没这么多钱也想浑水摸鱼?');
+      return;
+    }
+    if (auction.group_id.indexOf(e.group_id) < 0) {
+      auction.group_id += '|' + e.group_id;
+    }
+    auction.last_price = new_price;
+    auction.last_offer_player = usr_qq;
+    auction.last_offer_price = new Date().getTime();
+    if (!await compareAndSetRedisJson(redis, 'xiuxian:auction', auctionJson, auction)) {
+      return e.reply('价格已被其他玩家更新，请重新出价');
+    }
+    return e.reply(`${player.名号}叫价${new_price} `);
+  }
+}
+
+/**
+ * 状态
+ */
+export async function Go(e) {
+  let usr_qq = e.user_id.toString().replace('qg_','');
+  usr_qq = await channel(usr_qq);
+  //有无存档
+  let ifexistplay = await existplayer(usr_qq);
+  if (!ifexistplay) {
+    return;
+  }
+  //获取游戏状态
+  let game_action = await redis.get(
+    'xiuxian:player:' + usr_qq + ':game_action'
+  );
+  //防止继续其他娱乐行为
+  if (game_action == 0) {
+    e.reply('修仙：游戏进行中...');
+    return;
+  }
+  //查询redis中的人物动作
+  let action = await redis.get('xiuxian:player:' + usr_qq + ':action');
+  action = JSON.parse(action);
+  if (action != null) {
+    //人物有动作查询动作结束时间
+    let action_end_time = action.end_time;
+    let now_time = new Date().getTime();
+    if (now_time <= action_end_time) {
+      let m = parseInt((action_end_time - now_time) / 1000 / 60);
+      let s = parseInt((action_end_time - now_time - m * 60 * 1000) / 1000);
+      e.reply('正在' + action.action + '中,剩余时间:' + m + '分' + s + '秒');
+      return;
+    }
+  }
+  //let player = await Read_player(usr_qq);
+  //if (player.当前血量 < 200) {
+  //    e.reply("你都伤成这样了,就不要出去浪了");
+  //    return;
+  //}
+  allaction = true;
+  return;
+}
+
+export async function get_supermarket_img(e, thing_type) {
+  let usr_qq = e.user_id.toString().replace('qg_','');
+  usr_qq = await channel(usr_qq);
+  let ifexistplay = data.existData('player', usr_qq);
+  if (!ifexistplay) {
+    return;
+  }
+  let Exchange_list;
+  try {
+    Exchange_list = await Read_Exchange();
+  } catch {
+    await Write_Exchange([]);
+    Exchange_list = await Read_Exchange();
+  }
+  let supermarket_data = {
+    user_id: usr_qq,
+    Exchange_list: Exchange_list,
+  };
+  const data1 = await new Show(e).get_supermarketData(supermarket_data);
+  let img = await puppeteer.screenshot('supermarket', {
+    ...data1,
+  });
+  return img;
+}
+
+// export async function openAU() {
+//   let e = await redis.get('xiuxian:AuctionofficialTask_E');
+//   let random = Math.floor(Math.random() * data.xingge.length);
+//   let thing_data = data.xingge[random];
+//   let thing_value = Math.floor(thing_data.出售价 * 0.5);
+//   let thing_amount = 1;
+//   let now_time = new Date().getTime();
+//   console.log(thing_data);
+//   let wupin = {
+//     thing: thing_data,
+//     start_price: thing_value,
+//     last_price: thing_value,
+//     amount: thing_amount,
+//     last_offer_price: now_time,
+//     last_offer_player: 0,
+//     group_id: `${e} `,
+//   };
+//   await redis.set('xiuxian:AuctionofficialTask', JSON.stringify(wupin));
+//   return;
+// } NOTE: 过时的
+
+export async function openAU() {
+  const redisGlKey = 'xiuxian:AuctionofficialTask_GroupList';
+
+  const random = Math.floor(Math.random() * data.xingge.length);
+  const thing_data = data.xingge[random];
+  const thing_value = Math.floor(thing_data.出售价);
+  const thing_amount = 1;
+  const now_time = new Date().getTime();
+  const groupList = await redis.sMembers(redisGlKey);
+
+  const wupin = {
+    auctionId: createAuctionId('official-auction'),
+    status: 'active',
+    thing: thing_data,
+    start_price: thing_value,
+    last_price: thing_value,
+    amount: thing_amount,
+    last_offer_price: now_time,
+    last_offer_player: 0,
+    groupList,
+  };
+  const created = await redis.set(
+    'xiuxian:AuctionofficialTask',
+    JSON.stringify(wupin),
+    { NX: true }
+  );
+  return created ? wupin : null;
+}
+
+/**
+ * 推送消息，群消息推送群，或者推送私人
+ * @param id
+ * @param is_group
+ * @returns {Promise<void>}
+ */
+async function pushInfo(id, is_group, msg) {
+  if (is_group) {
+    // 拍卖直播/出价推送是广播消息，没有触发消息可借，走官方主动消息；
+    // 超限或失败自动落回协议号，消息不丢
+    if (isConfigured(id)) {
+      try {
+        const official = await tryOfficialActive(id, msg);
+        if (official?.handled) return official.res ?? true;
+      } catch (err) {
+        Bot.logger?.warn?.(`[官方代发] pushInfo 官方发送异常，回退协议号：${err.message}`);
+      }
+    }
+    await Bot.pickGroup(id)
+      .sendMsg(msg)
+      .catch(err => {
+        Bot.logger.mark(err);
+      });
+  } else {
+    await common.relpyPrivate(id, msg);
+  }
+}

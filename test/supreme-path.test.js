@@ -1,0 +1,236 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+
+import {
+  DAHUANG_PUPIL_ENCOUNTER_CHANCE,
+  ensureSupremePath,
+  getNirvanaMissing,
+  getSupremeStage,
+  getSupremeTitle,
+  getSupremeTrialSpec,
+  getUltimateMissing,
+  hasSupremeInnate,
+  learnSupremeBoneArt,
+  repairSupremeBoneManifestation,
+  rollDahuangPupilEncounter,
+} from '../model/supremePath.js';
+
+test('至尊之路仅绑定三种至尊体并自动初始化阶段', () => {
+  const player = { 灵根: { name: '涅槃·至尊' } };
+  assert.equal(getSupremeStage(player), 2);
+  assert.deepEqual(ensureSupremePath(player), {
+    阶段: 2,
+    仙骨: false,
+    重瞳: false,
+    共鸣: false,
+    试炼: null,
+    称号: '涅槃·至尊',
+  });
+  assert.equal(ensureSupremePath({ 灵根: { name: '混沌体' }, 至尊之路: { 阶段: 3 } }), null);
+  assert.equal(hasSupremeInnate({
+    灵根: { name: '混沌体' },
+    至尊之路: { 阶段: 3, 仙骨: true, 重瞳: true, 共鸣: true },
+  }, '至尊重瞳仙骨'), false);
+});
+
+test('至尊体进阶条件会准确报告缺项', () => {
+  const nirvanaPlayer = {
+    至尊骨: '初现',
+    极境: [2, '3'],
+    学习的功法: ['原始真解神引篇'],
+  };
+  assert.deepEqual(getNirvanaMissing(nirvanaPlayer), []);
+  assert.deepEqual(getNirvanaMissing({}), ['至尊骨初现', '搬血极境', '洞天极境', '原始真解神引篇']);
+
+  const ultimatePlayer = {
+    学习的功法: ['六道轮回天功', '原始真解终极篇'],
+    纪元积累: 100,
+  };
+  assert.deepEqual(getUltimateMissing(ultimatePlayer), []);
+  assert.equal(getUltimateMissing({ 纪元积累: 20 }).length, 3);
+});
+
+test('达到搬血极境的天生至尊自动补齐显化至尊骨，其余至尊体不自动显化', () => {
+  const born = { 灵根: { name: '天生至尊' }, 极境: [2] };
+  const nirvana = { 灵根: { name: '涅槃·至尊' }, 极境: ['2'] };
+  const ultimate = { 灵根: { name: '终极涅槃·至尊' }, 极境: ['2'] };
+  const trial = { 灵根: { name: '天生至尊' }, 极境: ['2'], 至尊骨: '已斩出' };
+
+  // 天生至尊 + 搬血极境 → 自动显化「初现」
+  assert.equal(repairSupremeBoneManifestation(born), true);
+  assert.equal(born.至尊骨, '初现');
+  // 涅槃·至尊 / 终极涅槃·至尊 不自动显化，须走 #至尊试炼 进阶
+  assert.equal(repairSupremeBoneManifestation(nirvana), false);
+  assert.equal(nirvana.至尊骨, undefined);
+  assert.equal(repairSupremeBoneManifestation(ultimate), false);
+  assert.equal(ultimate.至尊骨, undefined);
+  // 已有至尊骨则不重复补齐
+  assert.equal(repairSupremeBoneManifestation(trial), false);
+  assert.equal(trial.至尊骨, '已斩出');
+  // 未达搬血极境不显化
+  assert.equal(repairSupremeBoneManifestation({ 灵根: { name: '天生至尊' }, 极境: [] }), false);
+});
+
+test('高阶至尊洗掉灵根后再洗回天生至尊可重新开启涅槃', () => {
+  for (const [name, bone, trial] of [
+    ['涅槃·至尊', '涅槃再生', null],
+    ['涅槃·至尊', '已舍入血肉', { 类型: 'ultimate', 胜场: 2, 目标: 4 }],
+    ['终极涅槃·至尊', '血肉铭骨', null],
+  ]) {
+    const player = {
+      灵根: { name },
+      至尊骨: bone,
+      极境: [2, '3'],
+      学习的功法: ['原始真解神引篇', '上苍之手', '轮回宝术'],
+      至尊之路: { 仙骨: true, 重瞳: true, 共鸣: true, 试炼: trial },
+    };
+    ensureSupremePath(player);
+    const learned = [...player.学习的功法];
+
+    player.灵根 = { name: '混沌体' };
+    assert.equal(repairSupremeBoneManifestation(player), false);
+    assert.equal(ensureSupremePath(player), null);
+    assert.equal(player.至尊骨, bone);
+
+    player.灵根 = { name: '天生至尊' };
+    assert.equal(repairSupremeBoneManifestation(player), true, bone);
+    const path = ensureSupremePath(player);
+    assert.equal(player.至尊骨, '初现');
+    assert.equal(path.阶段, 1);
+    assert.equal(path.试炼, null);
+    assert.deepEqual(getNirvanaMissing(player), []);
+    assert.deepEqual(player.学习的功法, learned);
+    assert.ok(path.仙骨 && path.重瞳 && path.共鸣);
+    assert.equal(repairSupremeBoneManifestation(player), false);
+  }
+});
+
+test('至尊试炼仅保留当前阶段进度，进行失骨涅槃时保持无骨状态', () => {
+  for (const [name, kind, keep] of [
+    ['天生至尊', 'nirvana', true],
+    ['涅槃·至尊', 'ultimate', true],
+    ['天生至尊', 'ultimate', false],
+    ['涅槃·至尊', 'nirvana', false],
+    ['终极涅槃·至尊', 'ultimate', false],
+  ]) {
+    const trial = { 类型: kind, 胜场: 2, 目标: getSupremeTrialSpec(kind).target };
+    const player = { 灵根: { name }, 极境: [2], 至尊之路: { 试炼: trial } };
+    const path = ensureSupremePath(player);
+    assert.equal(path.试炼, keep ? trial : null);
+    if (keep) {
+      assert.equal(repairSupremeBoneManifestation(player), false);
+      assert.equal(player.至尊骨, undefined);
+      assert.equal(path.试炼.胜场, 2);
+    }
+  }
+});
+
+test('重瞳与仙骨使用组合技能但保留至尊骨本命神通', () => {
+  const player = {
+    灵根: { name: '终极涅槃·至尊' },
+    至尊之路: { 阶段: 3, 重瞳: true, 仙骨: true, 共鸣: false },
+  };
+  assert.equal(hasSupremeInnate(player, '终极涅槃·至尊'), true);
+  assert.equal(hasSupremeInnate(player, '重瞳'), false);
+  assert.equal(hasSupremeInnate(player, '重瞳至尊'), true);
+  assert.equal(hasSupremeInnate(player, '仙骨'), true);
+  assert.equal(getSupremeTitle(player), '重瞳双骨至尊');
+
+  player.至尊之路.共鸣 = true;
+  assert.equal(hasSupremeInnate(player, '重瞳至尊'), false);
+  assert.equal(hasSupremeInnate(player, '至尊重瞳仙骨'), true);
+  assert.equal(getSupremeTitle(player), '至尊重瞳仙骨');
+});
+
+test('原生重瞳者仍兼容旧版重瞳技能，试炼配置保持固定', () => {
+  assert.equal(hasSupremeInnate({ 灵根: { name: '重瞳者' } }, '重瞳'), true);
+  assert.deepEqual(getSupremeTrialSpec('nirvana'), {
+    target: 9,
+    enemyName: '夺骨者投影',
+    enemyScale: 0.65,
+  });
+  assert.equal(getSupremeTrialSpec('ultimate').target, 4);
+});
+
+test('只有未获重瞳本源的至尊体通关大荒峡谷才可能遭遇重瞳者', () => {
+  const player = {
+    灵根: { name: '天生至尊' },
+    至尊之路: { 重瞳: false },
+    攻击: 1000,
+    防御: 800,
+    血量上限: 2000,
+  };
+  const trigger = rollDahuangPupilEncounter(player, {
+    dungeon: '大荒峡谷',
+    random: () => DAHUANG_PUPIL_ENCOUNTER_CHANCE - 0.001,
+  });
+  assert.equal(trigger?.名号, '大荒重瞳者');
+  assert.equal(trigger?.灵根?.name, '重瞳者');
+  assert.equal(trigger?.攻击, 600);
+  assert.equal(rollDahuangPupilEncounter(player, { dungeon: '石村', random: () => 0 }), null);
+  assert.equal(rollDahuangPupilEncounter(player, { dungeon: '大荒峡谷', hasSource: true, random: () => 0 }), null);
+  player.至尊之路.重瞳 = true;
+  assert.equal(rollDahuangPupilEncounter(player, { dungeon: '大荒峡谷', random: () => 0 }), null);
+});
+
+test('至尊骨按阶段参悟宝术并自动合成轮回天罚', () => {
+  const player = { 灵根: { name: '天生至尊' }, 学习的功法: [] };
+
+  assert.deepEqual(learnSupremeBoneArt(player, '至尊骨'), {
+    ok: true,
+    skill: '上苍之手',
+    combined: null,
+  });
+  assert.equal(learnSupremeBoneArt(player, '至尊骨').reason, 'known');
+  assert.equal(learnSupremeBoneArt(player, '涅槃至尊骨').reason, 'wrong_stage');
+
+  player.灵根.name = '涅槃·至尊';
+  assert.deepEqual(learnSupremeBoneArt(player, '涅槃至尊骨'), {
+    ok: true,
+    skill: '轮回宝术',
+    combined: '轮回天罚',
+  });
+  assert.deepEqual(player.学习的功法, ['上苍之手', '轮回宝术', '轮回天罚']);
+});
+
+test('至尊伴生技能、材料与副本掉落配置完整', () => {
+  const readJson = relativePath => JSON.parse(readFileSync(new URL(relativePath, import.meta.url), 'utf8'));
+  const attacks = readJson('../resources/data/item/技能组/攻击技能.json');
+  const defenses = readJson('../resources/data/item/技能组/防御技能.json');
+  const materials = readJson('../resources/data/item/材料列表.json');
+  const dungeons = readJson('../resources/data/item/副本/下界八域列表.json');
+  const techniques = readJson('../resources/data/item/功法列表.json');
+
+  assert.equal(attacks.find(skill => skill.name === '天生至尊')?.beilv, 10);
+  assert.equal(attacks.find(skill => skill.name === '涅槃·至尊')?.beilv, 12);
+  assert.equal(attacks.find(skill => skill.name === '终极涅槃·至尊')?.beilv, 25);
+  assert.equal(attacks.find(skill => skill.name === '重瞳至尊')?.beilv, 2.5);
+  assert.equal(attacks.find(skill => skill.name === '至尊重瞳仙骨')?.beilv, 3.5);
+  assert.equal(defenses.find(skill => skill.name === '天生至尊')?.beilv, 0.6);
+  assert.equal(defenses.find(skill => skill.name === '涅槃·至尊')?.beilv, 0.4);
+  assert.equal(defenses.find(skill => skill.name === '终极涅槃·至尊')?.beilv, 0.2);
+  assert.ok(defenses.some(skill => skill.name === '仙骨'));
+  assert.ok(defenses.some(skill => skill.name === '至尊重瞳仙骨'));
+  assert.ok(materials.some(item => item.name === '重瞳本源' && item.class === '材料'));
+  assert.ok(!dungeons.find(place => place.name === '大荒峡谷')?.four.some(item => item.name === '重瞳本源'));
+  assert.ok(dungeons.find(place => place.name === '大荒峡谷')?.Best.includes('[重瞳者遭遇·重瞳本源]'));
+  assert.ok(materials.some(item => item.name === '涅槃至尊骨' && item.class === '材料'));
+  assert.ok(['上苍之手', '轮回宝术', '轮回天罚'].every(name => techniques.some(item => item.name === name)));
+
+  const hand = attacks.find(skill => skill.name === '上苍之手');
+  const punishment = attacks.find(skill => skill.name === '轮回天罚');
+  assert.ok(attacks.indexOf(punishment) < attacks.indexOf(hand), '组合技需先于前置宝术结算，避免被三技能上限截断');
+  assert.equal(hand?.控制, 1);
+  assert.equal(punishment?.控制, 1);
+  assert.equal(punishment?.负面类型, '轮回之力');
+  assert.equal(punishment?.负面回合, 3);
+  assert.equal(hand?.beilv, 3);
+  assert.equal(punishment?.beilv, 12);
+});
+
+test('涅槃至尊可通过斩骨获得涅槃至尊骨', () => {
+  const source = readFileSync(new URL('../apps/User/linggenjuexing.js', import.meta.url), 'utf8');
+  assert.match(source, /e\.msg === '#斩骨' && path\.阶段 === 2[\s\S]{0,80}startSupremeUltimate\(e, ctx\)/);
+  assert.match(source, /Add_najie_thing\(usr_qq, '涅槃至尊骨', '材料', 1/);
+});

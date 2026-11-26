@@ -1,0 +1,7 @@
+{
+  "sv_replace_me": {
+    "name": "示例区服",
+    "secret": "粘贴该区服 config.local.json 中的独立 secret（至少 32 字符）",
+    "enabled": true
+  }
+}

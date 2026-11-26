@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>{{panel.title}}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { width: 1000px; margin: 0; padding: 40px; background: #eee9dd; color: #292b25; font-family: "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; }
+    .sheet { border-top: 6px solid #355348; padding-top: 24px; }
+    header { display: flex; justify-content: space-between; align-items: end; margin-bottom: 24px; }
+    h1 { max-width: 660px; overflow-wrap: anywhere; font-family: "SimSun", serif; font-size: 42px; font-weight: 600; margin: 0 0 8px; letter-spacing: 5px; }
+    .caption, footer { font-size: 16px; color: #646658; }
+    .status { color: #355348; font-size: 22px; }
+    .summary { padding: 18px 0; border-top: 1px solid #b4b6a7; border-bottom: 1px solid #b4b6a7; margin-bottom: 24px; font-size: 19px; }
+    table { width: 100%; border-collapse: collapse; font-size: 19px; font-variant-numeric: tabular-nums; }
+    th { background: #dce1d4; font-weight: 500; font-size: 16px; }
+    th, td { padding: 16px 8px; text-align: right; border-bottom: 1px solid #cbd0bf; }
+    th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+    .name { font-weight: 600; white-space: nowrap; }
+    .sector { display: block; font-size: 13px; color: #737765; font-weight: 400; margin-top: 4px; }
+    .up { color: #ae4239; } .down { color: #306e55; }
+    h2 { font-size: 21px; font-weight: 500; margin: 28px 0 14px; }
+    .news { padding: 12px 0; border-bottom: 1px solid #d2d3c5; font-size: 18px; line-height: 1.7; }
+    .time { font-size: 13px; color: #767b69; }
+    .chart { width: 100%; height: 230px; margin-top: 20px; }
+    .chart text { fill: #646658; font-size: 13px; }
+    footer { margin-top: 28px; line-height: 1.9; border-top: 2px solid #355348; padding-top: 18px; }
+    .empty { padding: 24px 0; color: #646658; }
+    .warning { margin: 12px 0; padding: 12px 0; border-bottom: 1px solid #bc9c80; color: #8d3b2e; line-height: 1.7; font-size: 18px; white-space: pre-line; }
+  </style>
+</head>
+<body>
+  <div class="sheet">
+    <header><div><h1>{{panel.title}}</h1><div class="caption">灵石有价 · 人心难测</div></div><div><div class="status">{{panel.status}}</div><div class="time">{{panel.time}}</div></div></header>
+    <div class="summary">{{panel.summary}}<br>随身灵石 {{panel.balance}}</div>
+    {{if panel.debtSummary}}<div class="warning">{{panel.debtSummary}}<br>{{panel.netAssets}}</div>{{/if}}
+    {{if panel.notice}}<div class="warning">{{panel.notice}}</div>{{/if}}
+    {{each panel.warnings warning}}<div class="warning">{{warning}}</div>{{/each}}
+    {{if panel.kind === 'portfolio'}}
+      {{if panel.portfolio.length}}
+      <table><thead><tr><th>商会</th><th>股数</th><th>持仓成本</th><th>当前市值</th><th>预估净浮盈</th></tr></thead><tbody>
+      {{each panel.portfolio row}}<tr><td class="name">{{row.name}}</td><td>{{row.shares}}</td><td>{{row.cost}}</td><td>{{row.value}}</td><td class="{{row.up ? 'up' : 'down'}}">{{row.profit}}</td></tr>{{/each}}
+      </tbody></table>
+      {{else}}<div class="empty">{{if panel.tradingRestricted}}当前暂无持仓，请先处理欠款。#灵市债务 查看借据，#灵市还款 数量 偿还本息。{{else}}尚未持股。发送 #买入 丹鼎阁 100，按当前报价买入100股。{{/if}}</div>{{/if}}
+    {{else}}
+      <table><thead><tr><th>编号</th><th>仙门商会</th><th>每股灵石</th><th>涨停</th><th>跌停</th><th>本次涨跌</th><th>当日涨跌</th><th>风险</th><th>状态</th></tr></thead><tbody>
+      {{each panel.rows row}}<tr><td>{{row.id}}</td><td class="name">{{row.name}}<span class="sector">{{row.sector}}</span></td><td>{{row.price}}</td><td>{{row.upper}}</td><td>{{row.lower}}</td><td>{{row.step}}</td><td class="{{row.up ? 'up' : 'down'}}">{{row.change}}</td><td>{{row.risk}}</td><td>{{row.status}}</td></tr>{{/each}}
+      </tbody></table>
+    {{/if}}
+    {{if panel.chart}}
+    <h2>近期成交价 · 单位：灵石 / 股</h2>
+    <svg class="chart" viewBox="0 0 760 220" role="img" aria-label="商会近期价格走势">
+      <path d="M30 30V175H730" fill="none" stroke="#adb49e"></path>
+      <polyline points="{{panel.chart.points}}" fill="none" stroke="#355348" stroke-width="3" stroke-linejoin="round"></polyline>
+      <text x="32" y="22">区间最高 {{panel.chart.high}}</text><text x="32" y="204">区间最低 {{panel.chart.low}}</text>
+      <text x="320" y="204">{{panel.chart.start}} — {{panel.chart.end}}</text>
+    </svg>
+    {{/if}}
+    <h2>茶楼风声 · 传闻自有立场</h2>
+    {{each panel.news item}}<div class="news"><div class="time">{{item.time}}</div>{{item.text}}</div>{{/each}}
+    <footer>
+      {{panel.footer}}<br>
+      #买入 商会名 股数　#卖出 商会名 股数　#我的股票　#股票详情 商会名<br>
+      #灵市人物　#灵市打听 人名 商会名　#灵市查账 人名 商会名　#灵市帮助
+      <br>#灵市借款 金额　#灵市债务　#灵市还款 金额 / 全部
+    </footer>
+  </div>
+</body>
+</html>

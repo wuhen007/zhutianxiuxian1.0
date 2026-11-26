@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{addres}} - 寻宝列表</title>
+    <link rel="stylesheet" href="{{pluResPath}}/html/xunbao_place/xunbao_place.css">
+</head>
+<body>
+    <div class="container">
+        <!-- 页面头部 -->
+        <div class="header">
+            <h1 class="title">🗺️ {{addres}}</h1>
+            <p class="subtitle">共 {{totalCount}} 个寻宝地点 · 指令：#寻宝+地图名</p>
+            <p class="hint">⚠ 进入秘境需消耗对应饱食度，部分高级秘境需要达到指定修为</p>
+        </div>
+
+        <!-- 分类标签栏 -->
+        <div class="category-bar">
+            {{each categories cat}}
+            <span class="cat-tag {{cat.cssClass}} {{cat.active ? 'active' : ''}}">{{cat.icon}} {{cat.name}}</span>
+            {{/each}}
+        </div>
+
+        <!-- 地点卡片网格 -->
+        <div class="card-grid">
+            {{if didian_list.length === 0}}
+            <div class="empty-state">
+                <div class="empty-icon">🏜️</div>
+                <div class="empty-text">该分类下暂无寻宝地点</div>
+            </div>
+            {{/if}}
+
+            {{each didian_list item}}
+            <div class="card {{item.catClass}}">
+                <!-- 卡片头部 -->
+                <div class="card-header">
+                    <div class="card-title-area">
+                        <div class="card-name">{{item.name}}</div>
+                        <div class="card-badges">
+                            <span class="badge badge-category">{{item.categoryIcon}} {{item.category}}</span>
+                            {{if item.levelReq > 0}}
+                            <span class="badge badge-level">🔒 修为{{item.levelReq}}+</span>
+                            {{else}}
+                            <span class="badge badge-level">🟢 无限制</span>
+                            {{/if}}
+                        </div>
+                        <div class="price-tag">🍖 饱食度: {{item.Price}}</div>
+                    </div>
+                    <div class="card-icon {{item.iconClass}}">{{item.categoryIcon}}</div>
+                </div>
+
+                <!-- 卡片内容 -->
+                <div class="card-body">
+                    <!-- 必备地图 -->
+                    {{if item.one.length > 0}}
+                    <div class="info-section">
+                        <div class="info-title"><span class="icon-dot"></span>必备地图</div>
+                        <div class="info-items">
+                            {{each item.one thing}}
+                            <span class="info-item">
+                                {{thing.name}}
+                                {{if thing.amount > 1}}<span class="amount-badge">×{{thing.amount}}</span>{{/if}}
+                            </span>
+                            {{/each}}
+                        </div>
+                    </div>
+                    {{/if}}
+
+                    <!-- 所需工具 -->
+                    {{if item.two.length > 0}}
+                    <div class="info-section">
+                        <div class="info-title"><span class="icon-dot"></span>所需工具</div>
+                        <div class="info-items">
+                            {{each item.two thing}}
+                            <span class="info-item">
+                                {{thing.name}}
+                                {{if thing.amount > 1}}<span class="amount-badge">×{{thing.amount}}</span>{{/if}}
+                            </span>
+                            {{/each}}
+                        </div>
+                    </div>
+                    {{/if}}
+
+                    <!-- 最佳奖励预览 -->
+                    {{if item.bestRewards.length > 0}}
+                    <div class="info-section">
+                        <div class="info-title"><span class="icon-dot"></span>最佳奖励</div>
+                        <div class="best-rewards">
+                            {{each item.bestRewards reward}}
+                            <span class="best-tag">💎 {{reward}}</span>
+                            {{/each}}
+                        </div>
+                    </div>
+                    {{/if}}
+
+                    <!-- 普通奖励 -->
+                    {{if item.three.length > 0}}
+                    <div class="info-section">
+                        <div class="info-title"><span class="icon-dot"></span>普通奖励</div>
+                        <div class="info-items">
+                            {{each item.three thing}}
+                            <span class="info-item reward-item">
+                                {{thing.name}}
+                                {{if thing.amount > 1}}<span class="amount-badge">×{{thing.amount}}</span>{{/if}}
+                            </span>
+                            {{/each}}
+                        </div>
+                    </div>
+                    {{/if}}
+
+                    <!-- 额外奖励 -->
+                    {{if item.four.length > 0}}
+                    <div class="info-section">
+                        <div class="info-title"><span class="icon-dot"></span>额外奖励</div>
+                        <div class="info-items">
+                            {{each item.four thing}}
+                            <span class="info-item rare-reward">
+                                {{thing.name}}
+                                {{if thing.amount > 1}}<span class="amount-badge">×{{thing.amount}}</span>{{/if}}
+                                <span class="chance-badge">{{(thing.chance * 100).toFixed(0)}}%</span>
+                            </span>
+                            {{/each}}
+                        </div>
+                    </div>
+                    {{/if}}
+                </div>
+
+                <!-- 卡片底部 -->
+                <div class="card-footer">
+                    {{if item.experience}}
+                    <div class="exp-info">{{item.experience}}</div>
+                    {{/if}}
+                    <div class="difficulty">
+                        <span class="difficulty-label">难度：</span>
+                        {{each [1,2,3,4,5] s}}
+                        <span class="star {{s <= item.stars ? 'filled' : ''}}">★</span>
+                        {{/each}}
+                    </div>
+                </div>
+            </div>
+            {{/each}}
+        </div>
+    </div>
+</body>
+</html>

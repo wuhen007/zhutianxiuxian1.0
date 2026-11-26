@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta http-equiv="content-type" content="text/html;charset=utf-8" />
+  <link rel="preload" href="../../font/tttgbnumber.ttf" as="font" />
+  <link rel="shortcut icon" href="#" />
+  <style>
+    @font-face {
+      font-family: 'tttgbnumber';
+      src: url('../../font/tttgbnumber.ttf');
+      font-weight: normal;
+      font-style: normal;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      transform: scale(1);
+      width: 100%;
+      font-family: 'tttgbnumber', 'Microsoft YaHei', sans-serif;
+      background-image: url('{{pluResPath}}/html/autodaily/bg.jpg');
+      background-repeat: no-repeat;
+      background-position: top center;
+      background-size: 100% auto;
+      padding: 30px 0;
+    }
+
+    .container {
+      width: 85%;
+      max-width: 850px;
+      margin: 0 auto;
+      background: rgba(15, 15, 35, 0.75);
+      border: 1px solid rgba(255, 215, 0, 0.3);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 0 30px rgba(100, 80, 255, 0.2);
+    }
+
+    .header {
+      background: linear-gradient(to right, rgba(80, 20, 100, 0.6), rgba(20, 30, 80, 0.6));
+      padding: 22px 30px;
+      border-bottom: 1px solid rgba(255, 215, 0, 0.3);
+      text-align: center;
+    }
+
+    .header-title {
+      font-size: 32px;
+      font-weight: bold;
+      color: #ffd700;
+      letter-spacing: 3px;
+      text-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+    }
+
+    .header-sub {
+      font-size: 18px;
+      color: #a0a0c0;
+      margin-top: 6px;
+      letter-spacing: 1px;
+    }
+
+    .body {
+      padding: 20px 30px;
+    }
+
+    .day-section {
+      margin-bottom: 24px;
+    }
+
+    .day-section:last-child {
+      margin-bottom: 0;
+    }
+
+    .day-header {
+      display: flex;
+      align-items: center;
+      margin-bottom: 12px;
+      padding: 10px 16px;
+      background: rgba(255, 215, 0, 0.08);
+      border-left: 3px solid #ffd700;
+      border-radius: 0 8px 8px 0;
+    }
+
+    .day-icon {
+      font-size: 22px;
+      margin-right: 10px;
+    }
+
+    .day-date {
+      font-size: 22px;
+      color: #ffd700;
+      font-weight: bold;
+      letter-spacing: 1px;
+    }
+
+    .day-weekday {
+      font-size: 15px;
+      color: #8888aa;
+      margin-left: 12px;
+    }
+
+    .task-list {
+      padding-left: 6px;
+    }
+
+    .task-card {
+      display: flex;
+      align-items: flex-start;
+      padding: 12px 16px;
+      margin-bottom: 8px;
+      background: rgba(25, 25, 50, 0.6);
+      border: 1px solid rgba(100, 100, 180, 0.15);
+      border-radius: 10px;
+      transition: background 0.2s;
+    }
+
+    .task-card:last-child {
+      margin-bottom: 0;
+    }
+
+    .task-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 14px;
+      margin-top: 8px;
+      flex-shrink: 0;
+    }
+
+    .dot-sign { background: #4ade80; box-shadow: 0 0 8px rgba(74, 222, 128, 0.5); }
+    .dot-salary { background: #f59e0b; box-shadow: 0 0 8px rgba(245, 158, 11, 0.5); }
+    .dot-tiandao { background: #f97316; box-shadow: 0 0 8px rgba(249, 115, 22, 0.5); }
+    .dot-daofa { background: #a855f7; box-shadow: 0 0 8px rgba(168, 85, 247, 0.5); }
+    .dot-vein { background: #06b6d4; box-shadow: 0 0 8px rgba(6, 182, 212, 0.5); }
+    .dot-beast { background: #ec4899; box-shadow: 0 0 8px rgba(236, 72, 153, 0.5); }
+    .dot-jianyunhai { background: #14b8a6; box-shadow: 0 0 8px rgba(20, 184, 166, 0.5); }
+
+    .task-content {
+      flex: 1;
+      font-size: 17px;
+      color: #d0d0e0;
+      line-height: 1.7;
+      white-space: pre-line;
+      word-break: break-all;
+    }
+
+    .task-label {
+      display: inline-block;
+      font-size: 13px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin-right: 8px;
+      font-weight: bold;
+      letter-spacing: 1px;
+    }
+
+    .label-sign { background: rgba(74, 222, 128, 0.2); color: #4ade80; }
+    .label-salary { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+    .label-tiandao { background: rgba(249, 115, 22, 0.2); color: #f97316; }
+    .label-daofa { background: rgba(168, 85, 247, 0.2); color: #a855f7; }
+    .label-vein { background: rgba(6, 182, 212, 0.2); color: #06b6d4; }
+    .label-beast { background: rgba(236, 72, 153, 0.2); color: #ec4899; }
+    .label-jianyunhai { background: rgba(20, 184, 166, 0.2); color: #14b8a6; }
+
+    .footer {
+      padding: 16px 30px;
+      text-align: center;
+      border-top: 1px solid rgba(255, 215, 0, 0.15);
+      font-size: 14px;
+      color: #666688;
+      letter-spacing: 2px;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px;
+      color: #666688;
+      font-size: 20px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="header-title">诸 天 领 取 记 录</div>
+      <div class="header-sub">{{nickname}}</div>
+    </div>
+    <div class="body">
+      {{if !records || records.length === 0}}
+      <div class="empty-state">最近三天暂无领取记录</div>
+      {{else}}
+      {{each records record}}
+      <div class="day-section">
+        <div class="day-header">
+          <span class="day-icon">&#x1F4C5;</span>
+          <span class="day-date">{{record.date}}</span>
+        </div>
+        <div class="task-list">
+          {{each record.tasks task}}
+          <div class="task-card">
+            <div class="task-dot dot-{{task.type}}"></div>
+            <div class="task-content">
+              <span class="task-label label-{{task.type}}">{{task.typeName || task.type}}</span>{{task.msg}}
+            </div>
+          </div>
+          {{/each}}
+        </div>
+      </div>
+      {{/each}}
+      {{/if}}
+    </div>
+    <div class="footer">诸天万界修炼系统 · 大道印记</div>
+  </div>
+</body>
+</html>

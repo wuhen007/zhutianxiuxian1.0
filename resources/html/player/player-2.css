@@ -1,0 +1,117 @@
+@import url('./review/review.css');
+
+body {
+  width: 820px;
+  margin: 0 auto;
+  display: block;
+  background: #111413;
+}
+
+.sheet.mythic-sheet {
+  width: 820px;
+  background-position: center top;
+  background-size: cover;
+}
+
+.mythic-avatar {
+  overflow: hidden;
+  background-image: none;
+}
+
+.mythic-avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.mythic-name h1,
+.mythic-oath strong,
+.mythic-title strong,
+.mythic-system-prime strong,
+.mythic-arsenal h3 {
+  overflow-wrap: anywhere;
+}
+
+.mythic-title {
+  max-width: 340px;
+}
+
+.mythic-title strong {
+  max-width: 320px;
+  line-height: 1.18;
+}
+
+.mythic-power {
+  max-width: 230px;
+}
+
+.mythic-power strong {
+  font-size: 38px;
+  line-height: 1.12;
+}
+
+.mythic-combat strong sup {
+  margin-left: 2px;
+  color: #d9bd61;
+  font-size: 11px;
+}
+
+.mythic-life-meter {
+  height: 3px;
+  margin-top: 7px;
+  overflow: hidden;
+  background: rgba(229, 238, 232, 0.12);
+}
+
+.mythic-life-meter b {
+  display: block;
+  height: 100%;
+  background: #b74b43;
+  box-shadow: 0 0 8px rgba(183, 75, 67, 0.54);
+}
+
+.mythic-systems.mythic-no-prime,
+.mythic-systems.mythic-prime-only {
+  grid-template-columns: 1fr;
+}
+
+.mythic-system-pair article:only-child {
+  grid-row: 1 / -1;
+}
+
+.mythic-facts strong,
+.mythic-states strong,
+.mythic-resources strong,
+.mythic-arsenal p {
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.mythic-progress p span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.mythic-progress p strong {
+  flex: 0 0 auto;
+}
+
+.mythic-arsenal article {
+  min-width: 0;
+  height: auto;
+}
+
+.mythic-empty {
+  color: #758780;
+}
+
+.mythic-footer {
+  gap: 18px;
+}
+
+.mythic-footer span,
+.mythic-footer strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

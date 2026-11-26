@@ -1,0 +1,364 @@
+- group: 世界聊天 · 跨服消息
+  list:
+    - icon: help-icon_13
+      title: '#世界帮助 / #世界聊天'
+      desc: '查看接入步骤与本群订阅、连接状态；跨服聊天不迁移角色存档'
+    - icon: help-icon_13
+      title: '#加入世界聊天 / #世界加入'
+      desc: '群主、群管理员或机器人主人在本群执行一次；连通总机后实时接收其他区服的世界发言'
+    - icon: help-icon_13
+      title: '#世界发言 内容'
+      desc: '向其他区服发送世界消息，可附图片；普通群消息不会自动上传'
+    - icon: help-icon_13
+      title: '#世界查看 10 / #世界状态'
+      desc: '查看近期消息，或核对公共总机连接与本群是否已加入'
+    - icon: help-icon_13
+      title: '#世界网页'
+      desc: '领取个人网页入口，进行世界传音并查看纳戒与跨服交易'
+    - icon: help-icon_13
+      title: '#退出世界聊天 / #世界退出'
+      desc: '群主、群管理员或机器人主人停止本群接收；其他群不受影响'
+
+- group: 万界灵市 · 灵石买股与茶楼风声
+  list:
+    - icon: help-icon_13
+      title: '#灵市 / #灵市帮助'
+      desc: '八家商会，每10分钟更新；北京时间08:00—24:00交易'
+    - icon: help-icon_13
+      title: '#买入 丹鼎阁 100 / #卖出 丹鼎阁 50'
+      desc: '灵石买卖整数股，支持商会编号；卖出数量可填全部'
+    - icon: help-icon_13
+      title: '#我的股票 / #股票详情 丹鼎阁'
+      desc: '查看持仓与走势；利好可持续上涨，危机复核失败可退市归零'
+    - icon: help-icon_13
+      title: '#灵市排行榜 / #灵市收益榜'
+      desc: '比较净盈利与累计投入收益率'
+    - icon: help-icon_13
+      title: '#灵市人物 / #灵市交谈 墨九'
+      desc: '认识八位会真实买卖的客商，交谈积累熟悉度'
+    - icon: help-icon_13
+      title: '#灵市打听 墨九 丹鼎阁'
+      desc: '1000灵石买消息；推荐含私心，熟人也会看错'
+    - icon: help-icon_13
+      title: '#灵市查账 墨九 丹鼎阁 / #灵市追问 墨九'
+      desc: '5000灵石查真实成交；打听满30分钟后免费核验方向'
+    - icon: help-icon_13
+      title: '#灵市消息'
+      desc: '查看商会事件、操盘客造势与减持风声'
+    - icon: help-icon_13
+      title: '#灵市借款 2000000 / #灵市债务'
+      desc: '先看借据，加确认借款；期限7天、日息0.1%，亏损后仍须还本付息'
+    - icon: help-icon_13
+      title: '#灵市还款 100000 / #灵市还款 全部'
+      desc: '先息后本，全天可还；逾期或资不抵债时暂停新买入'
+
+- group: 每天日常
+  list:
+    - icon: help-icon_4
+      title: '#修仙签到'
+      desc: '修仙每日签到'
+    - icon: help-icon_4
+      title: '#天道赐福'
+      desc: '破虚境解锁，境界、独特职业以及位面主角灵根会获得额外奖励'
+    - icon: help-icon_4
+      title: '#道法赐福'
+      desc: '道法仙术专属！'               
+    - icon: help-icon_13
+      title: '#获取每日任务'
+      desc: '接取任务'
+    - icon: help-icon_13
+      title: '#我的任务'
+      desc: '正在进行的任务'
+    - icon: help-icon_13
+      title: '#提交每日任务'
+      desc: '完成任务'
+    - icon: help-icon_13
+      title: '#领取每日奖励'
+      desc: '领取奖励，获得每日抽奖次数'
+    - icon: help-icon_4
+      title: '#每日抽奖'
+      desc: '每日限定，看看欧气！'      
+      
+
+- group: 修行之路
+  list:
+    - icon: help-icon_13
+      title: '#修仙状态'
+      desc: '查看自己的时间动作'
+    - icon: help-icon_13
+      title: '#练气境界'
+      desc: '查看练气境界'
+    - icon: help-icon_13
+      title: '#炼体境界'
+      desc: '查看炼体境界'
+    - icon: help-icon_13
+      title: '#秘境体系'
+      desc: '查看额外境界'
+    - icon: help-icon_13
+      title: '#仙古今世法'
+      desc: '查看额外境界'
+    - icon: help-icon_13
+      title: '#查看时代'
+      desc: '查看当下所处的修仙时代【划重点！】'            
+
+- group: 信息列表
+  list:
+    - icon: help-icon_13
+      title: '#装备楼'
+      desc: '查看所有装备'
+    - icon: help-icon_13
+      title: '#功法楼'
+      desc: '查看所有功法'
+    - icon: help-icon_13
+      title: '#锻造材料楼'
+      desc: '查看所有锻造材料、属性与持有状态'
+    - icon: help-icon_13
+      title: '#丹药楼'
+      desc: '查看所有丹药'
+    - icon: help-icon_13
+      title: '#道具楼'
+      desc: '查看所有道具'
+    - icon: help-icon_13
+      title: '#仙宠楼'
+      desc: '查看所有仙宠'
+    - icon: help-icon_13
+      title: '#成就图鉴'
+      desc: '查看所有成就'
+    - icon: help-icon_13
+      title: '#合成图鉴'
+      desc: '查看所有合成'
+    - icon: help-icon_13
+      title: '#灵根图鉴'
+      desc: '分页查看灵根；可用“#灵根图鉴 2”翻页或“#灵根图鉴 分类 真灵根”筛选'
+    - icon: help-icon_13
+      title: '#命格图鉴'
+      desc: '查看所有命格词条与效果'
+    - icon: help-icon_13
+      title: '#兑换码图鉴'
+      desc: '查看所有兑换码'
+    - icon: help-icon_13
+      title: '#位面天骄图鉴'
+      desc: '查看所有位面天骄' 
+    - icon: help-icon_13
+      title: '#剧情人物图鉴'
+      desc: '查看所有剧情人物' 
+    - icon: help-icon_13
+      title: '#更新公告'
+      desc: '本期更新分章图文，每页两块；发送 #更新公告2 继续阅读'
+    - icon: help-icon_13
+      title: '#公告网页'
+      desc: 'HTML公告中心：目录跳转、分章翻页与历史查阅；也可发送 #更新公告网页'
+    - icon: help-icon_13
+      title: '#练气皮肤图鉴'
+      desc: '查看所有练气皮肤'                                    
+
+- group: 外观玄影
+  list:
+    - icon: help-icon_13
+      title: '#自选存档皮肤<皮肤ID>*<练气|装备|纳戒>'
+      desc: '从已有皮肤中设置练气、装备或纳戒存档皮肤'
+    - icon: help-icon_13
+      title: '#上传练气皮肤 <皮肤ID> + 图片'
+      desc: '上传新的练气皮肤并立即应用，ID仅限字母、数字和下划线'
+    - icon: help-icon_13
+      title: '#预览练气皮肤 <皮肤ID>'
+      desc: '预览指定ID的练气皮肤'
+    - icon: help-icon_13
+      title: '#上传纳戒皮肤 <皮肤ID> + 横版JPG'
+      desc: '上传宽度大于高度的纳戒皮肤并立即应用，图片不超过10MB'
+
+- group: 逆天改命
+  list:
+    - icon: help-icon_15
+      title: '#我的练气'
+      desc: '练气信息'
+    - icon: help-icon_17
+      title: '#我的炼体'
+      desc: '炼体信息'
+    - icon: help-icon_17
+      title: '#修仙助手'
+      desc: '按当前境界查看推荐修行目标与可参与玩法'
+    - icon: help-icon_38
+      title: '#突破 #幸运突破'
+      desc: '打破浩劫-幸运草增加成功率'
+    - icon: help-icon_38
+      title: '#破体 #幸运破体'
+      desc: '提高体境-幸运草增加成功率'
+    - icon: help-icon_38
+      title: '#一键突破/破体'
+      desc: '快捷一键突破或破体，并线性获得仙宠'      
+    - icon: help-icon_44
+      title: '#渡劫'
+      desc: '渡劫期经历的劫难，雷劫越多加成越高'
+    - icon: help-icon_44
+      title: '#打散雷劫'
+      desc: '肉身玄圣或秘境体系道宫五重天可快速结束，且雷劫奖励翻倍'      
+    - icon: help-icon_44
+      title: '#登仙'
+      desc: '渡劫后前往仙界'
+
+         
+- group: 位面天骄
+  list:
+    - icon: help-icon_16
+      title: '#讨伐天骄 [姓名]'
+      desc: '讨伐位面天骄获得奖励'
+    - icon: help-icon_31
+      title: '#天骄状态 [姓名]'
+      desc: '查看指定天骄状态'
+    - icon: help-icon_60
+      title: '#天骄列表'
+      desc: '查看可讨伐天骄列表'
+
+- group: 气运之子
+  list:
+    - icon: help-icon_11
+      title: '#探索仙府'
+      desc: '探寻机缘'
+    - icon: help-icon_11
+      title: '#秘境'
+      desc: '出门探险'
+    - icon: help-icon_11
+      title: '#降临秘境+地点名'
+      desc: '获得修为与稀有物品'
+    - icon: help-icon_11
+      title: '#禁地'
+      desc: '仙界陨落之地'
+    - icon: help-icon_11
+      title: '#前往禁地+禁地名'
+      desc: '扣除灵石和修为'
+    - icon: help-icon_11
+      title: '#沉迷xx地点名*n'
+      desc: 'xx为秘境、禁地、仙境和宗门秘境'
+    - icon: help-icon_11
+      title: '#法身穿梭 位面'
+      desc: '将空闲法身移动到目标位面，法身代行副本前必须与副本处于同一位面'
+    - icon: help-icon_11
+      title: '#法身探索xx 地点 / #法身沉迷xx 地点*n'
+      desc: '由法身独立探索或连续刷取秘境、禁地、仙境及诸天位面副本，不占用真身行动'
+    - icon: help-icon_11
+      title: '#法身探索界海 接引古殿/终极古地'
+      desc: '法身先穿梭界海；分别需仙王/仙帝权柄，仅单次探索，不开放沉迷'
+    - icon: help-icon_11
+      title: '#法身遨游时间长河'
+      desc: '法身先穿梭时间长河；需准仙帝权柄，独立血量与行动，每段15分钟，不开放沉迷'
+    - icon: help-icon_11
+      title: '#镇守永恒未知之地 / #结束镇守永恒未知之地'
+      desc: '仙帝真身抵达后镇守；结束后保持原位且暂停自动接管，再次镇守需手动开始'
+    - icon: help-icon_11
+      title: '#法身镇守永恒未知之地 / #结束法身镇守永恒未知之地'
+      desc: '法身先穿梭永恒未知之地，独立占用行动；抵御维度灾厄每人每轮获得10纪元积累，受上限约束'
+    - icon: help-icon_11
+      title: '#逃离'
+      desc: '支持放弃状态'
+    - icon: help-icon_43
+      title: '#抽+天地卡池/灵界卡池/凡界卡池'
+      desc: '抽取仙宠'
+    - icon: help-icon_11
+      title: '#去'
+      desc: '快捷去上一次的副本'      
+    - icon: help-icon_11
+      title: '#秘境结算'
+      desc: '时间到后收获奖励'
+    - icon: help-icon_11
+      title: '#副本掉落 xxx'
+      desc: '查看副本具体掉落物'    
+    
+
+- group: 仙人之资(需成仙)
+  list:
+    - icon: help-icon_11
+      title: '#仙境'
+      desc: '查看仙人镇守之地'
+    - icon: help-icon_11
+      title: '#镇守仙境+地点名'
+      desc: '获得修为与稀有物品'      
+    - icon: help-icon_11
+      title: '#秘境结算'
+      desc: '时间到后收获奖励'
+    - icon: help-icon_11
+      title: '#副本掉落 xxx'
+      desc: '查看副本具体掉落物'       
+
+- group: 遨游万界
+  list:
+    - icon: help-icon_11
+      title: '#遮天位面'
+      desc: '查看遮天位面，前往遮天位面需激活五色祭坛或圣人修为'
+    - icon: help-icon_11
+      title: '#前往遮天位面+地点名'
+      desc: '获得修为与稀有物品'
+    - icon: help-icon_11
+      title: '#下界八域'
+      desc: '查看下界八域' 
+    - icon: help-icon_11
+      title: '#前往下界八域+地点名'
+      desc: '获得修为与稀有物品'
+    - icon: help-icon_11
+      title: '#九天十地'
+      desc: '查看九天十地' 
+    - icon: help-icon_11
+      title: '#前往九天十地+地点名'
+      desc: '获得修为与稀有物品'                 
+    - icon: help-icon_11
+      title: '#探索界海'
+      desc: '(秘境体系|仙古今世法)才具备资格'
+    - icon: help-icon_11
+      title: '#遨游时间长河'
+      desc: '三大额外体系达到准仙帝权柄后可进入；每段历时15分钟'
+    - icon: help-icon_11
+      title: '#献祭魂与血 @玩家'
+      desc: '同灵根且至少一条体系成仙者，可在战败后10分钟内献祭；按境界恢复15%～75%气血'
+    - icon: help-icon_11
+      title: '#秘境结算'
+      desc: '时间到后收获奖励'
+    - icon: help-icon_11
+      title: '#副本掉落 xxx'
+      desc: '查看副本具体掉落物'       
+
+- group: 帮助扩展
+  list:
+    - icon: help-icon_44
+      title: '#传音给作者 xxx'
+      desc: '机器人会私信给作者'
+    - icon: help-icon_14
+      title: '#基础帮助'
+      desc: '查看基础修仙指令'       
+    - icon: help-icon_44
+      title: '#宗门管理'
+      desc: '查看宗门指令'      
+    - icon: help-icon_16
+      title: '#修仙扩展'
+      desc: '查看更多功能'
+    - icon: help-icon_48
+      title: '#修仙管理'
+      desc: '查看管理员功能'
+    - icon: help-icon_14
+      title: '#查看日志'
+      desc: '查看更新日志'
+    - icon: help-icon_14
+      title: '#师徒帮助'
+      desc: '查看师徒指令'
+    - icon: help-icon_14
+      title: '#小世界帮助'
+      desc: '查看小世界指令'
+    - icon: help-icon_14
+      title: '#三周目帮助'
+      desc: '查看三周目新指令'            
+    - icon: help-icon_14
+      title: '#诸天帮助'
+      desc: '查看诸天指令'
+    - icon: help-icon_14
+      title: '#活动帮助'
+      desc: '汇总查看星海之缘、巡界司与无尽劫境活动指令'
+    - icon: help-icon_14
+      title: '#无尽轮回帮助'
+      desc: '查看无尽轮回剧情、任务、强化和基因锁指令'
+    - icon: help-icon_14
+      title: '#职业帮助'
+      desc: '查看职业详情以及指令'
+    - icon: help-icon_14
+      title: '#灵根帮助'
+      desc: '查看灵根详情以及指令'
+      
+     

@@ -1,0 +1,243 @@
+{
+  "version": 1,
+  "tokenName": "劫境道痕",
+  "fusionItem": "万象归一炉",
+  "products": [
+    {
+      "id": 1,
+      "name": "大衍悟道丹",
+      "itemClass": "丹药",
+      "category": "悟道",
+      "rarity": "珍稀",
+      "price": 4500,
+      "description": "增加悟道次数",
+      "dailyLimit": 3,
+      "action": "item"
+    },
+    {
+      "id": 2,
+      "name": "叩仙丹",
+      "itemClass": "丹药",
+      "category": "仙途",
+      "rarity": "灵品",
+      "price":100,
+      "description": "仙道潜力+10",
+      "dailyLimit": 100,
+      "action": "item"
+    },
+    {
+      "id": 3,
+      "name": "问道丹",
+      "itemClass": "丹药",
+      "category": "仙途",
+      "rarity": "珍稀",
+      "price": 220,
+      "description": "仙道潜力+25",
+      "dailyLimit": 100,
+      "action": "item"
+    },
+    {
+      "id": 4,
+      "name": "化仙丹",
+      "itemClass": "丹药",
+      "category": "仙途",
+      "rarity": "珍稀",
+      "price": 550,
+      "description": "仙道潜力+50",
+      "dailyLimit": 50,
+      "action": "item"
+    },
+    {
+      "id": 5,
+      "name": "玄黄造化丹",
+      "itemClass": "丹药",
+      "category": "仙途",
+      "rarity": "绝品",
+      "price": 1000,
+      "description": "仙道潜力+100",
+      "dailyLimit": 30,
+      "action": "item"
+    },
+    {
+      "id": 6,
+      "name": "极道丹",
+      "itemClass": "丹药",
+      "category": "仙途",
+      "rarity": "禁忌",
+      "price": 3000,
+      "description": "仙道潜力+500",
+      "dailyLimit": 5,
+      "action": "item"
+    },
+    {
+      "id": 7,
+      "name": "位面传送阵",
+      "itemClass": "道具",
+      "category": "破界",
+      "rarity": "绝品",
+      "price": 1500,
+      "description": "进行一次位面传送",
+      "dailyLimit": 0,
+      "action": "item"
+    },
+    {
+      "id": 8,
+      "name": "先天灵宝天机",
+      "itemClass": "",
+      "category": "天机",
+      "rarity": "禁忌",
+      "price": 20000,
+      "description": "强行推演天机，令一件尚未认主且仍在蛰伏的先天至宝显化，并获知其精确坐标",
+      "dailyLimit": 1,
+      "action": "clue"
+    },
+    {
+      "id": 9,
+      "name": "万象归一炉",
+      "itemClass": "道具",
+      "category": "熔铸",
+      "rarity": "禁忌",
+      "price": 12000,
+      "description": "熔铸一件百分比装备与已穿戴套装部件",
+      "dailyLimit": 1,
+      "action": "item"
+    },
+    {
+      "id": 10,
+      "name": "九妙不死药",
+      "itemClass": "丹药",
+      "category": "神药",
+      "rarity": "绝品",
+      "price": 300,
+      "description": "修为、血气各+3500万",
+      "dailyLimit": 0,
+      "action": "item"
+    },
+    {
+      "id": 11,
+      "name": "真龙不死药",
+      "itemClass": "丹药",
+      "category": "神药",
+      "rarity": "绝品",
+      "price": 600,
+      "description": "修为、血气各+5000万",
+      "dailyLimit": 0,
+      "action": "item"
+    },
+    {
+      "id": 12,
+      "name": "蟠桃神药",
+      "itemClass": "丹药",
+      "category": "神药",
+      "rarity": "禁忌",
+      "price": 900,
+      "description": "修为、血气各+7500万",
+      "dailyLimit": 0,
+      "action": "item"
+    },
+    {
+      "id": 13,
+      "name": "纪元道果",
+      "itemClass": "丹药",
+      "category": "神药",
+      "rarity": "禁忌",
+      "price": 1200,
+      "description": "修为、血气各+15000万",
+      "dailyLimit": 0,
+      "action": "item"
+    },
+    {
+      "id": 14,
+      "name": "超越宝盒",
+      "itemClass": "盒子",
+      "category": "神迹",
+      "rarity": "禁忌",
+      "price": 1500,
+      "description": "传说是多元宇宙中如梦道祖投影而来的机缘",
+      "dailyLimit": 0,
+      "action": "item"
+    },
+    {
+      "id": 15,
+      "name": "造化本源",
+      "itemClass": "道具",
+      "category": "炼器",
+      "rarity": "禁忌",
+      "price": 7000,
+      "description": "与时光令共同用于一键完美开炉",
+      "dailyLimit": 0,
+      "action": "item"
+    },
+    {
+      "id": 16,
+      "name": "天骄位置天机",
+      "itemClass": "",
+      "category": "天机",
+      "rarity": "禁忌",
+      "price": 800,
+      "description": "强行推演天机，获知一位天骄的当前踪迹（24小时有效）",
+      "dailyLimit": 1,
+      "action": "tianjiao"
+    },
+    {
+      "id": 17,
+      "name": "轮回命签",
+      "itemClass": "道具",
+      "category": "仙途",
+      "rarity": "禁忌",
+      "price": 50,
+      "description": "沾染轮回气息的残签，可用 #消耗轮回命签 重抽指定命格词条，追加 *序号 可选择词条",
+      "dailyLimit": 100,
+      "action": "item"
+    },
+    {
+      "id": 18,
+      "name": "鸿蒙道火",
+      "itemClass": "材料",
+      "category": "鸿蒙",
+      "rarity": "禁忌",
+      "price": 5000,
+      "quantity": 10,
+      "description": "每份兑换获得10枚鸿蒙道火",
+      "dailyLimit": 0,
+      "action": "item"
+    },
+    {
+      "id": 19,
+      "name": "三千弱水",
+      "itemClass": "材料",
+      "category": "鸿蒙",
+      "rarity": "禁忌",
+      "price": 5000,
+      "quantity": 10,
+      "description": "每份兑换获得10滴三千弱水",
+      "dailyLimit": 0,
+      "action": "item"
+    },
+    {
+      "id": 20,
+      "name": "帝品道心果",
+      "itemClass": "丹药",
+      "category": "道心",
+      "rarity": "帝品",
+      "price": 4000,
+      "quantity": 1,
+      "description": "服用后道心+100，每日限购3枚。",
+      "dailyLimit": 3,
+      "action": "item"
+    },
+    {
+      "id": 21,
+      "name": "纪元积累",
+      "itemClass": "",
+      "category": "纪元",
+      "rarity": "禁忌",
+      "price": 20000,
+      "quantity": 1,
+      "description": "纪元积累+1，仅准仙帝及以上可购买",
+      "dailyLimit": 0,
+      "action": "era",
+      "requiredRealmAuthority": 20
+    }
+  ]
+}

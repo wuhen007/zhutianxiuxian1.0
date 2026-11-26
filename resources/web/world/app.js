@@ -1,0 +1,569 @@
+const $ = (selector) => document.querySelector(selector);
+const number = new Intl.NumberFormat('zh-CN');
+const worldClock = new Intl.DateTimeFormat('zh-CN', {
+  timeZone: 'Asia/Shanghai',
+  year: 'numeric', month: 'numeric', day: 'numeric',
+  hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+});
+const themes = new Set(['celestial', 'forge', 'scroll']);
+let state = null;
+let selectedOffer = null;
+let wantKind = 'currency';
+let tradeView = 'incoming';
+let messageFilter = 'all';
+let loading = false;
+let toastTimer;
+let messagesInitialized = false;
+let followLatest = true;
+let latestRequested = false;
+const messageNodes = new Map();
+const dateNodes = new Map();
+
+function node(tag, className, text) {
+  const element = document.createElement(tag);
+  if (className) element.className = className;
+  if (text !== undefined) element.textContent = text;
+  return element;
+}
+
+function icon(name) {
+  const element = node('i');
+  element.dataset.lucide = name;
+  element.setAttribute('aria-hidden', 'true');
+  return element;
+}
+
+function refreshIcons(root = document) {
+  window.lucide?.createIcons({ nodes: [root] });
+}
+
+function showToast(message) {
+  clearTimeout(toastTimer);
+  $('#toast').textContent = message;
+  $('#toast').classList.add('is-visible');
+  toastTimer = setTimeout(() => $('#toast').classList.remove('is-visible'), 3000);
+}
+
+async function api(path, options = {}) {
+  if (options.method === 'POST' && path !== '/api/world/session' && options.body) {
+    const body = JSON.parse(options.body);
+    options = { ...options, body: JSON.stringify({ ...body, operationId: body.operationId || crypto.randomUUID() }) };
+  }
+  const response = await fetch(path, {
+    credentials: 'same-origin',
+    ...options,
+    headers: options.body ? { 'Content-Type': 'application/json', ...(options.headers || {}) } : options.headers,
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || payload.reason || `请求失败 (${response.status})`);
+  return payload;
+}
+
+function selectView(view) {
+  document.body.dataset.view = view;
+  document.querySelectorAll('[data-view-target]').forEach((button) => {
+    const active = button.dataset.viewTarget === view;
+    button.classList.toggle('is-active', active);
+    if (button.hasAttribute('aria-pressed')) button.setAttribute('aria-pressed', String(active));
+  });
+  if (view === 'chat' && followLatest) requestAnimationFrame(scrollToLatest);
+}
+
+function nearLatest(stream) {
+  return stream.scrollHeight - stream.clientHeight - stream.scrollTop <= 64;
+}
+
+function scrollToLatest() {
+  const stream = $('#message-stream');
+  if (!stream.clientHeight) return;
+  stream.scrollTop = stream.scrollHeight;
+  followLatest = true;
+  $('#latest-message').hidden = true;
+}
+
+function formatTime(value, includeDate = false) {
+  const date = new Date(value);
+  if (value == null || value === '' || Number.isNaN(date.getTime())) return includeDate ? '时间未记录' : '--:--';
+  const parts = Object.fromEntries(worldClock.formatToParts(date).map(({ type, value }) => [type, value]));
+  const time = `${parts.hour}:${parts.minute}`;
+  return includeDate ? `${parts.year}.${Number(parts.month)}.${Number(parts.day)} ${time}` : time;
+}
+
+function formatAssets(items = []) {
+  return items.map((item) => `${item.name} ×${number.format(item.amount)}`).join('、') || '未注明';
+}
+
+function tradePersonName(trade, role) {
+  return trade[`${role}_player_name`] || '匿名道友';
+}
+
+function realmLevel(stats = {}) {
+  if (Number(stats.max_huafen)) return `花粉路 ${stats.max_huafen}`;
+  if (Number(stats.max_xiangu)) return `仙古 ${stats.max_xiangu}`;
+  return `秘境 ${Number(stats.max_mijing) || 0}`;
+}
+
+function renderStatus() {
+  const online = state.status.connected;
+  $('#current-realm').textContent = state.status.realmName || '未知位面';
+  $('#connection-copy').textContent = online ? `${state.viewer.name} · 已连接` : '总机重连中';
+  $('#connection-copy').classList.toggle('is-offline', !online);
+  $('.realm-identity').classList.toggle('is-offline', !online);
+  $('#lingshi').textContent = number.format(state.currencies.灵石);
+  $('#source-stone').textContent = number.format(state.currencies.源石);
+  $('#last-sync').textContent = formatTime(Date.now());
+  const errors = [...state.errors];
+  if (!online && state.status.lastError && state.status.lastError !== '无') errors.unshift(state.status.lastError);
+  const box = $('#world-errors');
+  box.replaceChildren(...errors.map((message) => node('p', 'world-error', message)));
+  box.hidden = errors.length === 0;
+}
+
+function renderRealms() {
+  const list = $('#realm-list');
+  list.replaceChildren();
+  $('#realm-count').textContent = String(state.realms.length).padStart(2, '0');
+  $('#realm-summary').textContent = state.realms.length ? '总机在线位面实时名录' : '暂无在线位面';
+  const select = $('#trade-realm');
+  const selectedRealm = select.value;
+  select.replaceChildren();
+  for (const realm of state.realms) {
+    const current = realm.server_id === state.status.realmId;
+    const row = node('article', `realm-row${current ? ' is-current' : ''}`);
+    if (current) row.setAttribute('aria-current', 'true');
+    row.append(node('span', 'realm-glyph', String(realm.name || '界').slice(0, 1)));
+    const copy = node('span');
+    copy.append(node('b', '', realm.name || realm.server_id), node('small', '', `${realm.realm_stats?.players ?? 0} 人 · ${realmLevel(realm.realm_stats)}`));
+    const beacon = node('i', `status-beacon${realm.connected === false ? ' is-idle' : ''}`);
+    beacon.setAttribute('role', 'img');
+    beacon.setAttribute('aria-label', realm.connected === false ? '连接暂离' : '在线');
+    row.append(copy, beacon);
+    list.append(row);
+    if (realm.server_id !== state.status.realmId && realm.trade_enabled) {
+      const option = node('option', '', realm.name || realm.server_id);
+      option.value = realm.server_id;
+      select.append(option);
+    }
+  }
+  if (!list.children.length) list.append(node('div', 'empty-state', '诸天总机暂未发现其他在线位面'));
+  if (!select.children.length) {
+    const option = node('option', '', '暂无可交易位面');
+    option.value = '';
+    select.append(option);
+  }
+  if ([...select.options].some(option => option.value === selectedRealm)) select.value = selectedRealm;
+}
+
+function messageElement(message, recent = false) {
+  const hasImages = Array.isArray(message.images) && message.images.length > 0;
+  const timestamp = formatTime(message.ts, true);
+  const article = node('article', 'message');
+  article.dataset.messageKind = hasImages ? 'image' : 'all';
+  article.dataset.messageDate = timestamp.split(' ')[0];
+  article.hidden = messageFilter !== 'all' && article.dataset.messageKind !== messageFilter;
+  const seal = node('div', 'sender-seal', Array.from(String(message.sender_name || '道'))[0]);
+  seal.setAttribute('aria-hidden', 'true');
+  article.append(seal);
+  const body = node('div', 'message-body');
+  const head = node('header');
+  const sender = node('div', 'message-sender');
+  sender.append(node('b', '', message.sender_name || '无名道友'), node('span', 'message-realm', message.name || '未知位面'));
+  const time = node('time', 'message-time', timestamp);
+  const date = new Date(message.ts);
+  if (message.ts != null && message.ts !== '' && !Number.isNaN(date.getTime())) time.dateTime = date.toISOString();
+  time.title = '北京时间 (UTC+8)';
+  head.append(sender, time);
+  body.append(head);
+  if (message.msg) body.append(node('p', '', message.msg));
+  if (hasImages) {
+    const images = node('div', 'message-image-list');
+    for (const source of message.images.slice(0, 4)) {
+      const frame = node('figure', 'world-message-image');
+      const image = node('img');
+      image.alt = `${message.sender_name || '道友'}的世界传音图片`;
+      image.loading = recent ? 'eager' : 'lazy';
+      image.decoding = 'async';
+      image.referrerPolicy = 'no-referrer';
+      const unavailable = node('figcaption', 'image-unavailable', '图片已失效或暂不可用，请原发送者重新发送');
+      unavailable.hidden = true;
+      image.addEventListener('error', () => {
+        image.hidden = true;
+        unavailable.hidden = false;
+        frame.classList.add('is-unavailable');
+        if (followLatest) requestAnimationFrame(scrollToLatest);
+      });
+      image.addEventListener('load', () => {
+        if (followLatest) requestAnimationFrame(scrollToLatest);
+      });
+      image.src = source;
+      frame.append(image, unavailable);
+      images.append(frame);
+    }
+    body.append(images);
+  }
+  article.append(body);
+  return article;
+}
+
+function renderMessages() {
+  const stream = $('#message-stream');
+  const messages = state.messages.slice().sort((left, right) => Number(left.seq || left.ts) - Number(right.seq || right.ts));
+  const pinBottom = latestRequested || !messagesInitialized || followLatest;
+  const beforeTop = stream.scrollTop;
+  const streamTop = stream.getBoundingClientRect().top;
+  const anchor = [...stream.children].find(child => child.dataset.messageKey && !child.hidden && child.getBoundingClientRect().bottom > streamTop);
+  const anchorKey = anchor?.dataset.messageKey;
+  const anchorTop = anchor?.getBoundingClientRect().top;
+  const retained = new Set();
+  const ordered = messages.map((message, index) => {
+    const key = String(message.id || `${message.server_id || ''}:${message.seq ?? message.ts}`);
+    const signature = JSON.stringify(message);
+    retained.add(key);
+    let entry = messageNodes.get(key);
+    if (!entry || entry.signature !== signature) {
+      entry = { signature, element: messageElement(message, index >= messages.length - 3) };
+      entry.element.dataset.messageKey = key;
+      messageNodes.set(key, entry);
+    }
+    entry.element.hidden = messageFilter !== 'all' && entry.element.dataset.messageKind !== messageFilter;
+    return entry.element;
+  });
+  for (const [key, entry] of messageNodes) {
+    if (!retained.has(key)) { entry.element.remove(); messageNodes.delete(key); }
+  }
+  const grouped = [];
+  const retainedDates = new Set();
+  let previousDate;
+  for (const element of ordered) {
+    if (!element.hidden && element.dataset.messageDate !== previousDate) {
+      const key = element.dataset.messageKey;
+      const day = element.dataset.messageDate;
+      let divider = dateNodes.get(key);
+      if (!divider || divider.textContent !== day) {
+        divider = node('div', 'message-date-divider');
+        const date = node('time', '', day);
+        if (/^\d{4}\.\d{1,2}\.\d{1,2}$/.test(day)) date.dateTime = day.split('.').map(part => part.padStart(2, '0')).join('-');
+        divider.append(date);
+        dateNodes.set(key, divider);
+      }
+      retainedDates.add(key);
+      grouped.push(divider);
+      previousDate = day;
+    }
+    grouped.push(element);
+  }
+  for (const key of dateNodes.keys()) if (!retainedDates.has(key)) dateNodes.delete(key);
+  const wanted = new Set(grouped);
+  for (const child of [...stream.children]) if (!wanted.has(child)) child.remove();
+  grouped.forEach((element, index) => {
+    if (stream.children[index] !== element) stream.insertBefore(element, stream.children[index] || null);
+  });
+  if (!ordered.some(element => !element.hidden)) {
+    stream.append(node('div', 'empty-state', messageFilter === 'image' ? '还没有图片传音，可在群聊发送“#世界发言”并附带图片' : '世界频道尚无传音，来留下第一道诸天回响吧'));
+  }
+  messagesInitialized = true;
+  latestRequested = false;
+  if (pinBottom) {
+    followLatest = true;
+    scrollToLatest();
+  } else {
+    const currentAnchor = messageNodes.get(anchorKey)?.element;
+    stream.scrollTop = currentAnchor
+      ? stream.scrollTop + currentAnchor.getBoundingClientRect().top - anchorTop
+      : beforeTop;
+    $('#latest-message').hidden = false;
+  }
+}
+
+function chooseOffer(asset, button) {
+  selectedOffer = asset;
+  document.querySelectorAll('.inventory-item, [data-currency]').forEach((entry) => {
+    entry.classList.toggle('is-selected', entry === button);
+    entry.setAttribute('aria-pressed', String(entry === button));
+  });
+  $('#offer-name').value = asset.name;
+  $('#offer-count').max = String(asset.kind === 'currency' ? asset.count : Math.min(asset.count, 20));
+  $('#offer-count').value = '1';
+}
+
+function filterInventory() {
+  const query = $('#inventory-search').value.trim().toLocaleLowerCase('zh-CN');
+  const items = [...document.querySelectorAll('.inventory-item')];
+  for (const item of items) item.hidden = Boolean(query) && !item.dataset.name.toLocaleLowerCase('zh-CN').includes(query);
+  $('#inventory-empty').hidden = !query || !items.length || items.some(item => !item.hidden);
+}
+
+function renderInventory() {
+  const list = $('#inventory-list');
+  const beforeTop = list.scrollTop;
+  list.replaceChildren();
+  $('#inventory-count').textContent = `${state.inventory.length} 类`;
+  for (const item of state.inventory) {
+    const button = node('button', `inventory-item${item.locked ? ' is-locked' : ''}`);
+    button.type = 'button';
+    button.dataset.name = item.name;
+    button.disabled = item.locked;
+    const selected = selectedOffer?.kind === 'item' && selectedOffer.name === item.name && selectedOffer.type === item.type;
+    button.classList.toggle('is-selected', selected);
+    button.setAttribute('aria-pressed', String(selected));
+    button.append(node('span', 'item-rune', item.locked ? '禁' : item.name.slice(0, 1)));
+    const copy = node('span');
+    copy.append(node('b', '', item.name), node('small', '', item.locked ? '世界规则封禁或本地锁定' : `${item.type} · 可跨服`));
+    button.append(copy, node('strong', '', number.format(item.count)));
+    if (!item.locked) button.addEventListener('click', () => chooseOffer({ kind: 'item', name: item.name, type: item.type, count: item.count }, button));
+    list.append(button);
+  }
+  if (!list.children.length) list.append(node('div', 'empty-state', '纳戒中暂无可展示物品'));
+  document.querySelectorAll('[data-currency]').forEach((button) => {
+    const name = button.dataset.currency;
+    const selected = selectedOffer?.kind === 'currency' && selectedOffer.name === name;
+    button.classList.toggle('is-selected', selected);
+    button.setAttribute('aria-pressed', String(selected));
+    button.onclick = () => chooseOffer({ kind: 'currency', name, count: state.currencies[name] || 0 }, button);
+  });
+  filterInventory();
+  list.scrollTop = beforeTop;
+  const catalog = $('#tradeable-items');
+  catalog.replaceChildren(...state.catalog.map((item) => {
+    const option = node('option');
+    option.value = item.name;
+    return option;
+  }));
+}
+
+function tradeCard(trade, outgoing) {
+  const card = node('article', `trade-card${outgoing ? ' is-outgoing' : ''}`);
+  card.dataset.status = trade.status;
+  const realmName = outgoing ? trade.target_name || trade.target_server_id || '目标位面' : trade.seller_name || trade.seller_server_id || '未知位面';
+  const head = node('header');
+  head.append(node('span', 'realm-glyph', String(realmName).slice(0, 1)));
+  const copy = node('div');
+  copy.append(node('b', '', realmName), node('small', '', outgoing ? '我发布的跨服委托' : '来自其他位面的委托'));
+  head.append(copy, node('code', '', trade.code));
+  const people = node('div', 'trade-people');
+  people.append(
+    node('span', '', `卖家：${tradePersonName(trade, 'seller')}`),
+    node('span', '', `买家：${trade.buyer_player_name ? tradePersonName(trade, 'buyer') : (trade.status === 'open' ? '待购买' : '匿名道友')}`)
+  );
+  const exchange = node('div', 'exchange-line');
+  const give = node('span');
+  const want = node('span');
+  give.append(node('small', '', outgoing ? '提供' : '获得'), node('b', '', formatAssets(trade.give)));
+  want.append(node('small', '', outgoing ? '需求' : '支付'), node('b', '', formatAssets(trade.want)));
+  exchange.append(give, icon('arrow-right-left'), want);
+  const footer = node('footer');
+  const statusText = (() => {
+    if (trade.status === 'open' || trade.status === 'pending') return '诸天规则校验通过';
+    if (trade.status === 'settling') {
+      const waiting = [];
+      if (!trade.settlement?.seller) waiting.push('卖方');
+      if (!trade.settlement?.buyer) waiting.push('买方');
+      return waiting.length ? `结算中，等待${waiting.join('与')}确认` : '结算完成确认中';
+    }
+    return {
+      completed: '交易已完成',
+      cancelled: '交易已撤销',
+      failed: '结算失败，资产已回滚',
+      expired: '交易已过期',
+    }[trade.status] || `状态：${trade.status}`;
+  })();
+  footer.append(node('span', '', statusText));
+  if (['open', 'pending'].includes(trade.status)) {
+    const actions = node('div', 'trade-actions');
+    if (outgoing) {
+      const action = node('button', '', '撤回委托');
+      action.type = 'button';
+      action.addEventListener('click', () => runTradeAction(action, 'cancel', trade.code));
+      actions.append(action);
+    } else {
+      for (const option of [{ label: '实名购买', anonymous: false }, { label: '匿名购买', anonymous: true }]) {
+        const action = node('button', '', option.label);
+        action.type = 'button';
+        action.addEventListener('click', () => runTradeAction(action, 'accept', trade.code, { anonymous: option.anonymous }));
+        actions.append(action);
+      }
+    }
+    footer.append(actions);
+  }
+  card.append(head, people, exchange, footer);
+  return card;
+}
+
+function renderTrades() {
+  const grid = $('#trade-grid');
+  const trades = state.trades[tradeView] || [];
+  $('#trade-count').textContent = `${trades.length} 份委托`;
+  grid.replaceChildren(...trades.map((trade) => tradeCard(trade, tradeView === 'outgoing')));
+  if (!trades.length) grid.append(node('div', 'empty-state', tradeView === 'incoming' ? '当前没有发往本位面的交易委托' : '你还没有发布跨服交易'));
+  refreshIcons(grid);
+}
+
+function render() {
+  renderStatus();
+  renderRealms();
+  renderMessages();
+  renderInventory();
+  renderTrades();
+  refreshIcons();
+}
+
+async function loadState({ quiet = false, latest = false } = {}) {
+  if (latest) latestRequested = true;
+  if (loading) return;
+  loading = true;
+  $('#refresh-button').disabled = true;
+  try {
+    state = (await api('/api/world/state')).state;
+    render();
+  } catch (error) {
+    if (!quiet) showToast(error.message);
+    if (!state) $('#message-stream').replaceChildren(node('div', 'empty-state', `${error.message}\n请返回群聊重新发送 #世界网页`));
+  } finally {
+    loading = false;
+    $('#refresh-button').disabled = false;
+  }
+}
+
+async function runTradeAction(button, action, code, options = {}) {
+  button.disabled = true;
+  button.textContent = action === 'accept' ? '结算中' : '撤回中';
+  try {
+    const result = await api(`/api/world/trade/${action}`, { method: 'POST', body: JSON.stringify({ code, ...options }) });
+    showToast(result.message || '交易状态已更新');
+    await loadState();
+  } catch (error) {
+    showToast(error.message);
+    button.disabled = false;
+    button.textContent = action === 'accept' ? (options.anonymous ? '匿名购买' : '实名购买') : '撤回委托';
+  }
+}
+
+document.querySelectorAll('[data-view-target]').forEach((button) => button.addEventListener('click', () => selectView(button.dataset.viewTarget)));
+document.querySelectorAll('[data-filter]').forEach((button) => button.addEventListener('click', () => {
+  messageFilter = button.dataset.filter;
+  document.querySelectorAll('[data-filter]').forEach((entry) => {
+    entry.classList.toggle('is-active', entry === button);
+    entry.setAttribute('aria-pressed', String(entry === button));
+  });
+  latestRequested = true;
+  if (state) renderMessages();
+}));
+document.querySelectorAll('[data-trade-view]').forEach((button) => button.addEventListener('click', () => {
+  tradeView = button.dataset.tradeView;
+  document.querySelectorAll('[data-trade-view]').forEach((entry) => {
+    entry.classList.toggle('is-active', entry === button);
+    entry.setAttribute('aria-pressed', String(entry === button));
+  });
+  if (state) renderTrades();
+}));
+document.querySelectorAll('[data-want-kind]').forEach((button) => button.addEventListener('click', () => {
+  wantKind = button.dataset.wantKind;
+  document.querySelectorAll('[data-want-kind]').forEach((entry) => {
+    entry.classList.toggle('is-active', entry === button);
+    entry.setAttribute('aria-pressed', String(entry === button));
+  });
+  $('#currency-want-fields').hidden = wantKind !== 'currency';
+  $('#item-want-fields').hidden = wantKind !== 'item';
+}));
+
+$('#chat-input').addEventListener('input', (event) => $('#message-count').textContent = String(event.target.value.length));
+$('#chat-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const input = $('#chat-input');
+  const text = input.value.trim();
+  if (!text) return showToast('请输入世界发言内容');
+  const button = event.submitter;
+  button.disabled = true;
+  try {
+    const result = await api('/api/world/message', { method: 'POST', body: JSON.stringify({ text }) });
+    input.value = '';
+    $('#message-count').textContent = '0';
+    showToast(result.message);
+    await loadState({ latest: true });
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$('#inventory-search').addEventListener('input', filterInventory);
+
+$('#trade-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (!selectedOffer) return showToast('请先从纳戒或灵石栏选择我方提供的资产');
+  const giveAmount = Math.trunc(Number($('#offer-count').value));
+  const targetServerId = $('#trade-realm').value;
+  const wantName = wantKind === 'item' ? $('#want-item-name').value.trim() : $('#want-name').value;
+  const wantAmount = Math.trunc(Number($(wantKind === 'item' ? '#want-item-count' : '#want-count').value));
+  if (!targetServerId) return showToast('当前没有可发布交易的目标位面');
+  if (!giveAmount || giveAmount > selectedOffer.count) return showToast(`${selectedOffer.name}数量不足`);
+  if (!wantName || !wantAmount) return showToast('请完整填写希望交换到的资产');
+  const button = event.submitter;
+  button.disabled = true;
+  try {
+    const result = await api('/api/world/trade', {
+      method: 'POST',
+      body: JSON.stringify({
+        targetServerId,
+        anonymous: $('#anonymous-publish').checked,
+        give: [{ kind: selectedOffer.kind, name: selectedOffer.name, type: selectedOffer.type, amount: giveAmount }],
+        want: [{ kind: wantKind, name: wantName, amount: wantAmount }],
+      }),
+    });
+    showToast(result.message);
+    tradeView = 'outgoing';
+    document.querySelectorAll('[data-trade-view]').forEach((entry) => {
+      const active = entry.dataset.tradeView === tradeView;
+      entry.classList.toggle('is-active', active);
+      entry.setAttribute('aria-pressed', String(active));
+    });
+    selectView('market');
+    await loadState();
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$('#refresh-button').addEventListener('click', () => loadState());
+$('#latest-message').addEventListener('click', scrollToLatest);
+$('#message-stream').addEventListener('scroll', () => {
+  const stream = $('#message-stream');
+  if (!stream.clientHeight) return;
+  followLatest = nearLatest(stream);
+  $('#latest-message').hidden = followLatest;
+}, { passive: true });
+window.addEventListener('resize', () => {
+  if (followLatest) requestAnimationFrame(scrollToLatest);
+});
+$('#image-help').addEventListener('click', () => showToast('图片传音请回到群聊，发送“#世界发言”并附带图片。'));
+const savedTheme = localStorage.getItem('world-theme');
+const initialTheme = themes.has(savedTheme) ? savedTheme : 'celestial';
+document.body.dataset.theme = initialTheme;
+$('#theme-select').value = initialTheme;
+$('#theme-select').addEventListener('change', (event) => {
+  document.body.dataset.theme = event.target.value;
+  localStorage.setItem('world-theme', event.target.value);
+  if (followLatest) requestAnimationFrame(scrollToLatest);
+});
+
+async function start() {
+  refreshIcons();
+  const url = new URL(location.href);
+  const token = url.searchParams.get('t');
+  if (token) {
+    try {
+      await api('/api/world/session', { method: 'POST', body: JSON.stringify({ token }) });
+      url.searchParams.delete('t');
+      history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+  await loadState();
+  setInterval(() => loadState({ quiet: true }), 5000);
+}
+
+start();

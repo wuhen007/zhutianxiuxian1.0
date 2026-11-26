@@ -1,0 +1,389 @@
+import { plugin, verc } from '../../api/api.js';
+import {
+  Add_najie_thing,
+  exist_najie_thing,
+  Add_职业经验,
+  Read_player,
+  Write_player,
+  channel,
+} from '../../model/xiuxian.js';
+import {
+  BLACK_EMPEROR_FORMATIONS,
+  BLACK_EMPEROR_TEACHING_FAVOR,
+  addBlackEmperorBattleFormation,
+  getBlackEmperorData,
+  getBlackEmperorRelation,
+  parseBlackEmperorFormationRequest,
+  pauseBlackEmperorBattleFormation,
+  selectBlackEmperorBattleFormation,
+  selfEngraveFormation,
+} from '../../model/blackEmperor.js';
+import { PLACE_LOCATION_MAP, SPECIAL_LOCATIONS, hasCoordinate } from '../../model/weimianTravel.js';
+
+function shanghaiDateKey(now = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(now);
+}
+
+function formatBattleFormations(player) {
+  const self = Array.isArray(player.自刻PVE阵纹) ? player.自刻PVE阵纹 : [];
+  const emperor = Array.isArray(player.黑皇PVE阵纹) ? player.黑皇PVE阵纹 : [];
+  const lines = [];
+  lines.push(`启用策略：${player.PVE阵法停用 ? '停用' : player.当前PVE阵法 || '自动（自刻优先）'}`);
+  if (player.黑皇待用阵纹) lines.push(`黑皇待用：${player.黑皇待用阵纹}`);
+  if (emperor.length) lines.push(`黑皇阵纹：${emperor.map(item => `${item.名称}×${item.剩余次数}`).join('、')}`);
+  if (self.length) lines.push(`自刻阵纹：${self.map(item => `${item.名称}×${item.剩余次数}`).join('、')}`);
+  if (!lines.length) lines.push('待用阵纹：无');
+  return lines;
+}
+
+export class BlackEmperor extends plugin {
+  constructor() {
+    super({
+      name: 'BlackEmperor',
+      dsc: '剧情人物黑皇与阵道传承',
+      event: 'message',
+      priority: 600,
+      rule: [
+        { reg: '^#黑皇(?:状态|关系)?$', fnc: 'blackEmperorStatus' },
+        { reg: '^#黑皇(?:交流|请教阵道)$', fnc: 'blackEmperorInteraction' },
+        { reg: '^#黑皇传授阵道$', fnc: 'learnFormationDao' },
+        { reg: '^#黑皇阵法$', fnc: 'formationList' },
+        { reg: '^#请黑皇刻阵.*$', fnc: 'engraveFormation' },
+        { reg: '^#自刻阵法.*$', fnc: 'selfEngrave' },
+        { reg: '^#启用阵法.*$', fnc: 'selectBattleFormation' },
+        { reg: '^#停用阵法$', fnc: 'pauseBattleFormation' },
+      ],
+    });
+  }
+
+  async getEmperorContext(e) {
+    if (!verc({ e })) return null;
+    let userId = e.user_id.toString().replace('qg_', '');
+    userId = await channel(userId);
+    const player = await Read_player(userId);
+    const character = getBlackEmperorData(player);
+    if (!character) {
+      await e.reply('你尚未遇见黑皇。通关任意位面的副本，都有概率撞见它。');
+      return null;
+    }
+    return { userId, player, character };
+  }
+
+  async blackEmperorStatus(e) {
+    const context = await this.getEmperorContext(e);
+    if (!context) return true;
+    const { player, character } = context;
+    const favor = Number(character.好感度) || 0;
+    const relation = getBlackEmperorRelation(favor);
+    const learned = Boolean(player.黑皇阵道传承);
+    const unlocked = BLACK_EMPEROR_FORMATIONS.filter(item => favor >= item.favor).map(item => item.name);
+    const next = BLACK_EMPEROR_FORMATIONS.find(item => favor < item.favor);
+    const dateKey = shanghaiDateKey();
+    const 今日刻阵 = character.刻阵日期 === dateKey ? Number(character.今日刻阵) || 0 : 0;
+    await e.reply([
+      '【剧情人物·黑皇】',
+      `关系：${relation.name}（${favor}好感度）`,
+      `阵道传承：${learned ? '已获传承' : favor >= BLACK_EMPEROR_TEACHING_FAVOR ? '可发送 #黑皇传授阵道' : `尚需${BLACK_EMPEROR_TEACHING_FAVOR - favor}好感度`}`,
+      `今日刻阵：${今日刻阵}/${relation.level}次`,
+      `已解锁阵法：${unlocked.length ? unlocked.join('、') : '暂无'}`,
+      ...formatBattleFormations(player),
+      next ? `下一阵法：${next.name}（${next.favor}好感度）` : '全部阵法均已解锁',
+    ].join('\n'));
+    return true;
+  }
+
+  async blackEmperorInteraction(e) {
+    const context = await this.getEmperorContext(e);
+    if (!context) return true;
+    const { userId, player, character } = context;
+    const dateKey = shanghaiDateKey();
+    if (character.交互日期 !== dateKey) {
+      character.交互日期 = dateKey;
+      character.今日交互 = 0;
+    }
+    if ((Number(character.今日交互) || 0) >= 3) {
+      await e.reply('黑皇已经不耐烦地趴下了。今日交流次数已用完（3/3）。');
+      return true;
+    }
+
+    const oldRelation = getBlackEmperorRelation(character.好感度);
+    const favorGain = 5 + Math.floor(Math.random() * 5);
+    character.好感度 = (Number(character.好感度) || 0) + favorGain;
+    character.今日交互 = (Number(character.今日交互) || 0) + 1;
+    const relation = getBlackEmperorRelation(character.好感度);
+    character.关系 = relation.level;
+    if (!Array.isArray(character.事件记录)) character.事件记录 = [];
+    character.事件记录.push(`阵道交流，好感度+${favorGain}`);
+    if (character.事件记录.length > 20) character.事件记录.shift();
+    await Write_player(userId, player);
+
+    const isAsking = e.msg.startsWith('#黑皇请教阵道');
+    let exp = 0;
+    if (isAsking && player.occupation === '阵法师') {
+      exp = 250;
+      await Add_职业经验(userId, exp);
+    }
+    await e.reply([
+      isAsking
+        ? '黑皇以爪尖划出数道繁复纹路，又在最关键的一笔前停下，逼你自己推演。'
+        : '你陪黑皇研究了一处残阵。它嘴上嫌弃你的眼力，尾巴却颇为得意地摇了两下。',
+      `好感度+${favorGain}（当前${character.好感度}，${relation.name}）`,
+      exp ? `阵法师职业经验+${exp}` : null,
+      relation.level > oldRelation.level ? `与黑皇的关系提升为「${relation.name}」！` : null,
+      `今日交流：${character.今日交互}/3`,
+    ].filter(Boolean).join('\n'));
+    return true;
+  }
+
+  async learnFormationDao(e) {
+    const context = await this.getEmperorContext(e);
+    if (!context) return true;
+    const { userId, player, character } = context;
+    const favor = Number(character.好感度) || 0;
+    if (favor < BLACK_EMPEROR_TEACHING_FAVOR) {
+      await e.reply(`黑皇暂时不肯传你阵道，还需${BLACK_EMPEROR_TEACHING_FAVOR - favor}好感度。`);
+      return true;
+    }
+    if (player.黑皇阵道传承) {
+      await e.reply(player.occupation === '阵法师'
+        ? '你已得黑皇阵道传承，发送 #黑皇阵法 查看可刻阵纹。'
+        : '你已得阵道传承与转职凭证，可发送 #转职阵法师。');
+      return true;
+    }
+
+    player.黑皇阵道传承 = true;
+    character.事件记录 = Array.isArray(character.事件记录) ? character.事件记录 : [];
+    character.事件记录.push('获授阵道基础传承');
+    await Write_player(userId, player);
+    if (player.occupation !== '阵法师') {
+      await Add_najie_thing(userId, '阵法师转职凭证', '道具', 1);
+    }
+    await e.reply([
+      '【黑皇传道·阵纹入门】',
+      '黑皇将一角残阵烙入你的识海，繁复道纹层层展开。',
+      player.occupation === '阵法师'
+        ? '你已是阵法师，自此可向黑皇请教阵道。'
+        : '获得「阵法师转职凭证」x1，可发送 #转职阵法师。',
+      '发送 #黑皇阵法 查看阵图，阵法师可尝试 #自刻阵法 名称。',
+    ].join('\n'));
+    return true;
+  }
+
+  async formationList(e) {
+    const context = await this.getEmperorContext(e);
+    if (!context) return true;
+    const favor = Number(context.character.好感度) || 0;
+    const lines = BLACK_EMPEROR_FORMATIONS.map(item => {
+      const selfPart = item.engraveCost
+        ? `；自刻需${item.engraveCost.toLocaleString()}灵石`
+        : '';
+      const materialPart = item.engraveMaterial
+        ? ` + ${item.engraveMaterial.name}×${item.engraveMaterial.count}`
+        : '';
+      const costPart = item.costMaterials
+        ? `；刻阵需${item.costMaterials.map(mat => `${mat.name}×${mat.count}`).join('、')}`
+        : '';
+      return `${favor >= item.favor ? '已解锁' : `${item.favor}好感`}｜${item.name}｜${item.cost.toLocaleString()}灵石\n${item.description}${selfPart}${materialPart}${costPart}`;
+    });
+    await e.reply([
+      '【黑皇阵图】',
+      ...lines,
+      '请黑皇刻阵：#请黑皇刻阵 阵法名',
+      '传送阵：#请黑皇刻阵 位面传送阵 目标位面',
+      '阵法师自刻：#自刻阵法 山河困龙阵 / 无始杀阵',
+      '选择下次PVE阵法：#启用阵法 阵法名 / 自动',
+      '暂不消耗阵纹：#停用阵法',
+    ].join('\n'));
+    return true;
+  }
+
+  async engraveFormation(e) {
+    const context = await this.getEmperorContext(e);
+    if (!context) return true;
+    const { userId, player, character } = context;
+    const content = e.msg.replace(/^#请黑皇刻阵/, '').trim();
+    if (!content) return this.formationList(e);
+    const { formation, target } = parseBlackEmperorFormationRequest(content);
+    if (!formation) {
+      await e.reply(`黑皇没听说过「${content}」。发送 #黑皇阵法 查看可用阵图。`);
+      return true;
+    }
+    const name = formation.name;
+    const favor = Number(character.好感度) || 0;
+    if (favor < formation.favor) {
+      await e.reply(`刻画「${name}」需要${formation.favor}好感度，当前${favor}。`);
+      return true;
+    }
+
+    // 每日刻阵次数（按好感度等级 1~5 → 每日 1~5 次，自然日刷新）
+    const dateKey = shanghaiDateKey();
+    if (character.刻阵日期 !== dateKey) {
+      character.刻阵日期 = dateKey;
+      character.今日刻阵 = 0;
+    }
+    const dailyLimit = getBlackEmperorRelation(favor).level;
+    if ((Number(character.今日刻阵) || 0) >= dailyLimit) {
+      await e.reply(`黑皇懒洋洋地甩了甩尾巴：「今日已替你刻了${dailyLimit}次阵，改日再来吧。」`);
+      return true;
+    }
+    // 刻阵材料（欺天阵纹需混沌源石×5 + 欺天石×1）
+    const costMaterials = formation.costMaterials || [];
+    for (const mat of costMaterials) {
+      const has = Number(await exist_najie_thing(userId, mat.name, '材料')) || 0;
+      if (has < mat.count) {
+        await e.reply(`刻画「${name}」还缺材料【${mat.name}】×${mat.count}（当前${has}）。`);
+        return true;
+      }
+    }
+    if (formation.type === 'training' && player.occupation !== '阵法师') {
+      await e.reply('聚灵道阵需由阵法师亲自主持。请先获得传承并转职为阵法师。');
+      return true;
+    }
+    if (formation.type === 'tribulation' && player.黑皇待用阵纹) {
+      await e.reply(`已有待用阵纹「${player.黑皇待用阵纹}」，请在下次渡劫使用后再刻。`);
+      return true;
+    }
+    if (formation.type.startsWith('travel')) {
+      if (!target) {
+        await e.reply(`请指定目标位面，例如：#请黑皇刻阵 ${name} 遮天位面`);
+        return true;
+      }
+      if (!Object.hasOwn(PLACE_LOCATION_MAP, target)) {
+        await e.reply(`不存在位面「${target}」。可选：${Object.keys(PLACE_LOCATION_MAP).join('、')}`);
+        return true;
+      }
+      if (SPECIAL_LOCATIONS.includes(target)) {
+        await e.reply(`「${target}」的时空法则无法被传送阵稳定锚定，只能凭修为横渡。`);
+        return true;
+      }
+      if (!hasCoordinate(player, target)) {
+        await e.reply(`你尚未记住「${target}」的位面坐标，黑皇也无法凭空锚定彼岸。`);
+        return true;
+      }
+    }
+    if ((Number(player.灵石) || 0) < formation.cost) {
+      await e.reply(`黑皇开价${formation.cost.toLocaleString()}灵石，你的灵石不够。`);
+      return true;
+    }
+
+    player.灵石 = Number(player.灵石) - formation.cost;
+    for (const mat of costMaterials) {
+      await Add_najie_thing(userId, mat.name, '材料', -mat.count);
+    }
+    character.今日刻阵 = (Number(character.今日刻阵) || 0) + 1;
+    if (formation.type === 'tribulation') {
+      player.黑皇待用阵纹 = formation.name;
+    } else if (formation.type === 'battle') {
+      addBlackEmperorBattleFormation(player, formation.name);
+    }
+    if (formation.type.startsWith('travel')) {
+      if (!Array.isArray(player.传送阵坐标)) player.传送阵坐标 = [];
+      if (!player.传送阵坐标.includes(target)) player.传送阵坐标.push(target);
+    }
+    if (formation.type === 'travel') player.位面传送次数 = (Number(player.位面传送次数) || 0) + formation.uses;
+    if (formation.type === 'travel-high') player.高级传送次数 = (Number(player.高级传送次数) || 0) + formation.uses;
+    character.事件记录 = Array.isArray(character.事件记录) ? character.事件记录 : [];
+    character.事件记录.push(`请黑皇刻画${formation.name}`);
+    if (character.事件记录.length > 20) character.事件记录.shift();
+    await Write_player(userId, player);
+    if (formation.type === 'training') await Add_职业经验(userId, 1000);
+
+    const effect = name === '欺天阵纹'
+      ? '阵纹已封存，将在下次渡劫首次落劫时尝试欺瞒天机。'
+      : formation.type === 'battle'
+      ? `阵纹已封存，将在${formation.charges}次PVE战斗中自动激活。`
+      : formation.type === 'training'
+        ? '聚灵阵运转，阵法师职业经验+1000。'
+        : `${formation.name}次数+${formation.uses}，彼岸已锚定「${target}」。发送 #穿梭${target} 即可启程。`;
+    await e.reply([
+      `【黑皇刻阵·${formation.name}】`,
+      `灵石-${formation.cost.toLocaleString()}`,
+      ...costMaterials.map(mat => `${mat.name}-${mat.count}`),
+      effect,
+      `今日刻阵：${character.今日刻阵}/${dailyLimit}次（好感度${getBlackEmperorRelation(favor).name}）`,
+    ].join('\n'));
+    return true;
+  }
+
+  async selfEngrave(e) {
+    const context = await this.getEmperorContext(e);
+    if (!context) return true;
+    const { userId, player, character } = context;
+    if (!player.黑皇阵道传承) {
+      await e.reply('尚未获得阵道传承，无法自刻。先发送 #黑皇传授阵道。');
+      return true;
+    }
+    if (player.occupation !== '阵法师') {
+      await e.reply('只有阵法师才能独立刻画阵纹。请先转职为阵法师。');
+      return true;
+    }
+    const name = e.msg.replace(/^#自刻阵法/, '').replace(/\s+/g, '');
+    if (!name) {
+      await e.reply('用法：#自刻阵法 山河困龙阵 / 无始杀阵');
+      return true;
+    }
+    const formation = BLACK_EMPEROR_FORMATIONS.find(item => item.name === name && item.engraveCost);
+    if (!formation) {
+      await e.reply(`「${name}」不可自刻。可自刻：山河困龙阵、无始杀阵。`);
+      return true;
+    }
+    const material = formation.engraveMaterial;
+    const materialCount = material ? Number(await exist_najie_thing(userId, material.name, '材料')) || 0 : 0;
+    const result = selfEngraveFormation(player, formation.name, { materialCount });
+    if (!result.ok && result.reason) {
+      await e.reply(`自刻失败：${result.reason}`);
+      return true;
+    }
+
+    player.灵石 = Number(player.灵石) - formation.engraveCost;
+    if (material) await Add_najie_thing(userId, material.name, '材料', -material.count);
+    character.事件记录 = Array.isArray(character.事件记录) ? character.事件记录 : [];
+    character.事件记录.push(`自刻${formation.name}${result.ok ? '成功' : '失败'}`);
+    if (character.事件记录.length > 20) character.事件记录.shift();
+    await Write_player(userId, player);
+    if (result.ok) await Add_职业经验(userId, formation.name === '无始杀阵' ? 2000 : 800);
+
+    await e.reply([
+      `【自刻阵法·${formation.name}】`,
+      `灵石-${formation.engraveCost.toLocaleString()}${material ? `，${material.name}-${material.count}` : ''}`,
+      `成功率：${Math.round(result.chance * 100)}%（阵法师${player.occupation_level}级）`,
+      result.ok
+        ? result.message
+        : `阵纹崩散，连续失败${player.自刻阵法连续失败}次；下次成功率提升至${Math.round(result.nextChance * 100)}%。`,
+    ].join('\n'));
+    return true;
+  }
+
+  async selectBattleFormation(e) {
+    const context = await this.getEmperorContext(e);
+    if (!context) return true;
+    const { userId, player } = context;
+    const name = e.msg.replace(/^#启用阵法/, '').replace(/\s+/g, '');
+    if (!name) {
+      await e.reply('请指定阵法名，或发送 #启用阵法 自动。');
+      return true;
+    }
+    const result = selectBlackEmperorBattleFormation(player, name);
+    if (!result.ok) {
+      await e.reply(`启用失败：${result.reason}。发送 #黑皇状态 查看持有阵纹。`);
+      return true;
+    }
+    await Write_player(userId, player);
+    await e.reply(result.name === '自动'
+      ? '阵匣已切回自动模式：PVE战斗优先使用自刻阵纹，再使用黑皇阵纹。'
+      : `已启用【${result.name}】，将在下一场已接入阵法系统的PVE战斗中自动激活（剩余${result.remaining}次）。`);
+    return true;
+  }
+
+  async pauseBattleFormation(e) {
+    const context = await this.getEmperorContext(e);
+    if (!context) return true;
+    const { userId, player } = context;
+    pauseBlackEmperorBattleFormation(player);
+    await Write_player(userId, player);
+    await e.reply('阵匣已封闭，PVE战斗暂不消耗阵纹。发送 #启用阵法 阵法名/自动 可重新开启。');
+    return true;
+  }
+}

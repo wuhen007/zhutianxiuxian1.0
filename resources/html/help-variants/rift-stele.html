@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="{{pluResPath}}/html/help/icons.css" />
+    <link rel="stylesheet" href="{{pluResPath}}/html/help-variants/rift-stele.css" />
+  </head>
+  <body>
+    <main id="container" class="rift-stele">
+      <header class="stele-hero">
+        <div class="stele-meta"><b>万界碑录</b><span>THE TEN THOUSAND REALMS</span><em>卷 {{version}}</em></div>
+        <div class="stele-title"><small>天门既开 · 诸界并临</small><h1>诸天<br />万界</h1><p>征途指令全录</p></div>
+        <div class="stele-verse">一纸载万法<br />一念渡诸天</div>
+        <div class="stele-gate"><span>界门</span><b>OPEN</b></div>
+      </header>
+
+      <section class="stele-body">
+        {{each helpData val groupIndex}}
+        <article class="realm-record">
+          <header class="record-heading">
+            <div class="record-no">卷 {{groupIndex < 9 ? '0' + (groupIndex + 1) : groupIndex + 1}}</div>
+            <h2>{{val.group}}</h2>
+            <div class="record-count"><b>{{val.list.length}}</b><span>式</span></div>
+          </header>
+          <div class="edict-grid">
+            {{each val.list item itemIndex}}
+            <div class="edict">
+              <div class="edict-top"><span>{{groupIndex + 1}} / {{itemIndex + 1}}</span><i></i><em>EDICT</em></div>
+              <div class="edict-main">
+                <span class="help-icon {{item.icon}}"></span>
+                <strong>{{item.title}}</strong>
+              </div>
+              <p>{{item.desc}}</p>
+            </div>
+            {{/each}}
+          </div>
+        </article>
+        {{/each}}
+      </section>
+
+      <footer class="stele-footer"><b>诸天征途 · 万界同辉</b><span>ZHUTIAN XIUXIAN / COMMAND ARCHIVE / {{version}}</span></footer>
+    </main>
+  </body>
+</html>

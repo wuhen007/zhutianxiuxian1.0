@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>{{title}}</title>
+  <link rel="stylesheet" type="text/css" href="{{pluResPath}}/html/linggen/linggen-b.css" />
+  <link rel="preload" href="../../font/tttgbnumber.ttf" as="font" />
+</head>
+<body>
+  <div id="container" class="atlas atlas-b">
+    <div class="scroll-shell">
+      <div class="scroll-rod scroll-rod-left"><i></i><span>星</span><i></i></div>
+      <main class="paper">
+        <header class="titlebar">
+          <div class="sigil"><span>☷</span><b>灵</b></div>
+          <div class="heading">
+            <div class="kicker">THE SPIRIT ATLAS · 诸天灵脉</div>
+            <h1>{{title}}</h1>
+            <p>以星河为页，以道则为墨，记录每一道先天根性。</p>
+          </div>
+          <div class="current-card">
+            <span>命魂映照 / CURRENT</span>
+            <strong>{{current}}</strong>
+            <em>{{currentType}}</em>
+          </div>
+        </header>
+
+        <div class="ledger-line">
+          <div class="ledger-topic"><span>筛选卷</span><b>{{category}}</b></div>
+          <div class="ledger-count">展示 <b>{{entries.length}}</b> / {{visibleCount}}</div>
+          <div class="ledger-page">LEAF <b>{{page}}</b> / {{totalPages}}</div>
+        </div>
+
+        <div class="directory">
+          <span class="directory-label">ROOT INDEX</span>
+          {{each categories item}}
+          <span class="directory-item">{{item}}</span>
+          {{/each}}
+        </div>
+
+        {{if empty}}
+        <section class="empty-state">
+          <div class="empty-seal">∅</div>
+          <h2>{{emptyMessage}}</h2>
+          <p>星图未能寻得对应根性。</p>
+        </section>
+        {{else}}
+        <section class="entry-grid">
+          {{each entries item}}
+          <article class="entry {{item.qualityClass}} {{if item.isCurrent}}is-current{{/if}}">
+            <div class="entry-meta">
+              <span class="entry-index">NO.{{item.index}}</span>
+              <span class="entry-type">{{item.typeLabel}}</span>
+              <span class="quality-badge">{{item.qualityLabel}}</span>
+              {{if item.isCurrent}}<span class="current-mark">命魂所持</span>{{/if}}
+            </div>
+            <h2 class="root-name">{{item.name}}</h2>
+            <div class="metrics">
+              <div><span>修炼效率</span><b>{{item.eff}}</b></div>
+              <div><span>法球增幅</span><b>{{item.法球倍率}}</b></div>
+              <div><span>攻</span><b>{{item.攻击加成}}</b></div>
+              <div><span>防</span><b>{{item.防御加成}}</b></div>
+              <div><span>生</span><b>{{item.生命加成}}</b></div>
+              <div><span>本源</span><b>+{{item.生命本源}}</b></div>
+            </div>
+          </article>
+          {{/each}}
+        </section>
+        {{/if}}
+
+        <footer class="footer">
+          <span>诸天灵脉观测站</span>
+          <span class="footer-divider">/</span>
+          <span>LEAF {{page}} — {{totalPages}}</span>
+          <span class="footer-seal">ARCHIVE {{totalLinggens}}</span>
+        </footer>
+      </main>
+      <div class="scroll-rod scroll-rod-right"><i></i><span>河</span><i></i></div>
+    </div>
+  </div>
+</body>
+</html>
