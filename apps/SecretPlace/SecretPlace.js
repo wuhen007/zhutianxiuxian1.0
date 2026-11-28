@@ -3514,6 +3514,11 @@ if (action != null) {
            const remaining_time = action.end_time - now_time; // 剩余毫秒数
     const remaining_minutes = Math.floor(remaining_time / (1000 * 60));
     const remaining_seconds = Math.floor((remaining_time % (1000 * 60)) / 1000);
+    // 已用时长 = 总时长 - 剩余（action.time 是写入时的总时长，老档缺字段时按 0 处理）
+    const total_time = Math.max(0, Number(action.time) || 0);
+    const elapsed_time = Math.max(0, total_time - Math.max(0, remaining_time));
+    const elapsed_minutes = Math.floor(elapsed_time / (1000 * 60));
+    const elapsed_seconds = Math.floor((elapsed_time % (1000 * 60)) / 1000);
     
     e.reply([
         `【界海·无路可退】`,

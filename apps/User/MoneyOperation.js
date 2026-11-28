@@ -28,6 +28,7 @@ import {
   isItemTransferRestricted,
   transferEquipment,
 } from '../../model/equipmentTransfer.js';
+import { isTribulationLocked } from '../../model/tribulationLock.js';
 import {
   buildInnateTreasureGrant,
   claimInnateTreasure,
@@ -416,6 +417,11 @@ async Give(e) {
   if (!await existplayer(B_qq)) {
     return e.reply("对方尚未踏入仙途，无法接受赠送");
   }
+
+  // 对方渡劫期间写保护会拒绝落盘，先拦下来，避免扣了自己的一份却送不进去
+  if (await isTribulationLocked(B_qq)) {
+    return e.reply('【渡劫中·赠送失败】\n对方正在渡劫，命数暂被封存，结束后再赠。');
+  }
   
   // 获取双方玩家数据
   const A_player = await Read_player(A_qq);
@@ -629,26 +635,33 @@ async Give(e) {
       thing_piji
     );
 
-    if (thing_exist.class == '仙宠') {
-      // 仙宠需要传递完整对象
-      let itemToSend;
-      itemToSend = najie.仙宠.find(item => item.name == thing_name);
-      await Add_najie_thing(
-        B_qq,
-        itemToSend,
-        thing_exist.class,
-        quantity,
-        thing_piji
-      );
-    } else {
-      // 普通物品
-      await Add_najie_thing(
-        B_qq,
-        thing_name,
-        thing_exist.class,
-        quantity,
-        thing_piji
-      );
+    let sendPayload = thing_name;
+    try {
+      if (thing_exist.class == '仙宠') {
+        // 仙宠需要传递完整对象
+        sendPayload = najie.仙宠.find(item => item.name == thing_name);
+        await Add_najie_thing(
+          B_qq,
+          sendPayload,
+          thing_exist.class,
+          quantity,
+          thing_piji
+        );
+      } else {
+        // 普通物品
+        await Add_najie_thing(
+          B_qq,
+          thing_name,
+          thing_exist.class,
+          quantity,
+          thing_piji
+        );
+      }
+    } catch (error) {
+      // 接收方落盘失败（渡劫写保护等）：把自己的那份退回去，避免凭空消失
+      await Add_najie_thing(A_qq, sendPayload, thing_exist.class, quantity, thing_piji);
+      console.error(`[物品赠送] 接收方写入失败，已退回: ${error?.message || error}`);
+      return e.reply('对方当前状态无法接收（可能在渡劫），物品已退回你的纳戒。');
     }
   }
   

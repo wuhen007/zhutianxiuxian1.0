@@ -1577,6 +1577,14 @@ async huodong(e) {
         return false;
     }
     
+    // 先校验奖励配置：物品表里缺条目时直接提示，不消耗兑换码
+    for (const reward of data.duihuan[i].thing) {
+        if (!await foundthing(reward.name)) {
+            e.reply(`【兑换码配置异常】奖励物品「${reward.name}」不在物品表中，请联系管理员处理。`);
+            return false;
+        }
+    }
+
     // 兑换码重复性检查（保持原逻辑）
     let action = await redis.get('xiuxian:player:' + usr_qq + ':duihuan');
     action = action ? JSON.parse(action) : [];
@@ -1584,20 +1592,28 @@ async huodong(e) {
         e.reply('你已经兑换过该兑换码了');
         return false;
     }
-    action.push(name);
-    await redis.set('xiuxian:player:' + usr_qq + ':duihuan', JSON.stringify(action));
-    
+
     // ==== 奖励发放与回复 ====
     let msg = [];
-    for (var k = 0; k < data.duihuan[i].thing.length; k++) {
-        await Add_najie_thing(
-            usr_qq,
-            data.duihuan[i].thing[k].name,
-            data.duihuan[i].thing[k].class,
-            data.duihuan[i].thing[k].数量
-        );
-        msg.push(`\n${data.duihuan[i].thing[k].name}x${data.duihuan[i].thing[k].数量}`);
+    try {
+        for (var k = 0; k < data.duihuan[i].thing.length; k++) {
+            await Add_najie_thing(
+                usr_qq,
+                data.duihuan[i].thing[k].name,
+                data.duihuan[i].thing[k].class,
+                data.duihuan[i].thing[k].数量
+            );
+            msg.push(`\n${data.duihuan[i].thing[k].name}x${data.duihuan[i].thing[k].数量}`);
+        }
+    } catch (error) {
+        console.error(`[活动兑换] ${name} 发放失败:`, error);
+        e.reply(`兑换失败：${error?.message || '发放奖励时出错'}。兑换码未消耗，可稍后重试或联系管理员。`);
+        return false;
     }
+
+    // 发放成功后再生效，避免「标记了但没发到」
+    action.push(name);
+    await redis.set('xiuxian:player:' + usr_qq + ':duihuan', JSON.stringify(action));
     
     // 关键修改：根据环境控制回复
     if (isPrivateExchange) {

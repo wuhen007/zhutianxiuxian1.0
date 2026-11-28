@@ -68,14 +68,11 @@ test('频道账号统一使用映射后的玩家ID并迁移旧行动键', async 
   assert.match(source, /playerId,\s*\n\s*world: selectedWorld\.name/);
 });
 
-test('仙古数字选项未命中时会放行诸天投影选择', async () => {
+test('仙古不再拦截裸数字，数字选择交给诸天投影', async () => {
   const source = await readFile(new URL('../apps/SecretPlace/xianguPlace.js', import.meta.url), 'utf8');
-  const start = source.indexOf('async XianguExploreChoice(e)');
-  const end = source.indexOf('\n  }\n\n}', start);
-  const handler = source.slice(start, end);
-  assert.match(handler, /redis\.get\(`xiuxian:player:\$\{e\.user_id\}:action`\)\) return false/);
-  assert.match(handler, /if \(!player\.in_xiangu\) return false/);
-  assert.match(handler, /if \(!optionsJson\) return false/);
-  assert.match(handler, /choice < 0 \|\| choice >= options\.length\) return false/);
-  assert.match(handler, /await e\.reply\(exploreResult\.message\);\s*return true/);
+  // 旧的 1/2/3 选项机制已移除（选项从不写入 redis，处理器永远命中不到），
+  // 裸数字不再被仙古拦截，直接由诸天投影等插件处理。
+  assert.doesNotMatch(source, /reg: '\^\[123\]\$'/);
+  assert.doesNotMatch(source, /XianguExploreChoice/);
+  assert.doesNotMatch(source, /xianguOptions/);
 });

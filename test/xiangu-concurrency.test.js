@@ -182,7 +182,6 @@ test('mutation 根入口安装全程动作锁包装', () => {
   for (const method of [
     'Goxiangu',
     'XianguExplore',
-    'XianguExploreChoice',
     'XianguRealmMove',
     'XianguMove',
     'XianguDivineScan',
