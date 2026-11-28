@@ -530,16 +530,6 @@ export function consumeMirrorEnergy(player, amount = 1, { now = Date.now() } = {
   return { ok: true, cost, system };
 }
 
-export function refundMirrorEnergy(player, amount = 1, { now = Date.now() } = {}) {
-  const system = ensureZhutianMirrorSystem(player, { now });
-  system.镜能 = Math.min(
-    MIRROR_TIER_CONFIG[system.镜阶].energyMax,
-    system.镜能 + Math.max(1, asNonNegativeInteger(amount)),
-  );
-  bumpZhutianMirrorVersion(player);
-  return system.镜能;
-}
-
 export function addMirrorRelic(player, name, amount = 1, { now = Date.now() } = {}) {
   const system = ensureZhutianMirrorSystem(player, { now });
   system.异界遗物[name] = (system.异界遗物[name] || 0) + Math.max(1, asNonNegativeInteger(amount));

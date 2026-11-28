@@ -969,10 +969,6 @@ export function recordUnfetteredJourney(player) {
   return progress.横渡位面;
 }
 
-function getPlaneNameByLocation(location) {
-  return getLocationName(location);
-}
-
 function registerGroupAttention(player, group) {
   const count = Math.min(
     group.threshold,
@@ -989,14 +985,6 @@ function registerGroupAttention(player, group) {
     warning: group.warnings[count] || '',
     group,
   };
-}
-
-export function registerLocalPowerAttention(player, task) {
-  const toPlane = getLocationName(task?.to_name) || getPlaneNameByLocation(task?.to_location);
-  const fromPlane = getLocationName(task?.from_name) || getPlaneNameByLocation(task?.from_location);
-  const group = LOCAL_POWER_GROUPS[toPlane] || LOCAL_POWER_GROUPS[fromPlane];
-  if (!group) return { relevant: false, count: 0, intercept: false, warning: '' };
-  return registerGroupAttention(player, group);
 }
 
 export function evaluateSupremeExemption(player) {
@@ -1078,22 +1066,6 @@ export function selectForbiddenSupreme(random = Math.random) {
     if (roll < 0) return supreme;
   }
   return FORBIDDEN_SUPREMES.at(-1);
-}
-
-export function selectLocalPower(planeName, random = Math.random) {
-  const group = LOCAL_POWER_GROUPS[planeName];
-  if (!group) return null;
-  const totalWeight = group.powers.reduce((sum, power) => sum + power.weight, 0);
-  let roll = Math.min(0.999999999999, Math.max(0, Number(random()) || 0)) * totalWeight;
-  let selected = group.powers.at(-1);
-  for (const power of group.powers) {
-    roll -= power.weight;
-    if (roll < 0) {
-      selected = power;
-      break;
-    }
-  }
-  return { ...selected, group };
 }
 
 function maxRealm(levels) {
@@ -1220,7 +1192,3 @@ export function applyForbiddenSupremePlunder(player, najie, keepRatio = 0.2) {
   );
 }
 
-export function resetLocalPowerAttention(player, encounter) {
-  const field = encounter?.group?.attentionField;
-  if (field) player[field] = 0;
-}

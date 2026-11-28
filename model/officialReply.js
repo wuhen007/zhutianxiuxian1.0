@@ -492,10 +492,6 @@ export async function tryOfficialActive(groupId, msg, options = {}) {
 }
 
 /** 运行统计（自检/排查用） */
-export function getStats() {
-  return { ...stats };
-}
-
 /**
  * 群广播的统一出口：**官方优先，协议号兜底**。
  *

@@ -504,10 +504,6 @@ export function getOtherShoreLayer(layer) {
   return id ? OTHER_SHORE_LAYER_MAP[id] : null;
 }
 
-export function normalizeOtherShoreLayer(layer) {
-  return normalizeLayerId(layer);
-}
-
 export function validateOtherShoreLayerAccess(layer, context = {}) {
   const id = normalizeLayerId(layer);
   if (!id) {

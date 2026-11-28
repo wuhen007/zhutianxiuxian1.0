@@ -148,7 +148,3 @@ export function describeNightQuiet(now = Date.now(), cfg = readNightQuietConfig(
 }
 
 /** 仅供自检 / 单元测试使用 */
-export function __resetNightQuietCache() {
-  cache = null;
-  cacheAt = 0;
-}

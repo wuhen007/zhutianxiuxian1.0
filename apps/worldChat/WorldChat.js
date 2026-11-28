@@ -536,12 +536,6 @@ export class WorldChat extends plugin {
     await this.notifyTradeCompleted(trade);
   }
 
-  rememberTradeUser(e) {
-    const userId = String(e.user_id || '');
-    const tag = client.userTag(userId);
-    return { userId, tag };
-  }
-
   async assetBalance(userId, asset) {
     if (asset.kind === 'currency') {
       const player = await Read_player(userId);

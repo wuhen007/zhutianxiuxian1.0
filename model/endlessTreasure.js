@@ -1092,10 +1092,6 @@ export function getTreasureAbilityName(abilityId) {
   return SYNTHETIC_ABILITY_NAMES[abilityId] || null;
 }
 
-export function getTreasureIcon(id) {
-  return TREASURE_MAP.get(id)?.icon || '💎';
-}
-
 /** 归一化玩家的至宝列表（懒初始化） */
 export function normalizePlayerTreasures(player) {
   if (!player) return [];

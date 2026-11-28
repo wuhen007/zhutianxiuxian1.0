@@ -59,10 +59,6 @@ export function wasFactionRewardClaimedToday(value, now = Date.now()) {
   return /^\d{1,2}$/.test(stored) && Number(stored) === Number(currentKey.slice(-2));
 }
 
-export function isFactionMember(player, faction) {
-  return player?.势力 === faction;
-}
-
 export function getFactionJoinBlock(player, now = Date.now()) {
   if (player?.势力 && player.势力 !== FACTION_NONE) {
     return { ok: false, reason: "member", faction: player.势力 };

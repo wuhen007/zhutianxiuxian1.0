@@ -143,13 +143,6 @@ export function hasPlayerMingge(player) {
     : Boolean(identity?.id);
 }
 
-export function findPlayerMingge(player, minggeList) {
-  const identity = player?.命格;
-  const id = typeof identity === 'string' ? identity : identity?.id;
-  if (!id || !Array.isArray(minggeList)) return null;
-  return minggeList.find(item => item.id === id) || null;
-}
-
 export function getMinggeEffects(player, minggeList) {
   const identities = [
     player?.命格,
@@ -271,12 +264,6 @@ export function grantMinggePotential(player, effects, amount) {
   const gain = calculateMinggePotentialGain(amount, effects);
   player.仙道潜力 = Math.max(0, (Number(player.仙道潜力) || 0) + gain);
   return gain;
-}
-
-export function consumeMinggePotential(player, effects, amount) {
-  const cost = calculateMinggePotentialCost(amount, effects);
-  player.仙道潜力 = Math.max(0, (Number(player.仙道潜力) || 0) - cost);
-  return cost;
 }
 
 export function getMinggeSecretPlaceReductionMs(effects) {

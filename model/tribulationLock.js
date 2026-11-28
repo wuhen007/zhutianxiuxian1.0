@@ -43,14 +43,6 @@ export function tribulationCheckpointKey(playerId) {
   return `${LOCK_PREFIX}${String(playerId)}${CHECKPOINT_SUFFIX}`;
 }
 
-export function tribulationWriteReservationKey(playerId) {
-  return `${LOCK_PREFIX}${String(playerId)}${WRITE_RESERVATION_SUFFIX}`;
-}
-
-export function tribulationRevisionKey(playerId) {
-  return `${LOCK_PREFIX}${String(playerId)}${REVISION_SUFFIX}`;
-}
-
 export function getTribulationLockContext(playerId) {
   const context = tribulationStorage.getStore();
   if (!context || String(context.playerId) !== String(playerId)) return null;
@@ -189,19 +181,6 @@ export async function assertTribulationWriteAllowed(playerId, snapshot) {
 // Local callers added around the upstream lock expect these helpers. Ordinary
 // writes intentionally retain upstream semantics: they do not create a Redis
 // reservation or advance a player-wide revision.
-export async function captureTribulationSnapshotFence() {
-  return undefined;
-}
-
-export async function withTribulationWriteGuard(playerId, snapshot, action) {
-  if (typeof action !== 'function') {
-    throw new TypeError('Tribulation write action must be a function');
-  }
-  await assertTribulationWriteAllowed(playerId, snapshot);
-  touchTribulationProgress(playerId, 'writing');
-  return action(getTribulationLockContext(playerId));
-}
-
 export async function withTribulationWriteTransaction(playerId, snapshots, action) {
   if (!Array.isArray(snapshots) || snapshots.length === 0) {
     throw new TypeError('Tribulation write transaction requires at least one snapshot');

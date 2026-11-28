@@ -477,8 +477,3 @@ export async function installActiveGroups(apps) {
 }
 
 /** 测试 / 运维用：手动触发一次同步 */
-export async function syncNow() {
-  lastWriteAt = 0;
-  await sync();
-  return [...activeCache.keys()];
-}

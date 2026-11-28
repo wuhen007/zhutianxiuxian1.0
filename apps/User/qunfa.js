@@ -70,11 +70,6 @@ export class qunfa extends plugin {
   }
 
   // 消息内容安全过滤
-  filterMessageContent(message) {
-    const white_type = ["text", "image", "face"];
-    return message.filter(v => white_type.includes(v.type));
-  }
-
   // 全服公告功能（无需管理员权限）
 async globalAnnouncement(e) {
     if (!verc({ e })) return false;

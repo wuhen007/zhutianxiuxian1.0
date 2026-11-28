@@ -861,33 +861,6 @@ export function resolveDaoyinTribulationAbsorb(player, maxHp = player?.血量上
   return { active: true, method, healRate, healAmount, accumulationBonus };
 }
 
-export function getFlowerTribulationChance(player, realmId = player?.huafenlevel_id, options = {}) {
-  const gate = getFlowerTribulationGateState(player, realmId);
-  if (!gate.rule) return 0;
-  const pollution = getPollenPollutionState(player);
-  const branch = getFlowerBranchProfile(player);
-  const [, breathing] = getBestBreathingMethod(player);
-  const era = getFlowerEraProfile(options.eraIndex);
-  const riskPenalty = Math.min(0.2, player.花粉隐患 * 0.001);
-  const failureProtection = Math.min(0.15, gate.failures * 0.03);
-  const stoneJarBonus = options.stoneJar ? 0.08 : 0;
-  const wound = getFlowerDaoWoundState(player);
-  return clamp(
-    gate.rule.baseChance
-      + breathing * pollution.breathingMultiplier
-      + branch.chanceShift
-      + era.chanceShift * 0.5
-      + failureProtection
-      + stoneJarBonus
-      - riskPenalty
-      - pollution.successPenalty
-      - pollution.markSuccessPenalty
-      - wound.chancePenalty,
-    0.15,
-    0.95
-  );
-}
-
 /**
  * 花粉渡劫奖惩结算（单点维护，供 resolveFlowerTribulation 与指令层复用）。
  * outcome: { ok, failedStage }；失败追加：修为血气各 -15%（当前总量）+ 道伤 +1。

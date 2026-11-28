@@ -369,12 +369,6 @@ async removeProtector(e) {
 
 
   // 辅助方法
-  hasGongfa(player, gongfa) {
-    return player.功法 && player.功法[gongfa];
-  }
-
-
-
   // ==== 创造仙宠指令 ====
   async createXianchong(e) {
     const usr_qq = e.user_id.toString().replace('qg_', '');
@@ -501,35 +495,9 @@ async removeProtector(e) {
   /**
    * 保存仙宠列表
    */
-  saveXianchongList(petList) {
-    try {
-      // 只落盘玩家自创的，内置仙宠列表保持只读，避免玩家造宠污染仓库
-      writeCustomXianchong(Array.isArray(petList) ? petList : []);
-      this.xianchon = readAllXianchong(); // 更新内存数据
-    } catch (err) {
-      console.error('保存仙宠列表失败:', err);
-      throw err;
-    }
-  }
-
   /**
    * 添加新仙宠
    */
-  addXianchong(newPet) {
-    const petList = this.getXianchongList();
-    
-    // 检查同名
-    if (petList.some(p => p.name === newPet.name)) {
-      throw new Error(`已存在同名仙宠: ${newPet.name}`);
-    }
-    
-    petList.push(newPet);
-    this.saveXianchongList(petList);
-  }
-
-
-
-
   async xiufu_weimian(e) {
   if (!e.isGroup) {
     e.reply('修仙游戏请在群聊中游玩');

@@ -411,14 +411,6 @@ async get_jindi_placeData(myData) {
       ...myData,
     };
   }
-  async get_equipmnetData2(myData) {
-    this.model = 'equipment2';
-    return {
-      ...this.screenData,
-      saveId: 'equipment2',
-      ...myData,
-    };
-  }
   async get_najieData(myData) {
     this.model = 'najie';
     return {
@@ -521,14 +513,6 @@ async get_jindi_placeData(myData) {
     return parseInt(parts[1]) / parseInt(parts[0]);
   }
   //searchforum
-  async get_searchforumData(myData) {
-    this.model = 'searchforum';
-    return {
-      ...this.screenData,
-      saveId: 'searchforum',
-      ...myData,
-    };
-  }
   //天地堂
   async get_tianditangData(myData) {
     this.model = 'tianditang';
@@ -624,14 +608,6 @@ async get_jindi_placeData(myData) {
     };
   }
    //log
-  async get_log3Data(myData) {
-    this.model = 'log3';
-    return {
-      ...this.screenData,
-      saveId: 'log3',
-      ...myData,
-    };
-  }
   //柠檬堂
   async get_ningmenghomeData(myData) {
     this.model = 'ningmenghome';
@@ -679,75 +655,12 @@ async get_jindi_placeData(myData) {
   }
 
   //法宝楼
-  async get_valuables_fabaoData(myData) {
-    this.model = 'valuables_fabao';
-    return {
-      ...this.screenData,
-      saveId: 'valuables_fabao',
-      ...myData,
-    };
-  }
-
   //武器楼
-  async get_valuables_wuqiData(myData) {
-    this.model = 'valuables_wuqi';
-    return {
-      ...this.screenData,
-      saveId: 'valuables_wuqi',
-      ...myData,
-    };
-  }
-
   //护具楼
-  async get_valuables_hujuData(myData) {
-    this.model = 'valuables_huju';
-    return {
-      ...this.screenData,
-      saveId: 'valuables_huju',
-      ...myData,
-    };
-  }
-
   //丹药楼
-  async get_valuables_drugData(myData) {
-    this.model = 'valuables_drug';
-    return {
-      ...this.screenData,
-      saveId: 'valuables_drug',
-      ...myData,
-    };
-  }
-
   //功法楼
-  async get_valuables_skillData(myData) {
-    this.model = 'valuables_skill';
-    return {
-      ...this.screenData,
-      saveId: 'valuables_skill',
-      ...myData,
-    };
-  }
-
   //道具楼
-  async get_valuables_propData(myData) {
-    this.model = 'valuables_prop';
-    return {
-      ...this.screenData,
-      saveId: 'valuables_prop',
-      ...myData,
-    };
-  }
-
   //数独
-  async get_sudokuData(myData) {
-    this.model = 'sudoku';
-    return {
-      ...this.screenData,
-      saveId: 'sudoku',
-      ...myData,
-    };
-  }
-
   //修为榜
   async get_ranking_powerData(myData) {
     this.model = 'ranking_power';
@@ -764,15 +677,6 @@ async get_jindi_placeData(myData) {
     return {
       ...this.screenData,
       saveId: 'ranking_money',
-      ...myData,
-    };
-  }
-
-  async get_updataData(myData) {
-    this.model = 'updata';
-    return {
-      ...this.screenData,
-      saveId: 'updata',
       ...myData,
     };
   }
@@ -796,33 +700,6 @@ async get_jindi_placeData(myData) {
     };
   }
 
-  async get_forbidden_areaData(myData) {
-    this.model = 'forbidden_area';
-    return {
-      ...this.screenData,
-      saveId: 'forbidden_area',
-      ...myData,
-    };
-  }
-
-  async get_time_placeData(myData) {
-    this.model = 'time_place';
-    return {
-      ...this.screenData,
-      saveId: 'time_place',
-      ...myData,
-    };
-  }
-
-  async get_fairyrealmData(myData) {
-    this.model = 'fairyrealm';
-    return {
-      ...this.screenData,
-      saveId: 'fairyrealm',
-      ...myData,
-    };
-  }
-
   async get_supermarketData(myData) {
     this.model = 'supermarket';
     return {
@@ -841,29 +718,12 @@ async get_jindi_placeData(myData) {
     };
   }
   //斩首堂
-  async get_yuansu(myData) {
-    this.model = 'tujian';
-    return {
-      ...this.screenData,
-      saveId: 'tujian',
-      ...myData,
-    };
-  }
   // 金银坊记录
   async get_jinyin(myData) {
     this.model = 'moneyCheck';
     return {
       ...this.screenData,
       saveId: 'moneyCheck',
-      ...myData,
-    };
-  }
-
-  async get_talentData(myData) {
-    this.model = 'talent';
-    return {
-      ...this.screenData,
-      saveId: 'talent',
       ...myData,
     };
   }
@@ -882,14 +742,6 @@ async get_jindi_placeData(myData) {
     return {
       ...this.screenData,
       saveId: 'tuzhi',
-      ...myData,
-    };
-  }
-  async get_NIANGJIU(myData) {
-    this.model = 'niangjiu';
-    return {
-      ...this.screenData,
-      saveId: 'niangjiu',
       ...myData,
     };
   }
@@ -922,25 +774,7 @@ async get_jindi_placeData(myData) {
   }
 
   //沉迷消息
-  async get_log2(myData) {
-    this.model = 'log2';
-    return {
-      ...this.screenData,
-      saveId: 'log2',
-      ...myData,
-    };
-  }
-
   //沉迷消息
-  async get_log3(myData) {
-    this.model = 'log3';
-    return {
-      ...this.screenData,
-      saveId: 'log3',
-      ...myData,
-    };
-  }
-
   //战斗消息
   async get_fightData(myData) {
     this.model = 'fight';

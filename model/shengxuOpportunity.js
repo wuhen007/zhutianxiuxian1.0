@@ -168,20 +168,8 @@ export function claimShengxuOpportunityState(state, name, ownerId, now = Date.no
   return { ok: true, name, ownerId: String(ownerId), claimedAt: now };
 }
 
-export function claimShengxuOpportunity(name, ownerId, now = Date.now()) {
-  const state = readShengxuOpportunityState({ strict: true });
-  const result = claimShengxuOpportunityState(state, name, ownerId, now);
-  if (result.ok) writeState(state);
-  return result;
-}
-
 export function getShengxuOpportunityOwner(name, options = {}) {
   return String(readShengxuOpportunityState(options).opportunities?.[name]?.ownerId || '');
-}
-
-export function isShengxuOpportunityOwner(name, ownerId, options = {}) {
-  const owner = getShengxuOpportunityOwner(name, options);
-  return Boolean(owner) && owner === String(ownerId);
 }
 
 function migrateFlowerAncestorSeedState(state, now, options) {

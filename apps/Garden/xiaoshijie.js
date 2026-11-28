@@ -722,14 +722,6 @@ function getEnergyIcon(energy) {
 }
 
 // 生成精力条文字
-function getEnergyBar(current, max) {
-  const ratio = Math.max(0, Math.min(1, current / max));
-  const barLen = 8;
-  const filled = Math.round(ratio * barLen);
-  const bar = '█'.repeat(filled) + '░'.repeat(barLen - filled);
-  return `[${bar}] ${current}/${max}`;
-}
-
 export class xiaoshijie extends plugin {
   constructor() {
     super({

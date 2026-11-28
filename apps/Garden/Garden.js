@@ -41,10 +41,6 @@ export class Garden extends plugin {
           fnc: 'Get_vegetable',
         },
         {
-          reg: '^#偷菜*$',
-          fnc: 'Get_morevegetable',
-        },
-        {
           reg: '^#药园*$',
           fnc: 'Vegetable',
         },

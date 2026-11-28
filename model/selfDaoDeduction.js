@@ -383,8 +383,3 @@ export function completeCorpseEmperorRecovery(player, now = Date.now()) {
   return promoteSelfDaoToImmortalEmperor(player, now);
 }
 
-export function getCorpseEmperorRecoveryState(player, now = Date.now()) {
-  const recovery = ensureSelfDaoDeduction(player).recovery;
-  if (recovery?.status !== 'recovering') return { active: false, remainingMs: 0 };
-  return { active: number(recovery.endAt) > now, remainingMs: Math.max(0, number(recovery.endAt) - now), recovery };
-}

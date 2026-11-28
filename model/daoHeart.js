@@ -62,25 +62,12 @@ export function getDaoHeart(player, now = Date.now()) {
   return ensureDaoHeart(player, now);
 }
 
-export function setDaoHeart(player, value, reason = '调整道心', now = Date.now()) {
-  const before = ensureDaoHeart(player, now);
-  const after = sync(player, value);
-  if (player && before !== after) recordDaoHeartChange(player, before, after, reason, now);
-  return { before, after, change: after - before, reason };
-}
-
 export function adjustDaoHeart(player, delta, reason = '道心变动', now = Date.now()) {
   const before = ensureDaoHeart(player, now);
   const change = Number(delta) || 0;
   const after = sync(player, before + change);
   if (player && before !== after) recordDaoHeartChange(player, before, after, reason, now);
   return { before, after, change: after - before, reason };
-}
-
-export function recoverDaoHeart(player, now = Date.now()) {
-  const before = finite(player?.道心);
-  const after = ensureDaoHeart(player, now);
-  return { before: before === null ? after : before, after, change: after - (before === null ? after : before) };
 }
 
 function recordDaoHeartChange(player, before, after, reason, now) {

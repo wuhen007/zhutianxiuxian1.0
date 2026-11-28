@@ -568,37 +568,6 @@ if (player.xiangulevel_id === 4) {
   }
 
   // 普通境界突破
-  async normalBreakthrough(e, usr_qq, player) {
-    const baseNeedExp = this.calculateBaseNeedExp(player);
-    const actualNeedExp = this.calculateActualCost(baseNeedExp, player);
-    
-    if (player.血气 < actualNeedExp || player.修为 < actualNeedExp) {
-      return e.reply([
-        `突破所需资源不足！`,
-        `需要血气：${bigNumberTransform(actualNeedExp)}`,
-        `需要修为：${bigNumberTransform(actualNeedExp)}`,
-        `当前血气：${bigNumberTransform(player.血气)}`,
-        `当前修为：${bigNumberTransform(player.修为)}`
-      ].join("\n"));
-    }
-
-    player.xiangulevel_id += 1;
-    player.血气 -= actualNeedExp;
-    player.修为 -= actualNeedExp;
-    // 扣除仙道潜力（冲关=10点）
-    player.仙道潜力 = Math.max(0, (player.仙道潜力 || 0) - applyQuestionFortuneCost(player, 10));
-    
-    const level = data.xiangujinshi_list.find(item => item.level_id == player.xiangulevel_id).level;
-    await Write_player(usr_qq, player);
-    
-    e.reply([
-      `冲关成功！`,
-      `消耗血气：${bigNumberTransform(actualNeedExp)}`,
-      `消耗修为：${bigNumberTransform(actualNeedExp)}`,
-      `当前境界：${level}`,
-    ].join("\n"));
-  }
-
   // ========== 工具函数 ==========
   async checkExtremeConditions(usr_qq, player) {
     const isSpecialPhysique = ["荒古圣体", "天生至尊"].includes(player.Physique_id);

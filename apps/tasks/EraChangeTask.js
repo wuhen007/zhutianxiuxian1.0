@@ -1500,73 +1500,8 @@ if (index === 4) { // 当前是绝灵时代
   }
   
   /** 检查并触发诡异大祭（每8个纪元触发一次） */
-  async checkAndTriggerDajie(epoch) {
-    try {
-      // 检查大祭是否已被终结
-      const eternalDefeat = await redis.get('xiuxian:dajie_eternally_defeated');
-      if (eternalDefeat === 'true') {
-        // 如果大祭被终结，重置计数器
-        await redis.set('xiuxian:epochs_since_dajie', epoch.toString());
-        return;
-      }
-      
-      // 获取上次大祭开始的纪元
-      let epochsSinceLastDajie = await redis.get('xiuxian:epochs_since_dajie');
-      epochsSinceLastDajie = epochsSinceLastDajie ? parseInt(epochsSinceLastDajie) : 0;
-      
-      // 检查是否满8个纪元
-      if (epoch - epochsSinceLastDajie >= 8) {
-        // 检查诡异大祭是否已开启
-        let dajieAlive = await redis.get('guiyishizu');
-        if (!dajieAlive) {
-          // 触发诡异大祭
-          await this.triggerDajie(epoch);
-        }
-      }
-    } catch (e) {
-      console.error("检查诡异大祭触发失败:", e);
-    }
-  }
   
   /** 触发诡异大祭 */
-  async triggerDajie(epoch) {
-    try {
-      // 记录大祭开始的纪元
-      await redis.set('xiuxian:epochs_since_dajie', epoch.toString());
-      
-      const message = [
-        `═══════ 诡异大祭·预兆 ═══════`,
-        `【诸天异变】`,
-        `就在这一日——`,
-        `厄土高原深处，传来一阵诡异的脉动！`,
-        `那股沉寂了万古的气息，`,
-        `正在缓缓苏醒……`,
-        ``,
-        `「诡异……将再次降临。」`,
-        ``,
-        `黑雾开始在高原上空汇聚，`,
-        `亿万被祭掉生灵的残魂在黑雾中哀嚎，`,
-        `诉说着那段永世难忘的血泪史……`,
-        ``,
-        `距离诡异大祭正式降临还有一个千年……`,
-        `诸天万界的路尽级仙帝们，`,
-        `请做好迎接大祭的准备！`,
-      ].join('\n');
-      
-      await this.broadcastMessage(message);
-      
-      // 广播到所有群
-      const redisGlKey = 'xiuxian:AuctionofficialTask_GroupList';
-      const groupList = await redis.sMembers(redisGlKey);
-      for (const group_id of groupList) {
-        Bot.pickGroup(group_id).sendMsg(message).catch(console.error);
-      }
-      
-      console.log(`[诡异大祭] 第${epoch}纪元，诡异大祭预兆已发布`);
-    } catch (e) {
-      console.error("触发诡异大祭失败:", e);
-    }
-  }
   
   async checkHighLevelPlayers() {
     const now = Date.now();

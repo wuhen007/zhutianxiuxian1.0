@@ -358,11 +358,6 @@ export async function getDestructionStatus() {
 /**
  * 检查指定位面是否已被破坏
  */
-export function isPlaneDestroyed(planeId) {
-  const normalizedId = getLocationId(planeId);
-  return Number.isFinite(normalizedId) && destroyedPlanes.has(normalizedId);
-}
-
 /**
  * 修复所有被破坏的位面（映照诸天后调用）
  * 清除内存状态、Redis记录、位面.json三处同步
@@ -696,35 +691,6 @@ async function sendFinalWarning() {
 /**
  * 被破坏位面中全员永寂的额外广播
  */
-async function broadcastAllYongJi(planeInfo, yongjiCount) {
-  if (yongjiCount === 0) return;
-
-  const groupList = await getGroupList();
-
-  const msg = [
-    `诡异大祭 - 举界永寂`,
-    ``,
-    `位面「${planeInfo.name}」中，${yongjiCount}位修士——`,
-    `全数坠入永寂之界。`,
-    ``,
-    `他们的名号、道果、一切存在痕迹——`,
-    `被诡异物质从现世中彻底剥离，`,
-    `悬浮于永寂之界那永恒的沉默里。`,
-    ``,
-    `「世间暂无此人。」`,
-    `「除非——」`,
-    `「有仙帝以映照之权，将其从永寂中唤醒。」`,
-    ``,
-    `【映照命令】`,
-    `仙帝可使用：`,
-    `  > #映照[名号] — 复活单名永寂者`,
-    `  > #映照${planeInfo.name} — 复活该位面所有永寂者`,
-    `  > #映照诸天 — 复活所有位面所有永寂者（代价极大）`,
-  ].join('\n');
-
-  await sendToAllGroups(groupList, msg);
-}
-
 // ==================== 工具函数 ====================
 
 /**

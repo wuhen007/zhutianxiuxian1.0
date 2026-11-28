@@ -295,10 +295,6 @@ function normalizeCoordinate(coordinateOrQ, maybeR) {
   return { q, r };
 }
 
-export function normalizeOtherShoreTrueWorldCoordinate(coordinateOrQ, maybeR) {
-  return normalizeCoordinate(coordinateOrQ, maybeR);
-}
-
 export function otherShoreTrueWorldCoordinateId(coordinateOrQ, maybeR) {
   const { q, r } = normalizeCoordinate(coordinateOrQ, maybeR);
   return `${q},${r}`;

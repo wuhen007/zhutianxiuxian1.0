@@ -391,26 +391,6 @@ export async function getYongJiByPlane(planeId, limit = 50) {
  * 大祭结束时清空永寂列表（可选：管理员手动触发）
  * 若不清空，永寂者可在下次大祭中被映照
  */
-export async function clearYongJiList() {
-  try {
-    const allRecords = await redis.hGetAll(YONGJI_HASH_KEY);
-    if (allRecords) {
-      // 清空所有位面索引
-      for (const recordStr of Object.values(allRecords)) {
-        try {
-          const record = JSON.parse(recordStr);
-          for (const indexId of planeIndexIds(record.planeId, record.planeName)) {
-            await redis.del(`${YONGJI_PLANE_PREFIX}${indexId}`);
-          }
-        } catch (e) {}
-      }
-    }
-    await redis.del(YONGJI_HASH_KEY);
-    await redis.set(YONGJI_COUNT_KEY, '0');
-    logger.info('[永寂之界] 永寂列表已清空');
-  } catch (e) {}
-}
-
 // ==================== 内部工具 ====================
 
 /**

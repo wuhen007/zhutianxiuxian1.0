@@ -506,23 +506,3 @@ async function getLastsign_Explor(usr_qq) {
 /**
  * 地点查询
  */
-async function GoBlessPlace(e, weizhi, addres) {
-  let dir = data.filePathMap.association;
-  let File = fs.readdirSync(dir);
-  File = File.filter(file => file.endsWith('.json')); //这个数组内容是所有的宗门名称
-  let adr = addres;
-  let msg = ['***' + adr + '***'];
-  for (var i = 0; i < weizhi.length; i++) {
-    let ass = '无';
-    for (let j of File) {
-      let this_name = j.replace('.json', '');
-      let this_ass = await data.getAssociation(this_name);
-      if (this_ass.宗门驻地 == weizhi[i].name) {
-        ass = this_ass.宗门名称;
-        break;
-      }
-    }
-    let img=await Goweizhi(e,weizhi,ass+"的宗门秘境")
-    e.reply(img)
-  }
-}

@@ -2021,15 +2021,6 @@ class ReincarnationRoad extends plugin {
     }
   }
 
-  getMasterList() {
-    try {
-      const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
-      return xiuxianConfig.Master || [];
-    } catch {
-      return [];
-    }
-  }
-
   replyCancelFailure(e, code) {
     const messages = {
       busy: '该魂魄正在进行轮回结算或接受其他裁定，请稍后重试。',

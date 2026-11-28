@@ -173,12 +173,6 @@ export class XianguTribulation {
   }
 
   // ============ 常规伤害结算：灵根减伤 → 欺天阵纹 → 本命帝兵护主 ============
-  applyDefenses(player, base) {
-    const { damage: bodyDamage, msgs } = this._applyBodyDefenses(player, base);
-    const defendedDamage = this._applyNormalDefenses(player, bodyDamage, msgs);
-    return { damage: Math.max(1, Math.floor(defendedDamage)), msgs };
-  }
-
   _applyNormalDefenses(player, damage, msgs) {
     const formation = consumeBlackEmperorTribulationFormation(player);
     if (formation.message && !formation.announced) {

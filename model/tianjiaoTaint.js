@@ -22,10 +22,6 @@ export function isTainted(item) {
 }
 
 /** 读取装备污损信息 */
-export function getTaint(item) {
-  return item?.污损 || null;
-}
-
 /** 列出玩家装备中的百分比装备槽位 */
 export function listPercentEquipSlots(equip) {
   return Object.keys(TAINTED_SLOTS)

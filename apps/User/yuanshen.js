@@ -152,20 +152,6 @@ export class yuanshentixi extends plugin {
     return { blocked: false, now, cdKey };
   }
 
-  _matchSkill(e, regex, typeFilter = null) {
-    const msg = e.msg.replace(/\s/g, '');
-    const m = msg.match(regex);
-    if (!m) return null;
-    const skillName = m[1];
-    if (!player) return { skillName, err: null };
-    // typeFilter: null=不筛选, 指定类型必须匹配
-    const cfg = YUANSHEN_SKILLS[skillName];
-    if (!cfg) return { skillName, err: `【${skillName}】暂无对应的元神法门` };
-    if (typeFilter && cfg.type !== typeFilter)
-      return { skillName, err: `【${skillName}】不是${this._typeName(typeFilter)}，无法使用此命令` };
-    return { skillName, cfg };
-  }
-
   _typeName(type) {
     const map = { '恢复':'恢复类功法','淬炼':'淬炼类功法','爆发':'爆发类功法','防御':'防御类功法','神游':'神游类功法' };
     return map[type] || '功法';

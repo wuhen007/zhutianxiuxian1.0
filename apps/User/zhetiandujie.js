@@ -6233,10 +6233,6 @@ if (equipment.帝兵 && equipment.帝兵.author_name === player.id) {
   }
 
   // ==== 辅助方法 ====
-  getDefaultResurrectTimes(gongfaName) {
-    return this.gongfa[gongfaName]?.resurrectTimes || 0;
-  }
-
   getEraDifficultyFactor() {
     const set = config.getConfig('xiuxian', 'xiuxian');
     const eraIndex = set.Era?.current?.index || 0;

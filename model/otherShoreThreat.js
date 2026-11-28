@@ -524,11 +524,6 @@ function contributionFor(event, playerId) {
   return { id, name, kill, overlordDamage, overlordShare, purgeDefense, refinementWeight, score, tier };
 }
 
-export function calculateOtherShoreThreatContribution(event, playerId) {
-  if (!event || typeof event !== 'object') throw new TypeError('event 不能为空');
-  return contributionFor(event, requiredText(playerId, 'playerId'));
-}
-
 function participantIds(event) {
   return [...new Set([
     ...Object.keys(event.calamity?.killers || {}),

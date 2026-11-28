@@ -287,10 +287,6 @@ function campFor(world, starId) {
   return state.camps[id];
 }
 
-export function getOtherShoreCamp(world, starId) {
-  return campFor(world, starId);
-}
-
 export function getOtherShoreCampCapabilities(camp) {
   const level = Math.min(3, whole(camp?.level));
   const profile = OTHER_SHORE_CAMP_LEVELS[level];

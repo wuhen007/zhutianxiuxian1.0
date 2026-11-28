@@ -395,17 +395,9 @@ export function buildAt(userId) {
 /**
  * 标准化用户ID（去掉 qg_）
  */
-export function normalizeUserId(userId) {
-  return String(userId).replace('qg_', '');
-}
-
 /**
  * 判断是否为官方机器人ID
  */
-export function isOfficialBot(userId) {
-  return String(userId).startsWith('qg_');
-}
-
 /**
  * 全局
  */
@@ -525,17 +517,6 @@ export async function Locked_najie_thing(usr_qq, thing_name, thing_class,thing_p
         return ifexist.islockd;
     }
     return false;
-}
-
-export async function Check_thing(data){
-    let state=0;
-    if (data.id >= 5005000&& data.id <= 5005009) {
-        state=1;
-    }
-    else if (data.id >= 400991 && data.id <= 400999) {
-        state=1;
-    }
-    return state;
 }
 
 export async function Read_updata_log() {
@@ -1899,30 +1880,10 @@ export async function get_log_img(e){
     ...data1,
   });
 }
-export async function get_log3_img(e){
- 
-
-  const data1 = await new Show(e).get_log(log);
-  return await puppeteer.screenshot('log3', {
-    ...data1,
-  });
-}
-
 /**
  * 沉迷消息图片
  * @return image
  */
-export async function get_log2_img(e){
-  let log2=e
-  let log={
-    log:log2
-  }
-
-  const data1 = await new Show(e).get_log2(log);
-  return await puppeteer.screenshot('log2', {
-    ...data1,
-  });
-}
 // 辅助：格式化大数
 function fmtNum(n) {
   if (n === null || n === undefined) return '--';
@@ -4536,26 +4497,6 @@ export async function get_xiangujinshi_img(e, all_level) {
     }
 }
 
-export async function get_talent_img(e) {
-  let usr_qq = e.user_id.toString().replace('qg_','');
-    usr_qq = await channel(usr_qq);
-  let ifexistplay = data.existData('player', usr_qq);
-  if (!ifexistplay) {
-    return;
-  }
-  let player = await data.getData('player', usr_qq);
-  let Level_id = player.Physique_id;
-  let talent_list = data.talent_list;
-  let talent_data = {
-    user_id: usr_qq,
-    talent_list: talent_list,
-  };
-  const data1 = await new Show(e).get_talentData(talent_data);
-  return await puppeteer.screenshot('talent', {
-    ...data1,
-  });
-}
-
 /**
  * 返回修仙设置
  * @return image
@@ -5354,17 +5295,6 @@ export async function setu(e) {
 }
 
 //改变数据格式
-export async function datachange(data) {
-  if (data / 1000000000000 > 1) {
-    return Math.floor((data * 100) / 1000000000000) / 100 + '万亿';
-  } else if (data / 100000000 > 1) {
-    return Math.floor((data * 100) / 100000000) / 100 + '亿';
-  } else if (data / 10000 > 1) {
-    return Math.floor((data * 100) / 10000) / 100 + '万';
-  } else {
-    return data;
-  }
-}
 //写入纳戒信息,第二个参数是一个JavaScript对象
 export async function Write_najie(usr_qq, najie, options = {}) {
   assertGlobalInitIdle();
@@ -6432,20 +6362,6 @@ export function getMonsterByLocation(weizhi, xf = -1) {
  * @param P 概率
  * @returns 随机返回 false or true
  */
-export function get_random_res(P) {
-  if (P > 1) {
-    P = 1;
-  }
-  if (P < 0) {
-    P = 0;
-  }
-  let rand = Math.random();
-  if (rand < P) {
-    return true;
-  }
-  return false;
-}
-
 /**
  * 输入数组随机返回其中一个
  * @param ARR 输入的数组
@@ -6649,26 +6565,6 @@ export async function getPlayerAction(usr_qq) {
 }
 
 //锁定
-export async function dataverification(e) {
-  if (!e.isGroup) {
-    //禁私聊
-    return 1;
-  }
-  let usr_qq = e.user_id.toString().replace('qg_','');
-    usr_qq = await channel(usr_qq);
-  if (usr_qq == 80000000) {
-    //非匿名
-    return 1;
-  }
-  let ifexistplay = await existplayer(usr_qq);
-  if (!ifexistplay) {
-    //无存档
-    return 1; //假
-  }
-  //真
-  return 0;
-}
-
 /**
  * 判断对象是否不为undefined且不为null
  * @param obj 对象
@@ -7043,22 +6939,6 @@ export async function Write_danyao(usr_qq, danyao) {
  * @param {true或false} returns true为返回下标false为数据，不可为空
  * @returns 
  */
-export async function find_temp(usr_qq, returns) {
-    let temp = await Read_temp()
-    let index
-    let rom = []
-    for (let i = 0; i < temp.length; i++) {
-        if (temp[i].usr_qq == usr_qq) {
-            index = i
-            if (returns) {
-                rom = i
-            } else {
-                rom = temp[i]
-            }
-        }
-    }
-    return rom
-}
 export async function Read_temp() {
   let dir = path.join(`${__PATH.temp_path}/temp.json`);
   let temp = fs.readFileSync(dir, 'utf8', (err, data) => {
@@ -13720,20 +13600,6 @@ export function Harm(atk, def, baoji = 1) {
 
 
 //判断克制关系
-export function kezhi(equ, wx) {
-  let wuxing = ['金', '木', '土', '水', '火', '金'];
-  let equ_wx = wuxing[equ - 1];
-  //相同
-  for (let j of wx) {
-    if (j == equ_wx) return 0.04;
-  }
-  //不同
-  for (let j of wx)
-    for (let i = 0; i < wuxing.length - 1; i++) {
-      if (wuxing[i] == equ_wx && wuxing[i + 1] == j) return -0.02;
-    }
-  return 0;
-}
 //通过暴击伤害返回输出用的文本
 export function ifbaoji(baoji) {
   if (baoji == 1) {
@@ -15282,10 +15148,6 @@ export function getItemSize(item, category) {
 }
 
 // 检查能否存入
-export async function checkStorageSpace(usr_qq, itemSize) {
-  const innerWorld = await Read_inner_world(usr_qq);
-  return innerWorld.当前容量 + itemSize <= innerWorld.最大容量;
-}
 /* ---------- 辅助：读位面等级 ---------- */
 export async function getWeimianLevel() {
   try {

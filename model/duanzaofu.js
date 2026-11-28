@@ -138,17 +138,6 @@ export async function dataall(neirong,diian) {
   return;
 }
 //数量矫正, 违规数量改成1
-export async function jiaozheng(value) {
-  let size = value;
-  if (isNaN(parseFloat(size)) && !isFinite(size)) {
-    return Number(1);
-  }
-  size = Number(Math.trunc(size));
-  if (size == null || size == undefined || size < 1 || isNaN(size)) {
-    return Number(1);
-  }
-  return Number(size);
-}
 //读取item 中某个json文件中的属性
 export async function readthat(thing_name, weizhi) {
   let dir = path.join(`${__PATH.lib_path}/${weizhi}.json`);

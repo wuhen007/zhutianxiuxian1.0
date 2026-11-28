@@ -250,14 +250,6 @@ export class GrantStore {
   // ---------- 审计 ----------
 
   /** 群主侧对账：某群主发过的单 */
-  issuedBy(qq, limit = 20) {
-    const s = this._load();
-    return Object.values(s.orders)
-      .filter(x => x.grantedBy === String(qq))
-      .sort((a, b) => b.createdAt - a.createdAt)
-      .slice(0, limit);
-  }
-
   verifyChain() {
     const s = this._load();
     let prev = 'GENESIS';

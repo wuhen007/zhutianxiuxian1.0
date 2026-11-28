@@ -4313,15 +4313,6 @@ function calculateShouyuan(level) {
 
 
 // 辅助函数：获取胜利诗篇
-function getVictoryVerse(emperorTitle) {
-    const verses = [
-        `紫气东来三万里，${emperorTitle}证道时！`,
-        `踏碎凌霄不回头，${emperorTitle}镇寰宇！`,
-        `九天神魔皆低首，${emperorTitle}掌春秋！`,
-        `混沌初开立新道，${emperorTitle}掌乾坤！`
-    ];
-    return verses[Math.floor(Math.random() * verses.length)];
-}
 // 辅助函数：心魔对战
 async function battleDemon(player, demonPower) {
     // 简化版战斗逻辑

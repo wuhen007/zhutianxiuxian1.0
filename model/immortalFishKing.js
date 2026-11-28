@@ -139,15 +139,7 @@ export function createFishKingKillRewardBundle(state, random = Math.random) {
 }
 
 /** 兼容旧调用：仅返回本次抽取中的普通物品。 */
-export function createFishKingRewardAssignments(members, random = Math.random) {
-  return createFishKingKillRewardBundle({ members }, random).assignments;
-}
-
 /** 兼容旧调用：仅返回本次抽取中的遗珍。 */
-export function createFishKingRelicRewards(state, random = Math.random) {
-  return createFishKingKillRewardBundle(state, random).relicRewards;
-}
-
 /**
  * 鱼王宝箱：额外奖池触发后不放回抽 5 组，保底【众生愿鳞】15~30 必出。
  */

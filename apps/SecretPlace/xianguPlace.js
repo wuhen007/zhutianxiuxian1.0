@@ -7489,14 +7489,6 @@ async function handleUniqueTreasureCell(e, player, player_qq, map, x, y) {
 }
 
 // 处理空地格子
-function handleEmptyCell(player, map) {
-  if (Math.random() < 0.2) {
-    const ambient = [`${player.名号}缓步前行，四周一片寂静...`, `微风吹过，带来远古的气息。`, `脚步在荒芜的大地上回响。`, `远处似有微光闪烁，转眼又消失不见。`, `脚下的土地布满裂痕，诉说着仙古大战的惨烈。`];
-    return ambient[Math.floor(Math.random() * ambient.length)];
-  }
-  return '';
-}
-
 // 计算探索修为/血气奖励（基于境界公式）
 function calcExploreRewards(player, rewardMultiplier = 1) {
   const now_level_id = player.level_id || player.xiangulevel_id || 5;
@@ -7534,85 +7526,6 @@ function getShenhuoBreakthroughBonus() {
 }
 
 // 道种试炼事件处理（三千道火·祭炼场试炼，奖励火道道种）
-async function handleFlameTrial(player, location, player_qq, trial) {
-  const trials = {
-    '三千道火': {
-      name: '三千道火·大道试炼',
-      desc: '三千种大道之火汇聚成的火海在你面前展开。每一缕火焰代表一种大道，唯有以肉身硬扛三千道火的焚烧，方可于火道中淬炼出一枚至强道种！',
-      burnRate: 0.15,  // 每次燃烧生命比例
-      stages: 3,
-      reward: { 名称: '三千道火种', 品质: '神话', 类型: '火道', 融合成功率: 0.95, 属性加成: { 攻击: 800000, 血气: 1500000, 全属性: 0.1 }, 专属技能: '万火共鸣', 额外效果: '不受秘境境界压制' }
-    }
-  };
-
-  const trialData = trials[trial.name];
-  if (!trialData) return null;
-
-  let survive = true;
-  const playerHP = player.血气上限 || 100000;
-
-  for (let i = 0; i < trialData.stages; i++) {
-    const burnDamage = Math.floor(playerHP * trialData.burnRate * (1 + i * 0.3));
-    const currentHP = (player.血气 || playerHP) - burnDamage;
-
-    if (currentHP <= 0) {
-      survive = false;
-      player.血气 = 1;
-      break;
-    } else {
-      player.血气 = currentHP;
-    }
-  }
-
-  if (!survive) {
-    await Write_player(player.player_qq || player_qq, player);
-    return [
-      `【${trialData.name}】`,
-      ``,
-      `${player.名号}踏入三千道火之中...`,
-      `第一波道火焚身，肉身龟裂！`,
-      `第二波道火袭来，道基震颤！`,
-      `第三波道火铺天盖地，${player.名号}终于支撑不住...`,
-      ``,
-      `【试炼失败】`,
-      `生命降至1点，需要休养后再挑战`,
-      `提示：提升生命值上限可增加成功率`
-    ].join('\n');
-  }
-
-  // 试炼成功：奖励一枚神话品质火道道种（可用于道种孕育点燃神火）+ 1份道火精粹液（可提纯神火品质）
-  player.血气 = Math.floor(player.血气上限 * 0.2);
-  player.xiangu_daohuo_jingcui = (Number(player.xiangu_daohuo_jingcui) || 0) + 1;
-  await grantXianguBagSeed(player, trialData.reward, player_qq);
-
-  const { xiuwei, xueqi } = calcExploreRewards(player, 3);
-  const trialRewards = await grantXianguGrowthRewards(player, player_qq, { xiuwei, xueqi });
-
-  return [
-    `【${trialData.name}·试炼成功！！！】`,
-    ``,
-    `${player.名号}踏入三千道火之中！`,
-    `第一波道火焚身——肉身抽搐，却咬牙坚持！`,
-    `第二波道火更烈——道基轰鸣，血液都在沸腾！`,
-    `第三波道火铺天盖地——${player.名号}以六大极境为基，硬扛三千道火！`,
-    ``,
-    `【试炼通过】`,
-    `三千道火退去，一枚被万火淬炼的道种在虚空中凝聚——`,
-    `那是以三千大道为薪、以无上意志为炉的「三千道火种」！`,
-    ``,
-    `【获得】`,
-    `${trialData.reward.名称} [${trialData.reward.品质}]`,
-    `道火精粹液 +1（可使用 #炼化道火精粹 提纯神火品质）`,
-    `融合成功率：${(trialData.reward.融合成功率 * 100).toFixed(0)}%`,
-    `专属技能：${trialData.reward.专属技能}`,
-    `修为 +${trialRewards.xiuwei.toLocaleString()}`,
-    `血气 +${trialRewards.xueqi.toLocaleString()}`,
-    ``,
-    `"三千道火焚身，万道火种淬道种！"`
-  ].join('\n');
-}
-
-
 function getLocationItems(location) {
   const locationItems = {
     '边缘区域': [
@@ -7692,179 +7605,6 @@ function getBossScaledStats(playerXianguLevel, zoneFactor) {
 }
 
 // 处理Boss遭遇
-async function handleBossEncounter(player, location, player_qq, usr_qq) {
-  const bossDefs = {
-    '中层区域': [
-      { name: '真龙残魂', skills: ['龙吟九天', '真龙摆尾', '龙战于野'],
-        drops: [{ name: '真龙宝术', type: '功法', chance: 0.1, rarity: '史诗' }, { name: '真龙龙鳞', type: '道具', chance: 0.5, rarity: '稀有' }] },
-      { name: '仙药守护兽', skills: ['守护之怒', '药香迷惑', '灵根护体'],
-        drops: [{ name: '不死神药幼苗', chance: 0.05, rarity: '传说' }, { name: '守护兽内丹', chance: 0.4, rarity: '稀有' }] }
-    ],
-    '深层区域': [
-      { name: '仙王残念', skills: ['轮回印', '无终一击', '仙王道则'],
-        drops: [{ name: '六道轮回天功', type: '功法', chance: 0.08, rarity: '传说' }, { name: '仙王精血', chance: 0.3, rarity: '传说' }] },
-      { name: '黑暗古祖', skills: ['黑暗侵蚀', '不朽之触', '黑暗牢笼'],
-        drops: [{ name: '黑暗物质样本', chance: 0.4, rarity: '稀有' }, { name: '折仙咒原本', chance: 0.15, rarity: '传说' }] }
-    ],
-    '核心区域': [
-      { name: '仙古意志投影', skills: ['法则压制', '道则领域', '天罚降临'],
-        drops: [{ name: '道韵结晶', chance: 0.3, rarity: '神话' }, { name: '法则感悟', chance: 0.5, rarity: '传说' }] },
-      { name: '纪元终结者', skills: ['纪元终结', '时间静止', '因果抹杀'],
-        drops: [{ name: '时间法则碎片', chance: 0.2, rarity: '神话' }, { name: '唯一道则', chance: 0.05, rarity: '神话' }] }
-    ]
-  };
-
-  // 区域缩放系数：中层0.5 / 深层1.0 / 核心2.0
-  const zoneFactor = { '中层区域': 0.5, '深层区域': 1.0, '核心区域': 2.0, '火道禁区': 3.0 }[location] || 0.5;
-  const zoneLevels = { '中层区域': 7, '深层区域': 9, '核心区域': 11, '火道禁区': 13 };
-  const bossLevel = zoneLevels[location] || 7;
-
-  const locationBosses = bossDefs[location] || bossDefs['中层区域'];
-  const bossDef = locationBosses[Math.floor(Math.random() * locationBosses.length)];
-  const scaled = getBossScaledStats(player.xiangulevel_id || 5, zoneFactor);
-
-  // 构建Boss战斗对象
-  let B_enemy = {
-    名号: bossDef.name,
-    攻击: scaled.attack,
-    防御: scaled.defense,
-    当前血量: scaled.hp,
-    血量上限: scaled.hp,
-    暴击率: 0.1,
-    法球倍率: 0.15,
-    灵根: { 法球倍率: 0.15 },
-    学习的功法: bossDef.skills.slice(0, 2),
-    魔道值: 100,
-    仙宠: null,
-    神石: {},
-    xiangulevel_id: bossLevel,
-    mijinglevel_id: Math.max(1, bossLevel - 3),
-  };
-
-  // 凶名值给Boss附加压力（高凶名者Boss会狂暴）
-  const infamy = player.xiangu_infamy || 0;
-  if (infamy > 100) {
-    B_enemy.攻击 = Math.floor(B_enemy.攻击 * (1 + infamy / 500));
-    B_enemy.当前血量 = Math.floor(B_enemy.当前血量 * (1 + infamy / 1000));
-    B_enemy.血量上限 = B_enemy.当前血量;
-  }
-
-  const battleSides = buildXianguBattleSides(player, B_enemy, { attackerId: player_qq });
-  const Data_battle = await zd_battle(battleSides.A, battleSides.B, { battleType: 'xiangu_boss' });
-  const leaderWinner = resolveXianguLeaderWinner(Data_battle);
-  const msg = Data_battle.msg;
-  const battleLog = [...battleSides.messages, ...(Array.isArray(msg) ? msg : [String(msg || '')])];
-  
-  if (leaderWinner === 'A') {
-    // 战斗胜利
-    const rewards = [];
-    for (const drop of bossDef.drops) {
-      if (Math.random() < drop.chance) {
-        rewards.push(drop);
-        await addXianguSpoil(player, drop.name, 1, drop.desc, drop.type);
-      }
-    }
-    
-    // Boss战斗使用3倍境界奖励
-    const riskMultiplier = location === '深层区域' ? 2 : location === '核心区域' ? 3 : 1;
-    const { xiuwei: bossXw, xueqi: bossXq } = calcExploreRewards(player, 3 * riskMultiplier);
-    const expGain = bossXw;
-    const xueqiGain = bossXq;
-    const xiongmngGain = Math.floor(20 * riskMultiplier);
-    const daoyunGain = Math.floor(50 * riskMultiplier);
-    
-    const bossRewards = await grantXianguGrowthRewards(player, player_qq, {
-      xiuwei: expGain,
-      xueqi: xueqiGain,
-      sourceStone: 1,
-    });
-    player.xiangu_infamy = (Number(player.xiangu_infamy) || 0) + xiongmngGain;
-    player.xiangu_gains ||= {};
-    player.xiangu_gains.xiongmng = (Number(player.xiangu_gains.xiongmng) || 0) + xiongmngGain;
-    player.xiangu_gains.daoyun = (Number(player.xiangu_gains.daoyun) || 0) + daoyunGain;
-    
-    let rewardMsg = [
-      `修为 +${bossRewards.xiuwei.toLocaleString()}`,
-      `血气 +${bossRewards.xueqi.toLocaleString()}`,
-      `源石 +${bossRewards.sourceStone.toLocaleString()}（暂存秘境背包）`,
-      `凶名值 +${xiongmngGain}`,
-      `道韵领悟 +${daoyunGain}`
-    ];
-
-    if (rewards.length > 0) {
-      rewardMsg.push(...rewards.map(r => `${r.name} (${r.rarity})`));
-    }
-
-    const xianguConfig = getXianguSecretConfig();
-    if (shouldDropXianguSeed(xianguConfig, location, 'boss')) {
-      const seed = generateRandomSeed(location, { source: 'boss' });
-      await grantXianguBagSeed(player, seed, player_qq);
-      await Write_player(player_qq, player);
-
-      rewardMsg.push(`【道种掉落！】${seed.名称} [${seed.品质}]`);
-    }
-
-    const rewardText = rewardMsg.length > 0 ? rewardMsg.join('\n') : '未掉落稀有物品';
-
-    return [
-      `【Boss遭遇·激战】`,
-      ``,
-      `${player.名号}在${location}遭遇了${bossDef.name}！`,
-      `Boss怒吼："卑微的入侵者，受死！"`,
-      `${player.名号}眼神坚定，拔剑相迎！`,
-      ``,
-      `【Boss信息】`,
-      `- 名称：${bossDef.name}`,
-      `- 等级：${bossLevel}`,
-      `- 生命值：${scaled.hp.toLocaleString()}`,
-      `- 技能：${bossDef.skills.join('、')}`,
-      ``,
-      `━━━━ 战斗过程 ━━━━`,
-      ...battleLog.slice(-8),
-      `━━━━ 战斗结果 ━━━━`,
-      `${player.名号}施展浑身解数，终于将Boss击败！`,
-      ``,
-      `【战斗奖励】`,
-      rewardText,
-      ``,
-      `【古史记载】`,
-      `"能击败此等存在者，必是天骄中的天骄..."`
-    ].join('\n');
-
-  } else {
-    // 战斗失败
-    const hpLoss = Math.floor((Number(player.当前血量) || Number(player.血量上限 || player.血气上限) || 1) * 0.4);
-    player.当前血量 = Math.max(1, (Number(player.当前血量) || 1) - hpLoss);
-    applyXianguHeavyInjury(player);
-    await Write_player(player_qq, player);
-    
-    return [
-      `【Boss遭遇·惨败】`,
-      ``,
-      `${player.名号}在${location}遭遇了${bossDef.name}！`,
-      `Boss低语："不自量力..."`,
-      `${player.名号}拼尽全力，却仍难以为敌！`,
-      ``,
-      `【Boss信息】`,
-      `- 名称：${bossDef.name}`,
-      `- 等级：${bossLevel}`,
-      `- 生命值：${scaled.hp.toLocaleString()}`,
-      `- 技能：${bossDef.skills.join('、')}`,
-      ``,
-      `━━━━ 战斗过程 ━━━━`,
-      ...battleLog.slice(-8),
-      `━━━━ 战斗结果 ━━━━`,
-      `${player.名号}重伤败退，狼狈逃离！`,
-      ``,
-      `【损失】`,
-      `血气 -${hpLoss.toLocaleString()}`,
-      `状态：重伤（30分钟内探索效率降低50%）`,
-      ``,
-      `【古史警示】`,
-      `"秘境Boss非等闲可比，还需修炼更强再战"`
-    ].join('\n');
-  }
-}
 // 获取区域描述
 function getAreaDescription(area) {
   const descriptions = {
@@ -10102,37 +9842,11 @@ async function checkArenaSettlement(roundId) {
 }
 
 /** 获取事件buff系数 */
-function getEventExploreModifier() {
-  const ev = XIANGU_EVENTS.activeEvent;
-  if (!ev || ev.endTime <= Date.now()) return { efficiency: 1, rewardMult: 1, bonusMsg: '' };
-  const effects = ev.effects || {};
-  let efficiency = 1, rewardMult = 1, bonusMsg = '';
-  if (effects.debuff) {
-    efficiency += (effects.debuff.exploreEfficiency || 0);
-    rewardMult = effects.debuff.rewardMultiplier || 1;
-    bonusMsg = `\n🌑 黑暗牢笼异动中：效率 ${Math.round(efficiency * 100)}%，奖励 ×${rewardMult}`;
-  }
-  if (effects.buff) {
-    efficiency = effects.buff.treasureChance || 1;
-    bonusMsg = `\n💎 古纪造化出世：特殊发现概率 ×${efficiency}`;
-  }
-  if (effects.boss && ev.type === 'shixiong_awakening') {
-    bonusMsg = `\n🔥 十凶遗种觉醒中：击败可得 ${effects.boss.rewardMult}倍道韵！`;
-  }
-  return { efficiency, rewardMult, bonusMsg };
-}
-
 // ==============================
 //  5.3 阵营管理函数
 // ==============================
 
 /** 获取阵营声望等级名称 */
-function getFactionRankName(faction, rep) {
-  const ranks = XIANGU_FACTIONS[faction]?.ranks || [];
-  for (const rank of ranks) { if (rep >= rank.min) return rank.name; }
-  return ranks[ranks.length - 1]?.name || '未知';
-}
-
 /** 阵营任务详情 */
 async function XianguFactionQuestFn(e, player, player_qq) {
   const rep = player.xiangu_faction_rep || { good: 0, neutral: 0, evil: 0 };
@@ -10178,38 +9892,6 @@ async function XianguFactionQuestFn(e, player, player_qq) {
 }
 
 /** 阵营任务进度更新（供外部调用） */
-async function updateFactionQuestProgress(player_qq, factionKey, actionType, count = 1) {
-  const trackKey = `${player_qq}_${factionKey}`;
-  const quest = FACTION_QUEST_TRACK[trackKey];
-  if (!quest || quest.completed) return null;
-
-  const questDef = XIANGU_FACTIONS[factionKey]?.questPool?.find(q => q.name === quest.questName);
-  if (!questDef || questDef.target !== actionType) return null;
-
-  quest.progress = Math.min(quest.max, quest.progress + count);
-  if (quest.progress >= quest.max) {
-    quest.completed = true;
-    try {
-      const player = await Read_player(player_qq);
-      if (player) {
-        player.xiangu_gains = player.xiangu_gains || {};
-        player.xiangu_gains.daoyun = (player.xiangu_gains.daoyun || 0) + quest.reward.daoyun;
-        player.xiangu_faction_rep = player.xiangu_faction_rep || { good: 0, neutral: 0, evil: 0 };
-        player.xiangu_faction_rep[quest.faction] = (player.xiangu_faction_rep[quest.faction] || 0) + quest.reward.rep;
-        await Write_player(player_qq, player);
-        return [
-          `✅【阵营任务·完成】`, ``,
-          `${XIANGU_FACTIONS[quest.faction].icon} ${quest.questName} 已完成！`, ``,
-          `道韵 +${quest.reward.daoyun}`,
-          `${XIANGU_FACTIONS[quest.faction].name}好感 +${quest.reward.rep}`,
-          ``, `使用 #阵营任务 接取新任务`
-        ].join('\n');
-      }
-    } catch (err) { console.error('阵营任务结算失败:', err); }
-  }
-  return null;
-}
-
 /** 阵营排行 */
 async function XianguFactionRankFn(e, player) {
   const now = Date.now();

@@ -106,24 +106,3 @@ async function get_chuanwen_img(e, a) {
   
 }
 
-function generateCodes(numOfCodes) {
-  const codes = [];
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  while (codes.length < numOfCodes) {
-    let code = "A";
-    for (let i = 0; i < 24; i++) {
-      let randomIndex = Math.floor(Math.random() * chars.length);
-      let char = chars.charAt(randomIndex);
-      code += char;
-    }
-    codes.push(code);
-  }
-
-  // Fisher-Yates随机置乱算法
-  for (let i = codes.length - 1; i > 0; i--) {
-    let j = Math.floor(Math.random() * (i + 1));
-    [codes[i], codes[j]] = [codes[j], codes[i]];
-  }
-
-  return codes;
-}

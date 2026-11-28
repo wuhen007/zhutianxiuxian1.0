@@ -202,10 +202,6 @@ export function getEliteAverage(options = {}) {
   return value;
 }
 
-export function clearEliteAverageCache() {
-  averageCache = null;
-}
-
 export function getGuardianProfile(depth) {
   const index = Math.min(RIFT_GUARDIAN_PROFILES.length, Math.max(1, Math.floor(toNumber(depth, 1)))) - 1;
   return RIFT_GUARDIAN_PROFILES[index];

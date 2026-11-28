@@ -250,14 +250,6 @@ export function resolveCleansingOutcome(random = Math.random) {
   return 'vanished';
 }
 
-export function getPursuerCatalog() {
-  return PURSUERS.map(item => ({ ...item }));
-}
-
-export function getDaoSightingCatalog() {
-  return DAO_SIGHTINGS.map(item => ({ ...item }));
-}
-
 export function formatRemainingMinutes(ms) {
   const minutes = Math.max(0, Math.ceil(Number(ms) / 60_000));
   if (minutes >= 60) return `${Math.floor(minutes / 60)}小时${minutes % 60}分`;

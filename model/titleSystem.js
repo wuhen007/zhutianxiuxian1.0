@@ -130,10 +130,6 @@ export function equipTitle(player, titleId) {
   return true;
 }
 
-export function unequipTitle(player) {
-  delete player[TITLE_EQUIPPED_FIELD];
-}
-
 /** 当前称号在无尽劫境内的加成 */
 export function getTitleEffects(player) {
   const title = getEquippedTitle(player);

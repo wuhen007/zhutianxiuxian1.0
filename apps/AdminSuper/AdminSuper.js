@@ -796,42 +796,6 @@ async setPlayerToPrison(targetQQ, minutes) {
   
 }
 
-  async ktgjdfxt(e) {
-     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
-    const masterList = xiuxianConfig.Master || [];
-    const userQQ = e.user_id.toString().replace('qg_', '');
-    if (!isXiuxianAdmin(e)) {
-        return false;
-    }
-   let nowtime = new Date().getTime();
-  let isat = e.message.some(item => item.type === 'at');
-  if (!isat) return;
-
-  let atItem = e.message.filter(item => item.type === 'at');
-  let usr_qq = atItem[0].qq;
-  
-  if (!data.existData("player", usr_qq)) return;
-  
-  let player = await Read_player(usr_qq);
-  player.daofaxianshu = 2;
-let daofaxianshu_endtime = 2592000000; // 30天的毫秒数
-if (Number(player.daofaxianshu_endtime) < nowtime) {
-    player.daofaxianshu_endtime = daofaxianshu_endtime + nowtime;
-} else {
-    player.daofaxianshu_endtime += daofaxianshu_endtime;
-}
-// 计算剩余天数（相对于当前时间）
-let remainingMilliseconds = player.daofaxianshu_endtime - nowtime;
-let remainingDays = remainingMilliseconds / 86400000;
-// 保留一位小数
-remainingDays = Math.round(remainingDays * 10) / 10;
-
-player.daofa = `已开启，当前剩余${remainingDays}天`;
-  
-  await Write_player(usr_qq, player);
-  e.reply("开通成功!【道法仙术】的有效天数直接增加30天");
-  return;
-}
   
   async xiaosan(e){
         const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');

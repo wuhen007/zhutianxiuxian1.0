@@ -77,12 +77,6 @@ export function filterEquippedCombatSkills(player, pool, type) {
   );
 }
 
-export function getEquippedVitalitySkill(player, pool) {
-  const name = player?.战斗技能配置?.生机;
-  if (!name) return null;
-  return (Array.isArray(pool) ? pool : []).find(skill => skillOwner(skill) === name) || null;
-}
-
 export function filterEquippedVitalitySkills(player, pool) {
   if (!player?.战斗技能配置) return Array.isArray(pool) ? pool : [];
   const selected = player.战斗技能配置.生机;

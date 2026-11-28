@@ -146,9 +146,6 @@ export function consumeSuiyunDream(player, treasureName, key, now = Date.now()) 
 export function getSuiyunEffectiveDefense(attacker, defender) {
   return number(defender?.防御) * (hasSuiyunAuthority(attacker, '真实') ? .5 : 1);
 }
-export function getSuiyunHabitatCapacity(player, base) {
-  return Math.max(number(base), hasSuiyunAuthority(player, '月宫') ? 24 : 0);
-}
 export function getSuiyunExplorationDuration(player, milliseconds) {
   return Math.max(1_000, number(milliseconds) - (hasSuiyunAuthority(player, '天空') ? 60_000 : 0));
 }

@@ -239,14 +239,6 @@ export class tuanben extends plugin {
   }
   
   // 检查是否需要更新日期
-  checkDateUpdate() {
-    const newToday = this.getTodayString();
-    if (newToday !== this.today) {
-      this.today = newToday;
-      return true;
-    }
-    return false;
-  }
   // 初始化系统状态
   async initSystemStatus() {
     const status = await redis.get(this.systemStatusKey);
